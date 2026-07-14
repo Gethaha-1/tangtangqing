@@ -8,18 +8,19 @@
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
-  趟趟清 v1.1.0 —— 货运趟次记账（单文件应用）
-  文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md）：
-    [CSS-1] 主题令牌（日/夜双模式）
+  趟趟清 v1.2.0 —— 货运趟次记账（单文件应用）
+  文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md / AI-GUIDE.md）：
+    [CSS-1] 主题令牌（日「宣纸账房」/ 夜「瓷青泥金」双主题）
     [CSS-2] 通用布局 / 组件
     [CSS-3] 各视图专属样式
     [HTML-1] 五个主视图（首页/趟次/统计/维修/更多）
     [HTML-2] 弹层（发车/记一笔/收车/详情/补录/科目/报告/金额盘/确认）
-    [JS-1] 存储适配层 + 数据结构 + 迁移
-    [JS-2] 工具函数 + 统计口径
+    [JS-1] 存储适配层 + 数据结构 + 迁移（含导入数据清洗）
+    [JS-2] 工具函数 + 统计口径（口径是硬约定，改前必读 ARCHITECTURE.md）
     [JS-3] 视图渲染
-    [JS-4] 数字键盘 / 滑动收车 / 交互动作
+    [JS-4] 数字键盘 / 滑动收车 / 交互动作 / 弹层历史栈（系统返回键）
     [JS-5] 报告生成 / 备份恢复 / 初始化
+    [JS-6] 内置自检（地址末尾加 #test 运行，详见 TESTING.md）
   ═══════════════════════════════════════════════════
 -->
 <style>
@@ -28,26 +29,30 @@
 html { font-size:16px; }
 button, input, textarea { font-family:inherit; }
 
-body.theme-night {           /* 夜路仪表盘 */
-  --bg:#0A0D12; --panel:#131A24; --panel2:#0E141D;
-  --line:#243040; --ink:#EAE5D6; --sub:#7E8A9B;
-  --accent:#FFAE1F; --accent-ink:#0A0D12; --accent-soft:rgba(255,174,31,.14);
-  --cool:#6E93B8; --danger:#E06A5A;
-  --key-bg:#182230; --key-ink:#EAE5D6;
-  --shadow:none; --radius:14px;
-  --glow:0 0 18px rgba(255,174,31,.32);
-}
-body.theme-day {             /* 新账本 */
-  --bg:#EFE9DA; --panel:#FAF6EB; --panel2:#F1EBDB;
-  --line:#D8CDB4; --ink:#26303F; --sub:#7C8496;
-  --accent:#B23A2B; --accent-ink:#FAF6EB; --accent-soft:rgba(178,58,43,.10);
-  --cool:#31614C; --danger:#B23A2B;
-  --key-bg:#FFFDF6; --key-ink:#26303F;
-  --shadow:0 1px 3px rgba(60,50,30,.12); --radius:10px;
+body.theme-night {           /* 夜「瓷青泥金」：瓷青纸底 · 泥金数字，夜路驾驶室低眩光 */
+  --bg:#10131B; --panel:#181D28; --panel2:#131722;
+  --line:#2C3140; --ink:#EAE4D2; --sub:#8D93A3;
+  --accent:#D8B36A; --accent-ink:#1A1404; --accent-soft:rgba(216,179,106,.13);
+  --cool:#8CA0B8; --danger:#C4574A;
+  --key-bg:#1D2230; --key-ink:#EAE4D2;
+  --shadow:0 10px 26px rgba(0,0,0,.32); --radius:14px;
   --glow:none;
 }
-body.theme-day .display { font-family:"Songti SC","Noto Serif CJK SC","SimSun",serif; }
-body.theme-day .hand { font-family:"Kaiti SC","KaiTi","STKaiti",serif; }
+body.theme-day {             /* 日「宣纸账房」：宣纸底 · 朱砂笔 · 文书双线框 */
+  --bg:#F1EBDC; --panel:#FBF7EC; --panel2:#F3EDDD;
+  --line:#D8CDB2; --ink:#26313B; --sub:#8B8672;
+  --accent:#A63A2E; --accent-ink:#FBF7EC; --accent-soft:rgba(166,58,46,.09);
+  --cool:#33614C; --danger:#A63A2E;
+  --key-bg:#FFFDF4; --key-ink:#26313B;
+  --shadow:0 1px 3px rgba(70,55,25,.14); --radius:10px;
+  --glow:none;
+}
+/* 背景氛围渐变画在固定伪元素上（iOS 对 background-attachment:fixed 支持差） */
+body.theme-day::before, body.theme-night::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; }
+body.theme-day::before   { background:radial-gradient(130% 85% at 50% 0%, #F6F1E4, #ECE3CF); }
+body.theme-night::before { background:radial-gradient(120% 60% at 50% -10%, #1B202D, #10131B 62%); }
+.display { font-family:"Songti SC","Noto Serif CJK SC","SimSun",serif; }
+.hand { font-family:"Kaiti SC","KaiTi","STKaiti",serif; }
 .num { font-variant-numeric:tabular-nums; }
 
 /* ================= [CSS-2] 通用布局 / 组件 ================= */
@@ -75,6 +80,13 @@ body {
 .sec-label { display:flex; align-items:center; gap:10px; margin:20px 2px 10px;
   font-size:13px; color:var(--sub); letter-spacing:.1em; }
 .sec-label::after { content:""; flex:1; height:1px; background:var(--line); }
+.sec-label::before { content:""; width:4px; height:13px; background:var(--accent); border-radius:1px; flex:none; }
+/* 主卡「文书双线框」：外框是 .panel 自身边线，内框由 ::after 画出 */
+.panel.hero { position:relative; overflow:hidden; }
+.panel.hero::after { content:""; position:absolute; inset:7px; pointer-events:none;
+  border:1px solid rgba(169,130,47,.5); border-radius:5px; }
+body.theme-night .panel.hero::after { border-color:rgba(216,179,106,.32); border-radius:9px; }
+body.theme-day .btn:not(.ghost):not(.danger) { box-shadow:0 2px 0 rgba(120,40,30,.25); }
 
 body.theme-day .paper-grid { background-image:
   repeating-linear-gradient(0deg,transparent 0 27px,rgba(38,48,63,.07) 27px 28px); }
@@ -115,7 +127,7 @@ nav { position:fixed; left:0; right:0; bottom:0; z-index:20;
 nav button { flex:1; border:0; background:none; color:var(--sub);
   font-size:11.5px; display:flex; flex-direction:column; align-items:center; gap:2px;
   padding:5px 0; }
-nav button em { font-style:normal; font-size:21px; line-height:1; }
+nav button svg { display:block; }
 nav button.on { color:var(--accent); font-weight:700; }
 
 /* 弹层 */
@@ -171,9 +183,8 @@ nav button.on { color:var(--accent); font-weight:700; }
 .gauge .fill { position:absolute; inset:0; width:0%;
   background:linear-gradient(90deg,var(--cool),var(--accent)); border-radius:7px 0 0 7px;
   transition:width .5s; }
-body.theme-night .gauge .ticks { position:absolute; inset:0;
-  background:repeating-linear-gradient(90deg,transparent 0 9%,rgba(10,13,18,.55) 9% 10%); }
-body.theme-day .gauge .fill { background:var(--cool); opacity:.85; }
+body.theme-night .gauge .fill { background:linear-gradient(90deg,#8A6B2F,#D8B36A); }
+body.theme-day .gauge .fill { background:var(--cool); opacity:.9; }
 .now-trip { margin-top:14px; background:var(--panel2); border:1px solid var(--line);
   border-radius:calc(var(--radius) - 4px); padding:14px; }
 .now-head { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:700; }
@@ -214,13 +225,11 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
 .trip-profit span { font-size:12px; color:var(--sub); letter-spacing:.18em; }
 .trip-profit b { display:block; font-size:29px; font-weight:800; color:var(--accent); text-shadow:var(--glow); }
 .trip-profit b.loss { color:var(--cool); text-shadow:none; }
-.led { position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent); display:none; }
-body.theme-night .led { display:block; box-shadow:0 0 10px rgba(255,174,31,.5); }
-.stamp { display:none; position:absolute; right:14px; top:10px; width:56px; height:56px;
-  border:2.5px solid var(--accent); border-radius:50%; color:var(--accent);
-  font-size:15px; font-weight:700; letter-spacing:.14em;
-  align-items:center; justify-content:center; transform:rotate(-14deg); opacity:.8; pointer-events:none; }
-body.theme-day .stamp { display:flex; }
+.stamp { display:flex; position:absolute; right:14px; top:10px; width:56px; height:56px;
+  border:2px solid var(--danger); border-radius:50%; color:var(--danger);
+  font-size:15px; font-weight:700; letter-spacing:.15em;
+  align-items:center; justify-content:center; transform:rotate(-12deg); opacity:.85; pointer-events:none; }
+.stamp::after { content:""; position:absolute; inset:4px; border:1px solid currentColor; border-radius:50%; opacity:.6; }
 .year-h { display:flex; justify-content:space-between; align-items:baseline; margin:20px 2px 10px; }
 .year-h b { font-size:17px; } .year-h span { font-size:13px; color:var(--sub); }
 
@@ -300,10 +309,10 @@ body.theme-day .stamp { display:flex; }
   <div class="wrap">
     <div class="brand-row">
       <div class="brand display">趟趟清<small>货运账本</small></div>
-      <button class="icon-btn" id="themeBtn" title="切换日/夜">🌙</button>
+      <button class="icon-btn" id="themeBtn" title="切换日/夜"></button>
     </div>
     <div id="homeBanner"></div>
-    <div class="panel" style="margin-top:10px">
+    <div class="panel hero" style="margin-top:10px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
         <div class="profit-label">本 年 利 润</div>
         <div class="num" style="font-size:13px;color:var(--sub)" id="homeYear"></div>
@@ -316,14 +325,14 @@ body.theme-day .stamp { display:flex; }
       </div>
       <div class="gauge-wrap" id="homeGaugeWrap">
         <div class="gauge-cap"><span>支出占收入</span><b class="num" id="gaugePct">—</b></div>
-        <div class="gauge"><div class="fill" id="gaugeFill"></div><div class="ticks"></div></div>
+        <div class="gauge"><div class="fill" id="gaugeFill"></div></div>
       </div>
       <div id="homeNow"></div>
       <div class="bars-cap"><span>月度利润</span><span id="barsMax"></span></div>
       <div class="bars" id="homeBars"></div>
       <div class="bars-x"><span>1月</span><span>6月</span><span>12月</span></div>
     </div>
-    <div class="foot-note">趟趟清 v1.0 · 数据存在本机 · 记得每月备份（更多 → 备份）</div>
+    <div class="foot-note">趟趟清 <span class="js-ver"></span> · 数据存在本机 · 记得每月备份（更多 → 备份）</div>
   </div>
 </section>
 
@@ -384,20 +393,20 @@ body.theme-day .stamp { display:flex; }
       <div class="row" data-go="backfill"><span class="ric">📖</span><div class="rmain"><b>补录旧账</b><span>把以前本子上的整趟账搬进来</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="export"><span class="ric">📤</span><div class="rmain"><b>备份数据</b><span>导出成文件，发到微信收藏保存</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="import"><span class="ric">📥</span><div class="rmain"><b>恢复数据</b><span>换手机后，用备份文件找回全部账</span></div><span class="rarrow">›</span></div>
-      <div class="row" data-go="theme"><span class="ric">🌗</span><div class="rmain"><b>切换日 / 夜模式</b><span id="themeStateTxt">当前：白天账本</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="theme"><span class="ric">🌗</span><div class="rmain"><b>切换日 / 夜模式</b><span id="themeStateTxt">当前：宣纸账房（日）</span></div><span class="rarrow">›</span></div>
     </div>
     <input type="file" id="importFile" accept=".json,application/json" style="display:none">
-    <div class="foot-note">趟趟清 v1.1.0<br>文档齐全，以后把本文件和 .md 文档一起发给 AI 即可继续迭代</div>
+    <div class="foot-note">趟趟清 <span class="js-ver"></span><br>迭代前先读 AI-GUIDE.md · 改完在地址末尾加 #test 跑自检</div>
   </div>
 </section>
 
 <!-- 底部导航 -->
 <nav id="nav">
-  <button data-v="home" class="on"><em>🏠</em>首页</button>
-  <button data-v="trips"><em>🧾</em>趟次</button>
-  <button data-v="stats"><em>📊</em>统计</button>
-  <button data-v="maint"><em>🔧</em>维修</button>
-  <button data-v="more"><em>☰</em>更多</button>
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.2 12 4.6l8 6.6"/><path d="M6.2 10.4V19h11.6v-8.6"/></svg>首页</button>
+  <button data-v="trips"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4h11v16l-2.2-1.5-2.1 1.5-2.2-1.5-2.1 1.5-2.4-1.5z"/><path d="M9.4 9h5.2M9.4 12.4h5.2"/></svg>趟次</button>
+  <button data-v="stats"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 19.5v-7M12 19.5V5.5M18.5 19.5v-4.5"/></svg>统计</button>
+  <button data-v="maint"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4l6.9 4v8.2l-6.9 4-6.9-4V7.4z"/><circle cx="12" cy="11.5" r="2.8"/></svg>维修</button>
+  <button data-v="more"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" stroke="none"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>更多</button>
 </nav>
 
 <!-- ================= [HTML-2] 弹层 ================= -->
@@ -429,6 +438,10 @@ body.theme-day .stamp { display:flex; }
       <div class="field" id="quickNoteWrap" style="display:none;margin:0 0 10px">
         <input type="text" id="quickNote" maxlength="40" placeholder="比如：装车小费 / 加的尿素">
       </div>
+      <button class="note-toggle" id="quickDateBtn">记在今天（点了改日期）</button>
+      <div class="field" id="quickDateWrap" style="display:none;margin:0 0 10px">
+        <input type="date" id="quickDate">
+      </div>
       <div class="pad" id="quickPad"></div>
     </div>
   </div>
@@ -438,6 +451,7 @@ body.theme-day .stamp { display:flex; }
 <div class="sheet" id="sheet-amt">
   <div class="shead"><button class="back" data-close>‹</button><h3 id="amtTitle">输入金额</h3></div>
   <div class="sbody">
+    <div class="chips" id="amtChips" style="display:none"></div>
     <div class="panel">
       <div class="field" id="amtDateWrap"><label>日期</label><input type="date" id="amtDate"></div>
       <div class="field" id="amtNoteWrap"><label>备注</label><input type="text" id="amtNote" maxlength="40" placeholder="比如：换机油、补胎"></div>
@@ -461,7 +475,7 @@ body.theme-day .stamp { display:flex; }
       <div class="total-line" style="margin-top:8px"><span>这趟利润</span><b class="big num display" id="closeProfit">¥0</b></div>
     </div>
     <div class="slide-close" id="closeSlide" style="margin-top:16px">
-      <div class="slide-thumb" id="closeThumb">»</div><span id="closeSlideTxt">按住 向右滑动收车</span>
+      <div class="slide-thumb" id="closeThumb"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg></div><span id="closeSlideTxt">按住 向右滑动收车</span>
     </div>
   </div>
 </div>
@@ -542,7 +556,7 @@ body.theme-day .stamp { display:flex; }
 <div id="toast"></div>
 <script>
 /* ================= [JS-1] 存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.1.0';
+const APP_VER = '1.2.0';
 const SCHEMA_VER = 1;
 const STORE_KEY = 'tangtangqing-data';
 
@@ -566,7 +580,8 @@ const Store = (() => {
         if (mode === 'local') localStorage.setItem(STORE_KEY, s);
         else if (mode === 'claude') await window.storage.set(STORE_KEY, s);
         else mem = JSON.parse(s);
-      } catch (e) { console.error('保存失败', e); }
+        return true;
+      } catch (e) { console.error('保存失败', e); return false; }
     }
   };
 })();
@@ -575,7 +590,7 @@ const Store = (() => {
 function defaultData() {
   return {
     schemaVersion: SCHEMA_VER,
-    settings: { theme: 'day', lastReportSeen: '' },
+    settings: { theme: 'day', lastReportSeen: '', lastBackupAt: '' },
     categories: {
       expense: [
         { id: 'fuel', name: '油费',   icon: '⛽', builtin: true, active: true },
@@ -606,13 +621,27 @@ function migrate(d) {
   const base = defaultData();
   d.settings = Object.assign(base.settings, d.settings || {});
   d.categories = d.categories || base.categories;
-  d.trips = d.trips || []; d.maintenance = d.maintenance || [];
+  d.trips = Array.isArray(d.trips) ? d.trips : [];
+  d.maintenance = Array.isArray(d.maintenance) ? d.maintenance : [];
+  /* 数据清洗：金额一律转数字（防手改备份文件混入字符串等坏值），坏值按 0 */
+  const num = (v) => { const n = typeof v === 'number' ? v : parseFloat(v); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
+  d.trips.forEach(t => {
+    t.expenses = (t.expenses || []).map(e => Object.assign(e, { amount: num(e.amount) }));
+    t.incomes  = (t.incomes  || []).map(e => Object.assign(e, { amount: num(e.amount) }));
+  });
+  d.maintenance.forEach(m => { m.amount = num(m.amount); });
   return d;
 }
 
 let S = null;               /* 全局状态（单一数据源） */
 let saveTimer = null;
-function save() { clearTimeout(saveTimer); saveTimer = setTimeout(() => Store.save(S), 150); }
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const ok = await Store.save(S);
+    if (!ok) toast('⚠️ 保存失败！请立即到「更多 → 备份数据」导出一份');
+  }, 150);
+}
 
 /* ================= [JS-2] 工具函数 + 统计口径 ================= */
 const $ = (sel) => document.querySelector(sel);
@@ -620,7 +649,11 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-const fmtMD = (ds) => ds ? ds.slice(5).replace('-', '-') : '—';
+const fmtMD = (ds) => ds ? ds.slice(5) : '—';
+/* 线性图标（描边 SVG 字符串，替代 emoji 提升质感） */
+const SVG_MOON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5A8 8 0 1 1 10.5 4 6.3 6.3 0 0 0 20 13.5z"/></svg>';
+const SVG_SUN = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.5M12 18.9v2.5M2.6 12h2.5M18.9 12h2.5M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19"/></svg>';
+const SVG_CHEV = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>';
 const yearOf = (ds) => ds ? ds.slice(0, 4) : '';
 const monthOf = (ds) => ds ? ds.slice(0, 7) : '';
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -725,8 +758,9 @@ function renderHome() {
   $('#homeInc').textContent = '¥' + fmt(st.inc);
   $('#homeExp').textContent = '¥' + fmt(st.exp);
   if (st.inc > 0) {
-    const pct = Math.min(100, Math.round(st.exp / st.inc * 100));
-    $('#gaugePct').textContent = pct + '%'; $('#gaugeFill').style.width = pct + '%';
+    const pct = Math.round(st.exp / st.inc * 100);
+    $('#gaugePct').textContent = pct + '%';
+    $('#gaugeFill').style.width = Math.min(100, pct) + '%';
   } else { $('#gaugePct').textContent = '—'; $('#gaugeFill').style.width = '0%'; }
 
   /* 当前趟 / 发车按钮 */
@@ -737,7 +771,7 @@ function renderHome() {
       + '<div class="now-head"><i class="dot"></i><b>第 ' + tripSeq(t) + ' 趟 · 在途中</b></div>'
       + '<div class="now-sub num">' + fmtMD(t.startDate) + ' 发车 · 第 ' + tripDays(t) + ' 天 · 已记支出 ¥' + fmt(tt.exp) + '（' + t.expenses.length + ' 笔）</div>'
       + '<button class="btn" style="margin-top:12px" data-act="quick">＋ 记一笔</button>'
-      + '<div class="slide-close" id="homeSlide"><div class="slide-thumb">»</div><span>到家后 按住向右滑动收车</span></div>'
+      + '<div class="slide-close" id="homeSlide"><div class="slide-thumb">' + SVG_CHEV + '</div><span>到家后 按住向右滑动收车</span></div>'
       + '</div>';
     initSlide($('#homeSlide'), () => openCloseSheet(t.id));
   } else {
@@ -755,6 +789,11 @@ function renderHome() {
   const prev = pm.getFullYear() + '-' + String(pm.getMonth() + 1).padStart(2, '0');
   if ((closedTripsIn(prev).length || maintIn(prev).length) && S.settings.lastReportSeen !== prev)
     html += '<div class="banner" data-act="prevrep" data-m="' + prev + '">📄 <b>' + prev.slice(5) + ' 月月报</b>已生成 · 点这里看，看完可转发</div>';
+  /* 备份提醒：有账、且从没备份过或距上次备份超 30 天 */
+  const hasData = S.trips.length || S.maintenance.length;
+  const bGap = S.settings.lastBackupAt ? Math.floor((new Date(todayStr()) - new Date(S.settings.lastBackupAt)) / 86400000) : -1;
+  if (hasData && (bGap === -1 || bGap >= 30))
+    html += '<div class="banner" data-act="backup">🔒 ' + (bGap === -1 ? '账本还<b>没备份过</b>' : '已 <b>' + bGap + ' 天</b>没备份') + ' · 点这里导出一份，发微信收藏最保险</div>';
   if (Store.mode !== 'local')
     html += '<div class="banner">⚠️ 当前是<b>预览模式</b>：正式使用请把本文件保存到手机，用浏览器打开（数据才会存在你手机里）</div>';
   bn.innerHTML = html;
@@ -790,7 +829,7 @@ function renderTrips() {
 function tripCardHTML(t) {
   const tt = tripTotals(t); const open = t.status === 'open';
   return '<div class="panel paper-grid trip-card" data-trip="' + t.id + '">'
-    + '<div class="led"></div>' + (open ? '' : '<div class="stamp hand">收讫</div>')
+    + (open ? '' : '<div class="stamp hand">收讫</div>')
     + '<div class="trip-head"><span class="trip-no display">第 ' + tripSeq(t) + ' 趟</span>'
     + (open ? '<span class="trip-open-tag">在途中</span>' : '') + '</div>'
     + '<div class="trip-date num">' + fmtMD(t.startDate) + ' 发车 · ' + (open ? '未收车' : fmtMD(t.endDate) + ' 到家') + ' · ' + tripDays(t) + ' 天</div>'
@@ -903,20 +942,50 @@ function renderMaint() {
 
 /* ---- 更多 ---- */
 function renderMore() {
-  $('#themeStateTxt').textContent = '当前：' + (S.settings.theme === 'day' ? '白天账本 · 点了换夜路仪表盘' : '夜路仪表盘 · 点了换白天账本');
+  $('#themeStateTxt').textContent = '当前：' + (S.settings.theme === 'day' ? '宣纸账房（日）· 点了换瓷青泥金（夜）' : '瓷青泥金（夜）· 点了换宣纸账房（日）');
 }
 
 /* ================= [JS-4] 数字键盘 / 滑动收车 / 交互动作 ================= */
+/* —— 防连点 / 防穿透 —— */
+let _lockAt = 0;
+function guardOnce() { const n = Date.now(); if (n - _lockAt < 600) return false; _lockAt = n; return true; }
+function tapShield() {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:99;background:transparent';
+  document.body.appendChild(d); setTimeout(() => d.remove(), 350);
+}
+
+/* —— 弹层栈 + 历史栈：手机系统返回键 = 关最上层弹层，而不是退出页面 ——
+   openSheet 时 pushState 占一格历史；UI 内关闭（‹ 按钮/手势/保存后）统一走 history.back()，
+   popstate 里用 expectPop 计数区分"程序自己触发的 back"和"用户按的系统返回键"。 */
 let sheetZ = 0; const sheetStack = [];
-function openSheet(el) { el.classList.add('on'); el.style.zIndex = 30 + (++sheetZ); sheetStack.push(el.id); }
-function closeSheet(el) {
+let historyOK = true, expectPop = 0;
+function openSheet(el) {
+  el.classList.add('on'); el.style.zIndex = 30 + (++sheetZ); sheetStack.push(el.id);
+  if (historyOK) { try { history.pushState({ ttq: sheetStack.length }, ''); } catch (e) { historyOK = false; } }
+}
+function closeSheetVisual(el) {
   el.classList.remove('on');
   const i = sheetStack.lastIndexOf(el.id); if (i > -1) sheetStack.splice(i, 1);
+  tapShield();
   const top = sheetStack[sheetStack.length - 1];
   const re = { 'sheet-trip': renderTripDetail, 'sheet-close': renderCloseRows, 'sheet-cats': renderCats, 'sheet-quick': renderQuickChips };
   (re[top] || renderCurrent)();
 }
-function closeAllSheets() { $$('.sheet').forEach(s => s.classList.remove('on')); sheetStack.length = 0; }
+function closeSheet(el) {
+  const tracked = sheetStack.includes(el.id);
+  closeSheetVisual(el);
+  if (historyOK && tracked) { expectPop++; try { history.back(); } catch (e) {} }
+}
+function closeAllSheets() {
+  const n = sheetStack.length; if (!n) return;
+  $$('.sheet').forEach(s => s.classList.remove('on')); sheetStack.length = 0; tapShield();
+  if (historyOK) { expectPop++; try { history.go(-n); } catch (e) {} }
+}
+window.addEventListener('popstate', () => {
+  if (expectPop > 0) { expectPop--; return; }
+  closeTopSheet();
+});
 
 /* —— 数字键盘：支持 300+250 连加 —— */
 function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
@@ -934,7 +1003,7 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
   padEl.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const k = b.dataset.k;
-    if (k === 'ok') { const v = evalExpr(expr); if (isNaN(v) || v <= 0) { toast('先输入金额'); return; } onOk(v); return; }
+    if (k === 'ok') { const v = evalExpr(String(expr).replace(/\+$/, '')); if (isNaN(v) || v <= 0) { toast('先输入金额'); return; } if (!guardOnce()) return; onOk(v); return; }
     if (k === '⌫') expr = expr.slice(0, -1);
     else if (k === '＋') { if (expr && !expr.endsWith('+') && expr.length < 22) expr += '+'; }
     else if (k === '.') { if (!term().includes('.') && expr.length < 22) expr += (term() === '' ? '0.' : '.'); }
@@ -942,7 +1011,11 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
     paint();
   });
   paint();
-  return { reset(v) { expr = v ? String(v) : ''; paint(); } };
+  const okBtn = padEl.querySelector('[data-k="ok"]');
+  return {
+    reset(v) { expr = v ? String(v) : ''; paint(); },
+    setOk(label) { if (okBtn) okBtn.textContent = label || okLabel; }
+  };
 }
 
 /* —— 滑动收车 —— */
@@ -968,6 +1041,9 @@ function openQuick(tripId) {
   if (!act.find(c => c.id === quickCatId)) quickCatId = act.length ? act[0].id : 'other';
   $('#quickTitle').textContent = '第 ' + tripSeq(t) + ' 趟 · 记一笔';
   $('#quickNote').value = ''; $('#quickNoteWrap').style.display = 'none';
+  $('#quickDate').value = t.status === 'open' ? todayStr() : (t.endDate || todayStr());
+  $('#quickDateWrap').style.display = 'none';
+  updateQuickDateBtn();
   quickPadCtl.reset('');
   renderQuickChips();
   openSheet($('#sheet-quick'));
@@ -978,13 +1054,17 @@ function renderQuickChips() {
     .map(c => '<div class="chip' + (c.id === quickCatId ? ' on' : '') + '" data-cat="' + c.id + '"><em>' + c.icon + '</em>' + esc(c.name) + '</div>').join('')
     + '<div class="chip" data-newexp><em>＋</em>新科目</div>';
   const c = catById(quickCatId);
-  $('#quickCat').textContent = t ? ('记到「第 ' + tripSeq(t) + ' 趟 · ' + c.name + '」，' + (t.status === 'open' ? '自动带上今天日期' : '按到家日期记')) : '';
+  $('#quickCat').textContent = t ? ('记到「第 ' + tripSeq(t) + ' 趟 · ' + c.name + '」') : '';
   const com = commonAmounts(quickCatId);
   $('#quickCommon').innerHTML = com.length ? '<span class="lbl">常用</span>' + com.map(v => '<button data-amt="' + v + '">' + fmt(v) + '</button>').join('') : '';
 }
+function updateQuickDateBtn() {
+  const d = $('#quickDate').value;
+  $('#quickDateBtn').textContent = (d === todayStr() ? '记在今天' : '记在 ' + fmtMD(d)) + '（点了改日期）';
+}
 function quickSave(v) {
   const t = S.trips.find(x => x.id === quickTripId); if (!t) return;
-  const date = t.status === 'open' ? todayStr() : (t.endDate || todayStr());
+  const date = $('#quickDate').value || (t.status === 'open' ? todayStr() : (t.endDate || todayStr()));
   const note = $('#quickNote').value.trim();
   t.expenses.push({ id: uid(), catId: quickCatId, amount: v, date, note });
   save();
@@ -1002,8 +1082,18 @@ function openAmtPad(cfg) {
   $('#amtDate').value = cfg.date || todayStr();
   $('#amtNote').value = cfg.note || '';
   $('#amtDelBtn').style.display = cfg.canDelete ? '' : 'none';
+  amtPadCtl.setOk(cfg.okLabel);
+  renderAmtChips();
   amtPadCtl.reset(cfg.expr || '');
   openSheet($('#sheet-amt'));
+}
+/* 改一笔支出时可顺手改科目（记错科目不用删了重记）；cfg.catId 存在才显示 */
+function renderAmtChips() {
+  const box = $('#amtChips');
+  if (!amtCfg || !amtCfg.catId) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const list = S.categories.expense.filter(c => c.active || c.id === amtCfg.catId);
+  box.style.display = '';
+  box.innerHTML = list.map(c => '<div class="chip' + (c.id === amtCfg.catId ? ' on' : '') + '" data-amtcat="' + c.id + '"><em>' + c.icon + '</em>' + esc(c.name) + '</div>').join('');
 }
 
 /* —— 发车 —— */
@@ -1039,7 +1129,7 @@ function renderCloseRows() {
   const t = S.trips.find(x => x.id === closeCtx.tripId); if (!t) return;
   const exp = tripTotals(t).exp;
   $('#closeExp').textContent = '¥' + fmt(exp);
-  $('#closeIncomeRows').innerHTML = S.categories.income.filter(c => c.active).map(c => {
+  $('#closeIncomeRows').innerHTML = S.categories.income.filter(c => c.active || (closeCtx.inc[c.id] || 0) > 0).map(c => {
     const v = closeCtx.inc[c.id] || 0;
     return '<div class="row" data-closeinc="' + c.id + '"><span class="ric">' + c.icon + '</span>'
       + '<div class="rmain"><b>' + esc(c.name) + '</b></div>'
@@ -1049,11 +1139,17 @@ function renderCloseRows() {
   const p = inc - exp;
   $('#closeProfit').textContent = (p >= 0 ? '+' : '−') + fmt(Math.abs(p));
 }
-function doCloseTrip() {
+async function doCloseTrip() {
   const t = S.trips.find(x => x.id === closeCtx.tripId); if (!t) return;
   const d = $('#closeDate').value;
   if (!d) { toast('先选到家日期'); $('#closeSlide').ttqReset(); return; }
   if (t.startDate && d < t.startDate) { toast('到家日期不能早于发车日期'); $('#closeSlide').ttqReset(); return; }
+  /* 零收入确认：司机常有账期，允许先收车、详情里补收入，但要防"忘了填" */
+  const incSum = Object.values(closeCtx.inc).reduce((s, v) => s + (v || 0), 0);
+  if (incSum <= 0) {
+    const goOn = await ask('这趟还没填收入，确定先收车吗？回头可在趟次详情里补填');
+    if (!goOn) { $('#closeSlide').ttqReset(); return; }
+  }
   t.incomes = Object.keys(closeCtx.inc).filter(cid => closeCtx.inc[cid] > 0)
     .map(cid => ({ id: uid(), catId: cid, amount: closeCtx.inc[cid], date: d }));
   t.endDate = d; t.status = 'closed';
@@ -1089,6 +1185,7 @@ function bfUpdateProfit() {
   $('#bfProfit').textContent = (p >= 0 ? '+' : '−') + fmt(Math.abs(p));
 }
 function bfSave() {
+  if (!guardOnce()) return;
   const s = $('#bfStart').value, e = $('#bfEnd').value;
   if (!s || !e) { toast('发车、到家日期都要填'); return; }
   if (e < s) { toast('到家日期不能早于发车日期'); return; }
@@ -1125,6 +1222,7 @@ function openNewcat(ctx) {
   openSheet($('#sheet-newcat'));
 }
 function saveNewcat() {
+  if (!guardOnce()) return;
   const name = $('#newcatName').value.trim();
   if (!name) { toast('先起个名'); return; }
   const list = S.categories[newcatCtx.type];
@@ -1224,6 +1322,8 @@ function exportData() {
   a.download = '趟趟清备份-' + todayStr().replace(/-/g, '') + '.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  S.settings.lastBackupAt = todayStr(); save();
+  if (curView === 'home') renderHome();
   toast('已导出备份，发到自己微信收藏最保险');
 }
 function importData(file) {
@@ -1244,7 +1344,7 @@ function importData(file) {
 /* —— 主题 —— */
 function applyTheme() {
   document.body.className = 'theme-' + (S.settings.theme === 'night' ? 'night' : 'day');
-  $('#themeBtn').textContent = S.settings.theme === 'night' ? '☀️' : '🌙';
+  $('#themeBtn').innerHTML = S.settings.theme === 'night' ? SVG_SUN : SVG_MOON;
 }
 function toggleTheme() {
   S.settings.theme = S.settings.theme === 'night' ? 'day' : 'night';
@@ -1262,6 +1362,7 @@ document.addEventListener('click', e => {
     if (act === 'quick') { const t = openTrip(); if (t) openQuick(t.id); }
     else if (act === 'start') openStart();
     else if (act === 'prevrep') { genReport(el.dataset.m); S.settings.lastReportSeen = el.dataset.m; save(); }
+    else if (act === 'backup') exportData();
     else if (act === 'addexp') openQuick(detailTripId);
     else if (act === 'goclose') openCloseSheet(detailTripId);
     else if (act === 'deltrip') {
@@ -1277,6 +1378,7 @@ document.addEventListener('click', e => {
   if ((el = q('.trip-card[data-trip]'))) { detailTripId = el.dataset.trip; renderTripDetail(); openSheet($('#sheet-trip')); return; }
   if ((el = q('[data-year]'))) { statYear = el.dataset.year; renderStats(); return; }
   if ((el = q('[data-cat]'))) { quickCatId = el.dataset.cat; renderQuickChips(); return; }
+  if ((el = q('[data-amtcat]'))) { if (amtCfg) { amtCfg.catId = el.dataset.amtcat; renderAmtChips(); } return; }
   if ((el = q('[data-newexp]'))) { openNewcat({ type: 'expense', mode: 'new', from: 'quick' }); return; }
   if ((el = q('[data-amt]'))) { quickPadCtl.reset(el.dataset.amt); return; }
   if ((el = q('[data-ic]'))) { newcatCtx.icon = el.dataset.ic; $$('#newcatIcons .chip').forEach(c => c.classList.toggle('on', c.dataset.ic === el.dataset.ic)); return; }
@@ -1309,7 +1411,8 @@ document.addEventListener('click', e => {
     const en = t.expenses.find(x => x.id === el.dataset.entry); if (!en) return;
     openAmtPad({ title: '改「' + catById(en.catId).name + '」的一笔', expr: String(en.amount),
       showDate: true, date: en.date, showNote: true, note: en.note || '', okLabel: '✓ 保 存', canDelete: true,
-      onSave: (v, d, n) => { en.amount = v; if (d) en.date = d; en.note = n; save(); },
+      catId: en.catId,
+      onSave: (v, d, n) => { en.amount = v; if (d) en.date = d; en.note = n; if (amtCfg.catId) en.catId = amtCfg.catId; save(); },
       onDelete: () => { t.expenses = t.expenses.filter(x => x.id !== en.id); save(); } });
     return;
   }
@@ -1334,11 +1437,11 @@ document.addEventListener('click', e => {
 });
 
 /* —— 手势：关闭当前最上层弹层（供左缘右滑 / 下拉复用） —— */
+/* 系统返回键到达（popstate）时调用：历史已被浏览器消费，只做视觉关闭 */
 function closeTopSheet() {
   if (!sheetStack.length) return false;
-  const topId = sheetStack[sheetStack.length - 1];
-  const el = document.getElementById(topId);
-  if (el) { closeSheet(el); return true; }
+  const el = document.getElementById(sheetStack[sheetStack.length - 1]);
+  if (el) { closeSheetVisual(el); return true; }
   return false;
 }
 
@@ -1426,10 +1529,85 @@ function initPullDown() {
   }, { passive: true });
 }
 
+/* ================= [JS-6] 内置自检（工程化基座） =================
+   跑法：浏览器打开本文件，在地址末尾加 #test 回车刷新（或控制台执行 runSelfTests()）。
+   原则：只测纯函数与统计口径；口径类测试临时换入夹具数据，测完必还原真实数据。
+   加测试：按 eq(实际, 期望, '说明') 的格式追加断言即可，详见 TESTING.md。 */
+function runSelfTests() {
+  const R = [];
+  const eq = (got, want, msg) => {
+    const ok = JSON.stringify(got) === JSON.stringify(want);
+    R.push({ ok, msg: msg + (ok ? '' : '　← 期望 ' + JSON.stringify(want) + '，实得 ' + JSON.stringify(got)) });
+  };
+
+  /* —— 纯函数 —— */
+  eq(evalExpr('300+250'), 550, 'evalExpr 连加');
+  eq(evalExpr('12.5'), 12.5, 'evalExpr 小数');
+  eq(evalExpr(''), 0, 'evalExpr 空串为 0');
+  eq(isNaN(evalExpr('3+-2')), true, 'evalExpr 拒绝负数');
+  eq(fmtMD('2026-07-12'), '07-12', 'fmtMD 取月日');
+  eq(yearOf('2026-07-12'), '2026', 'yearOf');
+  eq(monthOf('2026-07-12'), '2026-07', 'monthOf');
+  eq(esc('<b a="1">'), '&lt;b a=&quot;1&quot;&gt;', 'esc 防 XSS 转义');
+
+  /* —— 迁移与数据清洗 —— */
+  const dirty = { trips: [{ id: 'x', startDate: '2026-01-01', endDate: '2026-01-02', status: 'closed',
+    expenses: [{ id: 'y', catId: 'fuel', amount: '300', date: '2026-01-01' }], incomes: [] }] };
+  const md = migrate(dirty);
+  eq(md.trips[0].expenses[0].amount, 300, 'migrate 把字符串金额洗成数字');
+  eq(Array.isArray(md.maintenance), true, 'migrate 补齐缺失的 maintenance');
+  eq(migrate(null).trips.length, 0, 'migrate 空数据回默认');
+  eq(typeof migrate(null).settings.lastBackupAt, 'string', 'migrate 合并新增 settings 字段');
+
+  /* —— 统计口径（换夹具数据，测完还原）—— */
+  const real = S;
+  S = {
+    schemaVersion: 1, settings: defaultData().settings, categories: defaultData().categories,
+    trips: [
+      { id: 'a', startDate: '2025-12-28', endDate: '2026-01-03', status: 'closed', createdAt: '1',
+        expenses: [{ id: 'e1', catId: 'fuel', amount: 1000, date: '2025-12-29', note: '' }],
+        incomes: [{ id: 'i1', catId: 'cargo', amount: 3000, date: '2026-01-03' }] },
+      { id: 'b', startDate: '2026-01-05', endDate: '2026-01-09', status: 'closed', createdAt: '2',
+        expenses: [{ id: 'e2', catId: 'toll', amount: 500, date: '2026-01-06', note: '' },
+                   { id: 'e3', catId: 'fuel', amount: 800, date: '2026-01-07', note: '' }],
+        incomes: [{ id: 'i2', catId: 'cargo', amount: 2000, date: '2026-01-09' }] },
+      { id: 'c', startDate: '2026-02-01', endDate: null, status: 'open', createdAt: '3',
+        expenses: [{ id: 'e4', catId: 'fuel', amount: 800, date: '2026-02-01', note: '' }], incomes: [] }
+    ],
+    maintenance: [{ id: 'm1', date: '2026-01-15', amount: 600, note: '换机油' }]
+  };
+  try {
+    eq(tripTotals(S.trips[1]).profit, 700, 'tripTotals 单趟利润 = 收入 - 支出');
+    eq(tripSeq(S.trips[0]), 1, '口径：编号按发车年（2025-12-28 发车 = 2025 年第 1 趟）');
+    eq(tripSeq(S.trips[1]), 1, '口径：跨年从 1 重新编号');
+    eq(closedTripsIn('2026').length, 2, '口径：利润按到家日期归年（跨年趟算 2026）');
+    eq(yearStats('2026').profit, 2700, 'yearStats 年利润');
+    eq(yearStats('2026').maint, 600, 'yearStats 维修费单列、不进趟利润');
+    eq(monthProfits('2026')[0], 2700, 'monthProfits 一月合计');
+    eq(commonAmounts('fuel'), [800, 1000], 'commonAmounts 按出现次数排序');
+    eq(tripDays(S.trips[1]), 5, 'tripDays 天数含首尾');
+  } finally { S = real; }
+
+  const fails = R.filter(r => !r.ok);
+  const text = ['【趟趟清 自检报告 · v' + APP_VER + '】',
+    '共 ' + R.length + ' 项 · 通过 ' + (R.length - fails.length) + ' · 失败 ' + fails.length,
+    '━━━━━━━━━━━━━━']
+    .concat(R.map(r => (r.ok ? '✓ ' : '✗ ') + r.msg)).join('\n');
+  console.log(text);
+  try { lastReport = { title: '自检报告', text: text }; } catch (e) {}
+  const rt = $('#reportTitle'), rx = $('#reportText'), sh = $('#sheet-report');
+  if (rt) rt.textContent = '自检报告';
+  if (rx) rx.textContent = text;
+  if (sh) openSheet(sh);
+  return fails.length === 0;
+}
+window.runSelfTests = runSelfTests;
+
 /* —— 静态控件绑定 + 启动 —— */
 (async function init() {
   S = migrate((await Store.load()) || defaultData());
   applyTheme();
+  $$('.js-ver').forEach(el => el.textContent = 'v' + APP_VER);
 
   quickPadCtl = makePad($('#quickPad'), $('#quickAmt'), $('#quickEq'), '✓ 记 上', quickSave);
   amtPadCtl = makePad($('#amtPad'), $('#amtVal'), $('#amtEq'), '✓ 保 存', v => {
@@ -1446,6 +1624,7 @@ function initPullDown() {
   $('#themeBtn').addEventListener('click', toggleTheme);
   $('#btnBackfill').addEventListener('click', openBackfill);
   $('#btnStartGo').addEventListener('click', () => {
+    if (!guardOnce()) return;
     if (openTrip()) { toast('已有在途的趟'); return; }
     const d = $('#startDate').value || todayStr();
     S.trips.push({ id: uid(), startDate: d, endDate: null, status: 'open', createdAt: new Date().toISOString(), expenses: [], incomes: [] });
@@ -1457,6 +1636,11 @@ function initPullDown() {
     w.style.display = w.style.display === 'none' ? '' : 'none';
     if (w.style.display !== 'none') $('#quickNote').focus();
   });
+  $('#quickDateBtn').addEventListener('click', () => {
+    const w = $('#quickDateWrap');
+    w.style.display = w.style.display === 'none' ? '' : 'none';
+  });
+  $('#quickDate').addEventListener('change', updateQuickDateBtn);
   $('#closeDate').addEventListener('change', renderCloseRows);
   initSlide($('#closeSlide'), doCloseTrip);
   $('#sheet-backfill').addEventListener('input', bfUpdateProfit);
@@ -1477,6 +1661,7 @@ function initPullDown() {
   initEdgeSwipe();
   initPullDown();
   showView('home');
+  if (location.hash === '#test') setTimeout(runSelfTests, 60);
 })();
 </script>
 </body>
