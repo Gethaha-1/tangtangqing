@@ -8,7 +8,7 @@
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
-  趟趟清 v1.2.0 —— 货运趟次记账（单文件应用）
+  趟趟清 v1.3.0 —— 多车辆 · 自定义账期 · 按到家日期排序
   文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md / AI-GUIDE.md）：
     [CSS-1] 主题令牌（日「宣纸账房」/ 夜「瓷青泥金」双主题）
     [CSS-2] 通用布局 / 组件
@@ -298,6 +298,13 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   font-family:ui-monospace,Menlo,"PingFang SC",monospace; }
 
 .foot-note { text-align:center; font-size:12px; color:var(--sub); margin-top:22px; line-height:1.8; }
+.scope-row { display:flex; gap:8px; overflow-x:auto; padding:2px 1px 8px; scrollbar-width:none; }
+.scope-row::-webkit-scrollbar { display:none; }
+.scope-row .pill { flex:0 0 auto; }
+.scope-note { font-size:12.5px; color:var(--sub); margin:-2px 0 9px; line-height:1.6; }
+.vehicle-badge { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--sub);
+  border:1px solid var(--line); border-radius:999px; padding:3px 8px; margin-bottom:7px; }
+.save-state { font-size:12px; color:var(--sub); text-align:center; min-height:18px; margin-top:8px; }
 </style>
 </head>
 <body class="theme-day">
@@ -312,9 +319,10 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
       <button class="icon-btn" id="themeBtn" title="切换日/夜"></button>
     </div>
     <div id="homeBanner"></div>
+    <div class="scope-row" id="homeVehicleScope"></div>
     <div class="panel hero" style="margin-top:10px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <div class="profit-label">本 年 利 润</div>
+        <div class="profit-label" id="homeProfitLabel">本 账 期 利 润</div>
         <div class="num" style="font-size:13px;color:var(--sub)" id="homeYear"></div>
       </div>
       <div class="profit-big num display" id="homeProfit">¥ 0</div>
@@ -330,8 +338,9 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
       <div id="homeNow"></div>
       <div class="bars-cap"><span>月度利润</span><span id="barsMax"></span></div>
       <div class="bars" id="homeBars"></div>
-      <div class="bars-x"><span>1月</span><span>6月</span><span>12月</span></div>
+      <div class="bars-x" id="homeBarsX"><span></span><span></span><span></span></div>
     </div>
+    <div class="save-state" id="saveState">数据已保存在本机</div>
     <div class="foot-note">趟趟清 <span class="js-ver"></span> · 数据存在本机 · 记得每月备份（更多 → 备份）</div>
   </div>
 </section>
@@ -342,21 +351,24 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
     <div class="vhead"><h2>趟次</h2>
       <div class="right"><button class="pill" id="btnBackfill">补录旧账</button></div>
     </div>
+    <div class="scope-row" id="tripVehicleScope"></div>
+    <div class="scope-note" id="tripPeriodNote"></div>
     <div id="tripList"></div>
   </div>
 </section>
 
 <!-- 统计 -->
-<section class="view" id="view-stats">
-  <div class="wrap">
-    <div class="vhead"><h2>统计</h2></div>
-    <div class="pill-row" id="statYears"></div>
+  <section class="view" id="view-stats">
+    <div class="wrap">
+    <div class="vhead"><h2>统计</h2><div class="right"><button class="pill" id="btnPeriod">设置账期</button></div></div>
+    <div class="scope-row" id="statVehicleScope"></div>
+    <div class="scope-note" id="statPeriodNote"></div>
     <div class="panel" style="margin-top:10px">
       <div class="bars-cap"><span id="statBarsTitle">月度利润</span><span id="statBarsMax"></span></div>
       <div class="bars" id="statBars"></div>
-      <div class="bars-x"><span>1月</span><span>6月</span><span>12月</span></div>
+      <div class="bars-x" id="statBarsX"><span></span><span></span><span></span></div>
     </div>
-    <div class="sec-label">全年汇总</div>
+    <div class="sec-label">账期汇总</div>
     <div class="panel" id="statSummary"></div>
     <div class="sec-label">费用构成（每花 100 块，都花哪了）</div>
     <div class="panel" id="statCats"></div>
@@ -368,7 +380,7 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
           <button class="btn sm" style="width:110px" id="btnMonthRep">出月报</button>
         </div>
       </div>
-      <button class="btn ghost sm" id="btnYearRep" style="margin-top:12px">出全年年报</button>
+      <button class="btn ghost sm" id="btnYearRep" style="margin-top:12px">出本账期报告</button>
     </div>
   </div>
 </section>
@@ -379,6 +391,8 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
     <div class="vhead"><h2>维修保养</h2>
       <div class="right"><span style="font-size:12.5px;color:var(--sub)">不计入趟次利润，单独立账</span></div>
     </div>
+    <div class="scope-row" id="maintVehicleScope"></div>
+    <div class="scope-note" id="maintPeriodNote"></div>
     <button class="btn" id="btnAddMaint">＋ 记一笔维修保养</button>
     <div id="maintList"></div>
   </div>
@@ -389,6 +403,8 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   <div class="wrap">
     <div class="vhead"><h2>更多</h2></div>
     <div class="panel">
+      <div class="row" data-go="vehicles"><span class="ric">🚛</span><div class="rmain"><b>车辆管理</b><span>添加车辆、改名称和车牌、停用旧车</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="period"><span class="ric">🗓️</span><div class="rmain"><b>账期设置</b><span id="periodStateTxt">设置趟号和统计的开始、结束日期</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="cats"><span class="ric">🏷️</span><div class="rmain"><b>科目管理</b><span>随时添加新费用项目、改名、停用</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="backfill"><span class="ric">📖</span><div class="rmain"><b>补录旧账</b><span>把以前本子上的整趟账搬进来</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="export"><span class="ric">📤</span><div class="rmain"><b>备份数据</b><span>导出成文件，发到微信收藏保存</span></div><span class="rarrow">›</span></div>
@@ -416,6 +432,7 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   <div class="shead"><button class="back" data-close>‹</button><h3>发车</h3></div>
   <div class="sbody">
     <div class="panel">
+      <div class="field"><label>选择车辆</label><div class="scope-row" id="startVehicleChips"></div></div>
       <div class="field"><label>发车日期</label><input type="date" id="startDate"></div>
       <div class="now-sub" style="margin-top:10px" id="startSeqTip"></div>
     </div>
@@ -492,6 +509,7 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   <div class="sbody">
     <div class="banner" style="margin:0 0 12px">照着本子誊：每项填<b>总数</b>就行，没有的空着</div>
     <div class="panel">
+      <div class="field"><label>记到哪辆车</label><div class="scope-row" id="bfVehicleChips"></div></div>
       <div class="frow">
         <div class="field"><label>发车日期</label><input type="date" id="bfStart"></div>
         <div class="field"><label>到家日期</label><input type="date" id="bfEnd"></div>
@@ -503,6 +521,43 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
       <div class="total-line" style="margin-top:8px"><span>这趟利润</span><b class="big num display" id="bfProfit">¥0</b></div>
     </div>
     <button class="btn" id="btnBfSave" style="margin-top:14px">✓ 存入账本</button>
+  </div>
+</div>
+
+<!-- 账期设置 -->
+<div class="sheet" id="sheet-period">
+  <div class="shead"><button class="back" data-close>‹</button><h3>账期设置</h3></div>
+  <div class="sbody">
+    <div class="banner" style="margin:0 0 12px">趟号、趟次列表和账目统计，都只计算这个日期范围内的记录</div>
+    <div class="panel">
+      <div class="frow">
+        <div class="field"><label>开始日期</label><input type="date" id="periodStart"></div>
+        <div class="field"><label>结束日期</label><input type="date" id="periodEnd"></div>
+      </div>
+      <div class="now-sub" id="periodDaysTip"></div>
+    </div>
+    <button class="btn" id="btnPeriodSave" style="margin-top:14px">✓ 保存账期</button>
+  </div>
+</div>
+
+<!-- 车辆管理 -->
+<div class="sheet" id="sheet-vehicles">
+  <div class="shead"><button class="back" data-close>‹</button><h3>车辆管理</h3></div>
+  <div class="sbody">
+    <div class="panel" id="vehicleList"></div>
+    <button class="btn ghost" id="btnAddVehicle" style="margin-top:12px">＋ 添加一辆车</button>
+  </div>
+</div>
+
+<!-- 添加 / 修改车辆 -->
+<div class="sheet" id="sheet-vehicle-edit">
+  <div class="shead"><button class="back" data-close>‹</button><h3 id="vehicleEditTitle">添加车辆</h3></div>
+  <div class="sbody">
+    <div class="panel">
+      <div class="field"><label>车辆名称</label><input type="text" id="vehicleName" maxlength="12" placeholder="比如：一号车"></div>
+      <div class="field"><label>车牌号（可不填）</label><input type="text" id="vehiclePlate" maxlength="12" placeholder="比如：鲁A12345"></div>
+    </div>
+    <button class="btn" id="btnVehicleSave" style="margin-top:14px">✓ 保存车辆</button>
   </div>
 </div>
 
@@ -554,10 +609,11 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
 </div>
 
 <div id="toast"></div>
+<script src="./src/domain.js"></script>
 <script>
 /* ================= [JS-1] 存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.2.0';
-const SCHEMA_VER = 1;
+const APP_VER = '1.3.0';
+const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const STORE_KEY = 'tangtangqing-data';
 
 /* 三级降级：手机浏览器 localStorage → Claude 预览 window.storage → 内存 */
@@ -588,9 +644,17 @@ const Store = (() => {
 
 /* 默认科目（用户可增改；builtin 仅表示出厂自带，同样可改名/停用） */
 function defaultData() {
+  const period = TTQDomain.defaultPeriod();
   return {
     schemaVersion: SCHEMA_VER,
-    settings: { theme: 'day', lastReportSeen: '', lastBackupAt: '' },
+    settings: {
+      theme: 'day',
+      lastReportSeen: '',
+      lastBackupAt: '',
+      activeVehicleId: 'all',
+      periodStartDate: period.start,
+      periodEndDate: period.end
+    },
     categories: {
       expense: [
         { id: 'fuel', name: '油费',   icon: '⛽', builtin: true, active: true },
@@ -607,38 +671,25 @@ function defaultData() {
         { id: 'back',  name: '返程收入', icon: '🔁', builtin: true, active: true }
       ]
     },
-    trips: [],       /* {id, startDate, endDate|null, status:'open'|'closed', expenses:[{id,catId,amount,date,note}], incomes:[{id,catId,amount,date}], createdAt} */
-    maintenance: []  /* {id, date, amount, note} */
+    vehicles: [{ id: 'vehicle_default', name: '一号车', plateNo: '', active: true, createdAt: new Date().toISOString() }],
+    trips: [],       /* {id, vehicleId, startDate, endDate|null, status:'open'|'closed', expenses:[...], incomes:[...], createdAt, closedAt?} */
+    maintenance: []  /* {id, vehicleId, date, amount, note} */
   };
 }
 
-/* 数据迁移：以后加字段 → 在此追加 migrations[旧版本号] = 升级函数（见 ARCHITECTURE.md） */
-const migrations = { /* 1 -> 2 时写：2:(d)=>{...; d.schemaVersion=2; return d;} */ };
 function migrate(d) {
-  if (!d || typeof d !== 'object') return defaultData();
-  let v = d.schemaVersion || 1;
-  while (v < SCHEMA_VER) { const fn = migrations[v + 1]; if (!fn) break; d = fn(d); v = d.schemaVersion; }
-  const base = defaultData();
-  d.settings = Object.assign(base.settings, d.settings || {});
-  d.categories = d.categories || base.categories;
-  d.trips = Array.isArray(d.trips) ? d.trips : [];
-  d.maintenance = Array.isArray(d.maintenance) ? d.maintenance : [];
-  /* 数据清洗：金额一律转数字（防手改备份文件混入字符串等坏值），坏值按 0 */
-  const num = (v) => { const n = typeof v === 'number' ? v : parseFloat(v); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
-  d.trips.forEach(t => {
-    t.expenses = (t.expenses || []).map(e => Object.assign(e, { amount: num(e.amount) }));
-    t.incomes  = (t.incomes  || []).map(e => Object.assign(e, { amount: num(e.amount) }));
-  });
-  d.maintenance.forEach(m => { m.amount = num(m.amount); });
-  return d;
+  return TTQDomain.migrate(d, defaultData());
 }
 
 let S = null;               /* 全局状态（单一数据源） */
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
+  const stateEl = $('#saveState');
+  if (stateEl) stateEl.textContent = '正在保存…';
   saveTimer = setTimeout(async () => {
     const ok = await Store.save(S);
+    if (stateEl) stateEl.textContent = ok ? '数据已保存在本机' : '保存失败，请立即导出备份';
     if (!ok) toast('⚠️ 保存失败！请立即到「更多 → 备份数据」导出一份');
   }, 150);
 }
@@ -671,54 +722,74 @@ function catById(id) {
   return S.categories.expense.find(c => c.id === id) || S.categories.income.find(c => c.id === id)
     || { id, name: '（已删科目）', icon: '❔' };
 }
-function openTrip() { return S.trips.find(t => t.status === 'open') || null; }
-
-/* 趟次编号口径：按【发车日期】所在年，年内按发车日期排序，第 N 趟 */
+function vehicleById(id) {
+  return S.vehicles.find(v => v.id === id) || { id, name: '（未知车辆）', plateNo: '', active: false };
+}
+function vehicleLabel(id) {
+  const v = vehicleById(id);
+  return v.name + (v.plateNo ? ' · ' + v.plateNo : '');
+}
+function activeVehicleId() {
+  return S.settings.activeVehicleId || 'all';
+}
+function periodStart() { return S.settings.periodStartDate; }
+function periodEnd() { return S.settings.periodEndDate; }
+function periodLabel() { return periodStart() + ' 至 ' + periodEnd(); }
+function openTrip(vehicleId) {
+  return S.trips.find(t => t.status === 'open' && (!vehicleId || t.vehicleId === vehicleId)) || null;
+}
+function openTripsInScope(vehicleId) {
+  return S.trips.filter(t => t.status === 'open' && (vehicleId === 'all' || t.vehicleId === vehicleId));
+}
 function tripSeq(t) {
-  const y = yearOf(t.startDate);
-  const list = S.trips.filter(x => yearOf(x.startDate) === y)
-    .sort((a, b) => (a.startDate + a.createdAt).localeCompare(b.startDate + b.createdAt));
-  return list.indexOf(t) + 1;
+  return TTQDomain.tripSeq(S, t, periodStart(), periodEnd());
 }
-function tripTotals(t) {
-  const exp = t.expenses.reduce((s, e) => s + e.amount, 0);
-  const inc = t.incomes.reduce((s, e) => s + e.amount, 0);
-  return { exp, inc, profit: inc - exp };
-}
+function tripTotals(t) { return TTQDomain.tripTotals(t); }
 function tripDays(t) {
   if (!t.startDate) return 0;
   const end = t.endDate || todayStr();
   const ms = new Date(end) - new Date(t.startDate);
   return Math.max(1, Math.round(ms / 86400000) + 1);
 }
-/* 统计口径：已收车的趟，按【到家日期】归入月份/年份（钱到家才算落袋） */
+/* 统计口径：已收车的趟按到家日期归入当前账期；维修按自己的日期归账期 */
 function closedTripsIn(prefix) {
-  return S.trips.filter(t => t.status === 'closed' && t.endDate && t.endDate.startsWith(prefix));
+  return TTQDomain.closedTripsInPeriod(S, periodStart(), periodEnd(), activeVehicleId())
+    .filter(t => t.endDate && t.endDate.startsWith(prefix));
 }
-function maintIn(prefix) { return S.maintenance.filter(m => m.date && m.date.startsWith(prefix)); }
+function maintIn(prefix) {
+  return TTQDomain.maintenanceInPeriod(S, periodStart(), periodEnd(), activeVehicleId())
+    .filter(m => m.date && m.date.startsWith(prefix));
+}
 function sumMaint(prefix) { return maintIn(prefix).reduce((s, m) => s + m.amount, 0); }
-function yearStats(y) {
-  const trips = closedTripsIn(y);
-  let inc = 0, exp = 0;
-  trips.forEach(t => { const tt = tripTotals(t); inc += tt.inc; exp += tt.exp; });
-  return { count: trips.length, inc, exp, profit: inc - exp, maint: sumMaint(y) };
+function periodStats(vehicleId) {
+  return TTQDomain.periodStats(S, periodStart(), periodEnd(), vehicleId == null ? activeVehicleId() : vehicleId);
 }
-function monthProfits(y) {
-  const arr = new Array(12).fill(0);
-  closedTripsIn(y).forEach(t => { const m = parseInt(t.endDate.slice(5, 7), 10) - 1; arr[m] += tripTotals(t).profit; });
-  return arr;
+function periodMonthProfits(vehicleId) {
+  return TTQDomain.monthProfits(S, periodStart(), periodEnd(), vehicleId == null ? activeVehicleId() : vehicleId);
 }
 /* 某科目历史常用金额：出现次数最多的前 3 个 */
-function commonAmounts(catId) {
+function commonAmounts(catId, vehicleId) {
   const freq = {};
-  S.trips.forEach(t => t.expenses.forEach(e => { if (e.catId === catId) freq[e.amount] = (freq[e.amount] || 0) + 1; }));
+  S.trips.filter(t => !vehicleId || t.vehicleId === vehicleId)
+    .forEach(t => t.expenses.forEach(e => { if (e.catId === catId) freq[e.amount] = (freq[e.amount] || 0) + 1; }));
   return Object.keys(freq).map(Number).sort((a, b) => freq[b] - freq[a] || b - a).slice(0, 3);
 }
-function allYears() {
-  const set = new Set([String(new Date().getFullYear())]);
-  S.trips.forEach(t => { if (t.startDate) set.add(yearOf(t.startDate)); if (t.endDate) set.add(yearOf(t.endDate)); });
-  S.maintenance.forEach(m => { if (m.date) set.add(yearOf(m.date)); });
-  return Array.from(set).sort().reverse();
+function vehicleScopeHTML() {
+  const selected = activeVehicleId();
+  const list = [{ id: 'all', name: '汇总' }].concat(S.vehicles.filter(v => v.active));
+  return list.map(v => '<button class="pill' + (v.id === selected ? ' on' : '') + '" data-vehicle-scope="' + v.id + '">' + esc(v.name) + '</button>').join('');
+}
+function renderVehicleScopes() {
+  ['homeVehicleScope', 'tripVehicleScope', 'statVehicleScope', 'maintVehicleScope'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = vehicleScopeHTML();
+  });
+}
+function setBarsLabels(el, keys) {
+  if (!el) return;
+  if (!keys.length) { el.innerHTML = '<span>—</span><span>—</span><span>—</span>'; return; }
+  const label = k => parseInt(k.slice(5), 10) + '月';
+  el.innerHTML = '<span>' + label(keys[0]) + '</span><span>' + label(keys[Math.floor((keys.length - 1) / 2)]) + '</span><span>' + label(keys[keys.length - 1]) + '</span>';
 }
 
 /* ---- 轻组件：toast / 确认框 ---- */
@@ -735,7 +806,7 @@ function ask(msg) {
 }
 
 /* ================= [JS-3] 视图渲染 ================= */
-let curView = 'home', statYear = String(new Date().getFullYear()), detailTripId = null;
+let curView = 'home', detailTripId = null;
 
 function showView(name) {
   curView = name;
@@ -750,9 +821,11 @@ function renderCurrent() {
 
 /* ---- 首页 ---- */
 function renderHome() {
-  const y = String(new Date().getFullYear());
-  const st = yearStats(y);
-  $('#homeYear').textContent = y + ' 年';
+  renderVehicleScopes();
+  const scope = activeVehicleId();
+  const st = periodStats(scope);
+  $('#homeYear').textContent = periodStart().slice(2) + ' → ' + periodEnd().slice(2);
+  $('#homeProfitLabel').textContent = scope === 'all' ? '本 账 期 总 利 润' : '本 车 账 期 利 润';
   $('#homeProfit').textContent = '¥ ' + fmt(st.profit);
   $('#homeTrips').textContent = st.count + ' 趟';
   $('#homeInc').textContent = '¥' + fmt(st.inc);
@@ -763,25 +836,31 @@ function renderHome() {
     $('#gaugeFill').style.width = Math.min(100, pct) + '%';
   } else { $('#gaugePct').textContent = '—'; $('#gaugeFill').style.width = '0%'; }
 
-  /* 当前趟 / 发车按钮 */
-  const t = openTrip(); const box = $('#homeNow');
-  if (t) {
-    const tt = tripTotals(t);
-    box.innerHTML = '<div class="now-trip">'
-      + '<div class="now-head"><i class="dot"></i><b>第 ' + tripSeq(t) + ' 趟 · 在途中</b></div>'
-      + '<div class="now-sub num">' + fmtMD(t.startDate) + ' 发车 · 第 ' + tripDays(t) + ' 天 · 已记支出 ¥' + fmt(tt.exp) + '（' + t.expenses.length + ' 笔）</div>'
-      + '<button class="btn" style="margin-top:12px" data-act="quick">＋ 记一笔</button>'
-      + '<div class="slide-close" id="homeSlide"><div class="slide-thumb">' + SVG_CHEV + '</div><span>到家后 按住向右滑动收车</span></div>'
-      + '</div>';
-    initSlide($('#homeSlide'), () => openCloseSheet(t.id));
+  /* 当前各车在途趟 / 发车按钮 */
+  const openList = openTripsInScope(scope); const box = $('#homeNow');
+  if (openList.length) {
+    const canStartAnother = S.vehicles.some(v => v.active && !openTrip(v.id));
+    box.innerHTML = openList.map(t => {
+      const tt = tripTotals(t); const seq = tripSeq(t);
+      return '<div class="now-trip">'
+        + '<div class="vehicle-badge">🚛 ' + esc(vehicleLabel(t.vehicleId)) + '</div>'
+        + '<div class="now-head"><i class="dot"></i><b>' + (seq > 0 ? '预计第 ' + seq + ' 趟' : '当前趟') + ' · 在途中</b></div>'
+        + '<div class="now-sub num">' + fmtMD(t.startDate) + ' 发车 · 第 ' + tripDays(t) + ' 天 · 已记支出 ¥' + fmt(tt.exp) + '（' + t.expenses.length + ' 笔）</div>'
+        + '<button class="btn" style="margin-top:12px" data-act="quick" data-trip="' + t.id + '">＋ 记一笔</button>'
+        + '<div class="slide-close" id="homeSlide-' + t.id + '"><div class="slide-thumb">' + SVG_CHEV + '</div><span>到家后 按住向右滑动收车</span></div>'
+        + '</div>';
+    }).join('') + (canStartAnother ? '<button class="btn ghost" style="margin-top:12px" data-act="start">＋ 另一辆车发车</button>' : '');
+    openList.forEach(t => initSlide($('#homeSlide-' + t.id), () => openCloseSheet(t.id)));
   } else {
     box.innerHTML = '<div class="now-trip"><div class="now-head"><b>现在没有在途的趟</b></div>'
       + '<div class="now-sub">出车前点一下发车，路上花一笔记一笔</div>'
       + '<button class="btn" style="margin-top:12px" data-act="start">🚚 发 车</button></div>';
   }
 
-  /* 月度小柱图 */
-  drawBars($('#homeBars'), monthProfits(y), $('#barsMax'));
+  /* 账期月度小柱图 */
+  const monthData = periodMonthProfits(scope);
+  drawBars($('#homeBars'), monthData.values, $('#barsMax'), monthData.keys);
+  setBarsLabels($('#homeBarsX'), monthData.keys);
 
   /* 顶部提醒条：上月报告 / 预览模式 */
   const bn = $('#homeBanner'); let html = '';
@@ -798,39 +877,39 @@ function renderHome() {
     html += '<div class="banner">⚠️ 当前是<b>预览模式</b>：正式使用请把本文件保存到手机，用浏览器打开（数据才会存在你手机里）</div>';
   bn.innerHTML = html;
 }
-function drawBars(el, arr, maxEl) {
+function drawBars(el, arr, maxEl, keys) {
   const max = Math.max(1, ...arr.map(v => Math.abs(v)));
-  const cm = new Date().getMonth();
+  const currentMonth = todayStr().slice(0, 7);
   el.innerHTML = arr.map((v, i) => {
     const h = Math.max(3, Math.round(Math.abs(v) / max * 100));
-    return '<i class="' + (v < 0 ? 'neg' : (i === cm ? 'hot' : '')) + '" style="height:' + h + '%" title="' + (i + 1) + '月 ¥' + fmt(v) + '"></i>';
+    return '<i class="' + (v < 0 ? 'neg' : (keys && keys[i] === currentMonth ? 'hot' : '')) + '" style="height:' + h + '%" title="' + (keys && keys[i] ? keys[i] : (i + 1) + '月') + ' ¥' + fmt(v) + '"></i>';
   }).join('');
   if (maxEl) maxEl.textContent = '最高 ¥' + fmt(Math.max(0, ...arr));
 }
 
 /* ---- 趟次列表 ---- */
 function renderTrips() {
+  renderVehicleScopes();
+  $('#tripPeriodNote').textContent = '当前账期：' + periodLabel() + ' · 已收车按到家日期排列';
   const box = $('#tripList');
-  if (!S.trips.length) {
-    box.innerHTML = '<div class="empty-tip"><em>📖</em>还没有趟次记录<br>出车点首页「发车」；以前本子上的账，点右上角「补录旧账」搬进来</div>';
+  const scope = activeVehicleId();
+  const list = TTQDomain.tripsInPeriod(S, periodStart(), periodEnd(), scope, true)
+    .slice().sort(TTQDomain.compareTripsDesc);
+  if (!list.length) {
+    box.innerHTML = '<div class="empty-tip"><em>📖</em>这个账期还没有趟次记录<br>可点首页「发车」，或点右上角补录旧账</div>';
     return;
   }
-  const byYear = {};
-  S.trips.forEach(t => { const y = yearOf(t.startDate) || '未知'; (byYear[y] = byYear[y] || []).push(t); });
-  const years = Object.keys(byYear).sort().reverse();
-  box.innerHTML = years.map(y => {
-    const list = byYear[y].sort((a, b) => (b.startDate + (b.createdAt || '')).localeCompare(a.startDate + (a.createdAt || '')));
-    const closed = list.filter(t => t.status === 'closed');
-    const profit = closed.reduce((s, t) => s + tripTotals(t).profit, 0);
-    return '<div class="year-h"><b class="display">' + y + ' 年</b><span class="num">' + closed.length + ' 趟 · 利润 ¥' + fmt(profit) + '</span></div>'
-      + list.map(tripCardHTML).join('');
-  }).join('');
+  const st = periodStats(scope);
+  box.innerHTML = '<div class="year-h"><b class="display">' + (scope === 'all' ? '全部车辆' : esc(vehicleById(scope).name)) + '</b><span class="num">' + st.count + ' 趟 · 利润 ¥' + fmt(st.profit) + '</span></div>'
+    + list.map(tripCardHTML).join('');
 }
 function tripCardHTML(t) {
   const tt = tripTotals(t); const open = t.status === 'open';
+  const seq = tripSeq(t);
   return '<div class="panel paper-grid trip-card" data-trip="' + t.id + '">'
     + (open ? '' : '<div class="stamp hand">收讫</div>')
-    + '<div class="trip-head"><span class="trip-no display">第 ' + tripSeq(t) + ' 趟</span>'
+    + (activeVehicleId() === 'all' ? '<div class="vehicle-badge">🚛 ' + esc(vehicleLabel(t.vehicleId)) + '</div>' : '')
+    + '<div class="trip-head"><span class="trip-no display">' + (seq > 0 ? '第 ' + seq + ' 趟' : '账期外在途') + '</span>'
     + (open ? '<span class="trip-open-tag">在途中</span>' : '') + '</div>'
     + '<div class="trip-date num">' + fmtMD(t.startDate) + ' 发车 · ' + (open ? '未收车' : fmtMD(t.endDate) + ' 到家') + ' · ' + tripDays(t) + ' 天</div>'
     + '<div class="trip-nums"><div class="trip-io num"><span>收入 <b class="in">¥' + fmt(tt.inc) + '</b></span><span>支出 <b class="out">¥' + fmt(tt.exp) + '</b></span></div>'
@@ -842,8 +921,12 @@ function renderTripDetail() {
   const t = S.trips.find(x => x.id === detailTripId);
   if (!t) { closeSheet($('#sheet-trip')); return; }
   const tt = tripTotals(t); const open = t.status === 'open';
-  $('#tripTitle').textContent = '第 ' + tripSeq(t) + ' 趟 · ' + (open ? '在途中' : '已收车');
-  let h = '<div class="panel"><div class="frow">'
+  const seq = tripSeq(t);
+  $('#tripTitle').textContent = (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · ' + (open ? '在途中' : '已收车');
+  let h = '<div class="panel"><div class="field"><label>所属车辆</label><div class="scope-row">'
+    + S.vehicles.filter(v => v.active || v.id === t.vehicleId).map(v =>
+      '<button class="pill' + (v.id === t.vehicleId ? ' on' : '') + '" data-trip-vehicle="' + v.id + '">' + esc(v.name) + '</button>'
+    ).join('') + '</div></div><div class="frow">'
     + '<div class="field"><label>发车日期</label><input type="date" id="dStart" value="' + esc(t.startDate) + '"></div>'
     + '<div class="field"><label>到家日期</label><input type="date" id="dEnd" value="' + esc(t.endDate || '') + '"' + (open ? ' disabled placeholder="收车时填"' : '') + '></div>'
     + '</div></div>';
@@ -884,20 +967,30 @@ function renderTripDetail() {
   h += '<button class="btn danger" data-act="deltrip">删除这一趟</button>';
   $('#tripDetail').innerHTML = h;
 
-  $('#dStart').addEventListener('change', e => { if (e.target.value) { t.startDate = e.target.value; save(); renderTripDetail(); } });
+  $('#dStart').addEventListener('change', e => {
+    if (!e.target.value) return;
+    if (t.endDate && e.target.value > t.endDate) { toast('发车日期不能晚于到家日期'); e.target.value = t.startDate; return; }
+    t.startDate = e.target.value; save(); renderTripDetail();
+  });
   const dEnd = $('#dEnd');
-  if (dEnd && !open) dEnd.addEventListener('change', e => { if (e.target.value) { t.endDate = e.target.value; save(); renderTripDetail(); } });
+  if (dEnd && !open) dEnd.addEventListener('change', e => {
+    if (!e.target.value) return;
+    if (e.target.value < t.startDate) { toast('到家日期不能早于发车日期'); e.target.value = t.endDate; return; }
+    t.endDate = e.target.value; save(); renderTripDetail();
+  });
 }
 
 /* ---- 统计 ---- */
 function renderStats() {
-  const years = allYears();
-  if (!years.includes(statYear)) statYear = years[0];
-  $('#statYears').innerHTML = years.map(y => '<button class="pill num' + (y === statYear ? ' on' : '') + '" data-year="' + y + '">' + y + ' 年</button>').join('');
-  drawBars($('#statBars'), monthProfits(statYear), $('#statBarsMax'));
-  $('#statBarsTitle').textContent = statYear + ' 年月度利润';
+  renderVehicleScopes();
+  const scope = activeVehicleId();
+  $('#statPeriodNote').textContent = '当前账期：' + periodLabel();
+  const monthData = periodMonthProfits(scope);
+  drawBars($('#statBars'), monthData.values, $('#statBarsMax'), monthData.keys);
+  setBarsLabels($('#statBarsX'), monthData.keys);
+  $('#statBarsTitle').textContent = '账期月度利润';
 
-  const st = yearStats(statYear);
+  const st = periodStats(scope);
   const net = st.profit - st.maint;
   $('#statSummary').innerHTML =
     '<div class="kv"><span>收车趟数</span><b class="num">' + st.count + ' 趟</b></div>'
@@ -910,10 +1003,11 @@ function renderStats() {
 
   /* 费用构成 */
   const sums = {};
-  closedTripsIn(statYear).forEach(t => t.expenses.forEach(e => sums[e.catId] = (sums[e.catId] || 0) + e.amount));
+  TTQDomain.closedTripsInPeriod(S, periodStart(), periodEnd(), scope)
+    .forEach(t => t.expenses.forEach(e => sums[e.catId] = (sums[e.catId] || 0) + e.amount));
   const total = Object.values(sums).reduce((s, v) => s + v, 0);
   const box = $('#statCats');
-  if (!total) { box.innerHTML = '<div class="empty-tip" style="padding:16px">这一年还没有支出记录</div>'; }
+  if (!total) { box.innerHTML = '<div class="empty-tip" style="padding:16px">这个账期还没有支出记录</div>'; }
   else {
     box.innerHTML = Object.keys(sums).sort((a, b) => sums[b] - sums[a]).map(cid => {
       const c = catById(cid); const pct = Math.round(sums[cid] / total * 1000) / 10;
@@ -921,28 +1015,30 @@ function renderStats() {
         + '<div class="track"><i style="width:' + Math.max(2, pct) + '%"></i></div></div>';
     }).join('');
   }
-  const m = new Date(); $('#repMonth').value = m.getFullYear() + '-' + String(m.getMonth() + 1).padStart(2, '0');
+  const currentMonth = todayStr().slice(0, 7);
+  $('#repMonth').value = monthData.keys.includes(currentMonth) ? currentMonth : periodStart().slice(0, 7);
 }
 
 /* ---- 维修保养 ---- */
 function renderMaint() {
+  renderVehicleScopes();
+  $('#maintPeriodNote').textContent = '当前账期：' + periodLabel();
   const box = $('#maintList');
-  if (!S.maintenance.length) { box.innerHTML = '<div class="empty-tip"><em>🔧</em>还没有维修保养记录<br>换机油、补胎、修车的钱记这里，不掺进趟次利润</div>'; return; }
-  const byYear = {};
-  S.maintenance.forEach(m => (byYear[yearOf(m.date)] = byYear[yearOf(m.date)] || []).push(m));
-  box.innerHTML = Object.keys(byYear).sort().reverse().map(y => {
-    const list = byYear[y].sort((a, b) => b.date.localeCompare(a.date));
-    const sum = list.reduce((s, m) => s + m.amount, 0);
-    return '<div class="year-h"><b class="display">' + y + ' 年</b><span class="num">共 ¥' + fmt(sum) + '</span></div>'
-      + '<div class="panel">' + list.map(m =>
-        '<div class="row" data-maint="' + m.id + '"><span class="ric">🔧</span><div class="rmain"><b>' + esc(m.note || '维修保养') + '</b><span class="num">' + m.date + '</span></div><span class="ramt out num">¥' + fmt(m.amount) + '</span><span class="rarrow">›</span></div>'
-      ).join('') + '</div>';
-  }).join('');
+  const scope = activeVehicleId();
+  const list = TTQDomain.maintenanceInPeriod(S, periodStart(), periodEnd(), scope)
+    .slice().sort((a, b) => (b.date + (b.id || '')).localeCompare(a.date + (a.id || '')));
+  if (!list.length) { box.innerHTML = '<div class="empty-tip"><em>🔧</em>这个账期还没有维修保养记录<br>换机油、补胎、修车的钱记这里，不掺进趟次利润</div>'; return; }
+  const sum = list.reduce((s, m) => s + m.amount, 0);
+  box.innerHTML = '<div class="year-h"><b class="display">' + (scope === 'all' ? '全部车辆' : esc(vehicleById(scope).name)) + '</b><span class="num">共 ¥' + fmt(sum) + '</span></div>'
+    + '<div class="panel">' + list.map(m =>
+      '<div class="row" data-maint="' + m.id + '"><span class="ric">🔧</span><div class="rmain"><b>' + esc(m.note || '维修保养') + '</b><span class="num">' + m.date + (scope === 'all' ? ' · ' + esc(vehicleById(m.vehicleId).name) : '') + '</span></div><span class="ramt out num">¥' + fmt(m.amount) + '</span><span class="rarrow">›</span></div>'
+    ).join('') + '</div>';
 }
 
 /* ---- 更多 ---- */
 function renderMore() {
   $('#themeStateTxt').textContent = '当前：' + (S.settings.theme === 'day' ? '宣纸账房（日）· 点了换瓷青泥金（夜）' : '瓷青泥金（夜）· 点了换宣纸账房（日）');
+  $('#periodStateTxt').textContent = periodLabel();
 }
 
 /* ================= [JS-4] 数字键盘 / 滑动收车 / 交互动作 ================= */
@@ -969,7 +1065,7 @@ function closeSheetVisual(el) {
   const i = sheetStack.lastIndexOf(el.id); if (i > -1) sheetStack.splice(i, 1);
   tapShield();
   const top = sheetStack[sheetStack.length - 1];
-  const re = { 'sheet-trip': renderTripDetail, 'sheet-close': renderCloseRows, 'sheet-cats': renderCats, 'sheet-quick': renderQuickChips };
+  const re = { 'sheet-trip': renderTripDetail, 'sheet-close': renderCloseRows, 'sheet-cats': renderCats, 'sheet-quick': renderQuickChips, 'sheet-vehicles': renderVehicles };
   (re[top] || renderCurrent)();
 }
 function closeSheet(el) {
@@ -1039,7 +1135,8 @@ function openQuick(tripId) {
   quickTripId = tripId;
   const act = S.categories.expense.filter(c => c.active);
   if (!act.find(c => c.id === quickCatId)) quickCatId = act.length ? act[0].id : 'other';
-  $('#quickTitle').textContent = '第 ' + tripSeq(t) + ' 趟 · 记一笔';
+  const seq = tripSeq(t);
+  $('#quickTitle').textContent = (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · ' + vehicleById(t.vehicleId).name + ' · 记一笔';
   $('#quickNote').value = ''; $('#quickNoteWrap').style.display = 'none';
   $('#quickDate').value = t.status === 'open' ? todayStr() : (t.endDate || todayStr());
   $('#quickDateWrap').style.display = 'none';
@@ -1054,8 +1151,9 @@ function renderQuickChips() {
     .map(c => '<div class="chip' + (c.id === quickCatId ? ' on' : '') + '" data-cat="' + c.id + '"><em>' + c.icon + '</em>' + esc(c.name) + '</div>').join('')
     + '<div class="chip" data-newexp><em>＋</em>新科目</div>';
   const c = catById(quickCatId);
-  $('#quickCat').textContent = t ? ('记到「第 ' + tripSeq(t) + ' 趟 · ' + c.name + '」') : '';
-  const com = commonAmounts(quickCatId);
+  const seq = t ? tripSeq(t) : 0;
+  $('#quickCat').textContent = t ? ('记到「' + vehicleById(t.vehicleId).name + ' · ' + (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · ' + c.name + '」') : '';
+  const com = commonAmounts(quickCatId, t && t.vehicleId);
   $('#quickCommon').innerHTML = com.length ? '<span class="lbl">常用</span>' + com.map(v => '<button data-amt="' + v + '">' + fmt(v) + '</button>').join('') : '';
 }
 function updateQuickDateBtn() {
@@ -1097,16 +1195,35 @@ function renderAmtChips() {
 }
 
 /* —— 发车 —— */
+let startVehicleId = null;
 function openStart() {
-  if (openTrip()) { toast('已有在途的趟，先收车再发下一趟'); return; }
+  const active = S.vehicles.filter(v => v.active);
+  if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
+  const scoped = activeVehicleId() !== 'all' ? active.find(v => v.id === activeVehicleId() && !openTrip(v.id)) : null;
+  startVehicleId = (scoped || active.find(v => !openTrip(v.id)) || active[0]).id;
+  renderStartVehicleChips();
   $('#startDate').value = todayStr(); updateStartTip();
   openSheet($('#sheet-start'));
 }
+function renderStartVehicleChips() {
+  $('#startVehicleChips').innerHTML = S.vehicles.filter(v => v.active).map(v =>
+    '<button class="pill' + (v.id === startVehicleId ? ' on' : '') + '" data-start-vehicle="' + v.id + '">' + esc(v.name) + (openTrip(v.id) ? ' · 在途' : '') + '</button>'
+  ).join('');
+}
 function updateStartTip() {
   const d = $('#startDate').value || todayStr();
-  const y = yearOf(d);
-  const n = S.trips.filter(t => yearOf(t.startDate) === y).length + 1;
-  $('#startSeqTip').textContent = '这将是 ' + y + ' 年的第 ' + n + ' 趟';
+  if (!startVehicleId) return;
+  if (openTrip(startVehicleId)) {
+    $('#startSeqTip').textContent = vehicleById(startVehicleId).name + '已有一趟在途中，请先收车';
+    return;
+  }
+  const fake = { id: '__new__', vehicleId: startVehicleId, startDate: d, endDate: null, status: 'open', createdAt: '9999' };
+  const list = TTQDomain.tripsInPeriod({ trips: S.trips.concat(fake) }, periodStart(), periodEnd(), startVehicleId, false)
+    .sort(TTQDomain.compareTripsAsc);
+  const n = list.findIndex(t => t.id === fake.id) + 1;
+  $('#startSeqTip').textContent = TTQDomain.isInRange(d, periodStart(), periodEnd())
+    ? '预计是 ' + vehicleById(startVehicleId).name + '本账期第 ' + n + ' 趟（收车后按到家日期确定）'
+    : '发车日期不在当前账期，收车时将按到家日期归账';
 }
 
 /* —— 收车结算 —— */
@@ -1118,7 +1235,8 @@ function openCloseSheet(tripId) {
     const s = t.incomes.filter(e => e.catId === c.id).reduce((a, e) => a + e.amount, 0);
     if (s > 0) closeCtx.inc[c.id] = s;
   });
-  $('#closeTitle').textContent = '第 ' + tripSeq(t) + ' 趟 · 收车结算';
+  const seq = tripSeq(t);
+  $('#closeTitle').textContent = vehicleById(t.vehicleId).name + ' · ' + (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · 收车';
   $('#closeDate').value = t.endDate || todayStr();
   renderCloseRows();
   if ($('#closeSlide').ttqReset) $('#closeSlide').ttqReset();
@@ -1152,16 +1270,22 @@ async function doCloseTrip() {
   }
   t.incomes = Object.keys(closeCtx.inc).filter(cid => closeCtx.inc[cid] > 0)
     .map(cid => ({ id: uid(), catId: cid, amount: closeCtx.inc[cid], date: d }));
-  t.endDate = d; t.status = 'closed';
+  t.endDate = d; t.status = 'closed'; t.closedAt = new Date().toISOString();
   save();
   const p = tripTotals(t).profit;
   closeAllSheets();
   showView('home');
-  toast('已收车 🎉 第 ' + tripSeq(t) + ' 趟利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
+  const seq = tripSeq(t);
+  toast('已收车 🎉 ' + (seq > 0 ? '第 ' + seq + ' 趟' : '记录在当前账期外') + ' · 利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
 }
 
 /* —— 补录旧账 —— */
+let backfillVehicleId = null;
 function openBackfill() {
+  const active = S.vehicles.filter(v => v.active);
+  if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
+  backfillVehicleId = activeVehicleId() !== 'all' && active.some(v => v.id === activeVehicleId()) ? activeVehicleId() : active[0].id;
+  renderBackfillVehicleChips();
   $('#bfStart').value = ''; $('#bfEnd').value = '';
   $('#bfExpRows').innerHTML = S.categories.expense.filter(c => c.active).map(c =>
     '<div class="field"><label>' + c.icon + ' ' + esc(c.name) + '</label><input type="number" inputmode="decimal" min="0" step="0.01" placeholder="0" data-bf="exp:' + c.id + '"></div>').join('');
@@ -1169,6 +1293,11 @@ function openBackfill() {
     '<div class="field"><label>' + c.icon + ' ' + esc(c.name) + '</label><input type="number" inputmode="decimal" min="0" step="0.01" placeholder="0" data-bf="inc:' + c.id + '"></div>').join('');
   $('#bfProfit').textContent = '¥0';
   openSheet($('#sheet-backfill'));
+}
+function renderBackfillVehicleChips() {
+  $('#bfVehicleChips').innerHTML = S.vehicles.filter(v => v.active).map(v =>
+    '<button class="pill' + (v.id === backfillVehicleId ? ' on' : '') + '" data-bf-vehicle="' + v.id + '">' + esc(v.name) + '</button>'
+  ).join('');
 }
 function bfCollect() {
   const exp = [], inc = [];
@@ -1191,13 +1320,89 @@ function bfSave() {
   if (e < s) { toast('到家日期不能早于发车日期'); return; }
   const { exp, inc } = bfCollect();
   if (!exp.length && !inc.length) { toast('至少填一项金额'); return; }
-  const t = { id: uid(), startDate: s, endDate: e, status: 'closed', createdAt: new Date().toISOString(),
+  if (!backfillVehicleId) { toast('先选一辆车'); return; }
+  const t = { id: uid(), vehicleId: backfillVehicleId, startDate: s, endDate: e, status: 'closed', createdAt: new Date().toISOString(), closedAt: '',
     expenses: exp.map(x => ({ id: uid(), catId: x.catId, amount: x.amount, date: e, note: '' })),
     incomes: inc.map(x => ({ id: uid(), catId: x.catId, amount: x.amount, date: e })) };
   S.trips.push(t); save();
   closeSheet($('#sheet-backfill'));
   showView('trips');
-  toast('已存入 · ' + yearOf(s) + ' 年第 ' + tripSeq(t) + ' 趟');
+  const seq = tripSeq(t);
+  toast(seq > 0 ? ('已存入 · ' + vehicleById(t.vehicleId).name + '第 ' + seq + ' 趟') : '已存入 · 到家日期在当前账期外');
+}
+
+/* —— 账期设置 —— */
+function openPeriod() {
+  $('#periodStart').value = periodStart();
+  $('#periodEnd').value = periodEnd();
+  updatePeriodTip();
+  openSheet($('#sheet-period'));
+}
+function updatePeriodTip() {
+  const start = $('#periodStart').value, end = $('#periodEnd').value;
+  const days = TTQDomain.periodDays(start, end);
+  $('#periodDaysTip').textContent = days ? ('共 ' + days + ' 天；账期内各车辆趟号都从 1 开始') : '结束日期不能早于开始日期';
+}
+function savePeriod() {
+  if (!guardOnce()) return;
+  const start = $('#periodStart').value, end = $('#periodEnd').value;
+  const days = TTQDomain.periodDays(start, end);
+  if (!days) { toast('开始、结束日期要填对'); return; }
+  if (days > 366) { toast('一个账期最长设置 366 天'); return; }
+  S.settings.periodStartDate = start;
+  S.settings.periodEndDate = end;
+  save();
+  closeSheet($('#sheet-period'));
+  renderCurrent();
+  toast('账期已改好 · 共 ' + days + ' 天');
+}
+
+/* —— 车辆管理 —— */
+let vehicleEditCtx = null;
+function renderVehicles() {
+  $('#vehicleList').innerHTML = S.vehicles.map(v => {
+    const trips = S.trips.filter(t => t.vehicleId === v.id).length;
+    const open = !!openTrip(v.id);
+    return '<div class="row"><span class="ric">🚛</span><div class="rmain"><b style="' + (v.active ? '' : 'color:var(--sub);text-decoration:line-through') + '">' + esc(v.name) + '</b>'
+      + '<span>' + (v.plateNo ? esc(v.plateNo) + ' · ' : '') + trips + ' 趟' + (open ? ' · 在途中' : '') + (v.active ? '' : ' · 已停用') + '</span></div>'
+      + '<button class="pill" data-vehicle-edit="' + v.id + '">改</button>'
+      + '<button class="pill" data-vehicle-toggle="' + v.id + '">' + (v.active ? '停用' : '启用') + '</button></div>';
+  }).join('');
+}
+function openVehicleEdit(id) {
+  vehicleEditCtx = id ? { mode: 'edit', id } : { mode: 'new' };
+  const v = id ? vehicleById(id) : null;
+  $('#vehicleEditTitle').textContent = v ? '修改车辆' : '添加车辆';
+  $('#vehicleName').value = v ? v.name : '';
+  $('#vehiclePlate').value = v ? v.plateNo : '';
+  openSheet($('#sheet-vehicle-edit'));
+}
+function saveVehicle() {
+  if (!guardOnce()) return;
+  const name = $('#vehicleName').value.trim();
+  const plateNo = $('#vehiclePlate').value.trim().toUpperCase();
+  if (!name) { toast('先给车辆起个名称'); return; }
+  if (S.vehicles.some(v => v.name === name && (!vehicleEditCtx.id || v.id !== vehicleEditCtx.id))) { toast('已经有这个车辆名称了'); return; }
+  if (vehicleEditCtx.mode === 'edit') {
+    const v = S.vehicles.find(item => item.id === vehicleEditCtx.id);
+    if (v) { v.name = name; v.plateNo = plateNo; }
+  } else {
+    const v = { id: 'v_' + uid(), name, plateNo, active: true, createdAt: new Date().toISOString() };
+    S.vehicles.push(v);
+    S.settings.activeVehicleId = v.id;
+  }
+  save();
+  closeSheet($('#sheet-vehicle-edit'));
+  renderVehicles();
+  toast('车辆已保存 · ' + name);
+}
+function toggleVehicle(id) {
+  const v = S.vehicles.find(item => item.id === id); if (!v) return;
+  if (v.active && openTrip(v.id)) { toast('这辆车还在途中，收车后才能停用'); return; }
+  if (v.active && S.vehicles.filter(item => item.active).length <= 1) { toast('至少要保留一辆启用的车'); return; }
+  v.active = !v.active;
+  if (!v.active && activeVehicleId() === v.id) S.settings.activeVehicleId = 'all';
+  save(); renderVehicles(); toast(v.active ? '车辆已启用' : '车辆已停用，历史账目还在');
 }
 
 /* —— 科目管理 —— */
@@ -1243,10 +1448,18 @@ function saveNewcat() {
 /* ================= [JS-5] 报告生成 / 备份恢复 / 初始化 ================= */
 let lastReport = { title: '', text: '' };
 function genReport(prefix) {
-  const isMonth = prefix.length === 7;
-  const label = isMonth ? (prefix.slice(0, 4) + ' 年 ' + parseInt(prefix.slice(5), 10) + ' 月月报') : (prefix + ' 年年报');
-  const trips = closedTripsIn(prefix).sort((a, b) => a.endDate.localeCompare(b.endDate));
-  const maint = maintIn(prefix).sort((a, b) => a.date.localeCompare(b.date));
+  const isPeriod = prefix === 'period';
+  const isMonth = !isPeriod && prefix.length === 7;
+  const scopeName = activeVehicleId() === 'all' ? '全部车辆' : vehicleById(activeVehicleId()).name;
+  const label = isPeriod
+    ? (scopeName + ' · 账期报告（' + periodLabel() + '）')
+    : (scopeName + ' · ' + prefix.slice(0, 4) + ' 年 ' + parseInt(prefix.slice(5), 10) + ' 月月报');
+  const trips = (isPeriod
+    ? TTQDomain.closedTripsInPeriod(S, periodStart(), periodEnd(), activeVehicleId())
+    : closedTripsIn(prefix)).slice().sort(TTQDomain.compareTripsAsc);
+  const maint = (isPeriod
+    ? TTQDomain.maintenanceInPeriod(S, periodStart(), periodEnd(), activeVehicleId())
+    : maintIn(prefix)).slice().sort((a, b) => a.date.localeCompare(b.date));
   const L = [];
   L.push('【趟趟清 · ' + label + '】');
   L.push('━━━━━━━━━━━━');
@@ -1280,13 +1493,13 @@ function genReport(prefix) {
       L.push('每趟明细：');
       trips.forEach(t => {
         const p = tripTotals(t).profit;
-        L.push('· 第' + tripSeq(t) + '趟 ' + fmtMD(t.startDate) + '→' + fmtMD(t.endDate) + ' 利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
+        L.push('· ' + (activeVehicleId() === 'all' ? vehicleById(t.vehicleId).name + ' ' : '') + '第' + tripSeq(t) + '趟 ' + fmtMD(t.startDate) + '→' + fmtMD(t.endDate) + ' 利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
       });
     }
     if (maint.length) {
       L.push('━━━━━━━━━━━━');
       L.push('维修保养明细：');
-      if (maint.length <= 20) maint.forEach(m => L.push('· ' + fmtMD(m.date) + ' ' + (m.note || '维修保养') + ' ¥' + fmt(m.amount)));
+      if (maint.length <= 20) maint.forEach(m => L.push('· ' + fmtMD(m.date) + ' ' + (activeVehicleId() === 'all' ? vehicleById(m.vehicleId).name + ' ' : '') + (m.note || '维修保养') + ' ¥' + fmt(m.amount)));
       else L.push('· 共 ' + maint.length + ' 笔，合计 ¥' + fmt(maint.reduce((s, m) => s + m.amount, 0)));
     }
   }
@@ -1359,7 +1572,7 @@ document.addEventListener('click', e => {
   if ((el = q('[data-close]'))) { closeSheet(el.closest('.sheet')); return; }
   if ((el = q('[data-act]'))) {
     const act = el.dataset.act;
-    if (act === 'quick') { const t = openTrip(); if (t) openQuick(t.id); }
+    if (act === 'quick') { const t = S.trips.find(item => item.id === el.dataset.trip) || openTripsInScope(activeVehicleId())[0]; if (t) openQuick(t.id); }
     else if (act === 'start') openStart();
     else if (act === 'prevrep') { genReport(el.dataset.m); S.settings.lastReportSeen = el.dataset.m; save(); }
     else if (act === 'backup') exportData();
@@ -1367,7 +1580,7 @@ document.addEventListener('click', e => {
     else if (act === 'goclose') openCloseSheet(detailTripId);
     else if (act === 'deltrip') {
       const t = S.trips.find(x => x.id === detailTripId);
-      if (t) ask('删除第 ' + tripSeq(t) + ' 趟？这趟的所有记录都会没了').then(ok => {
+      if (t) ask('删除' + (tripSeq(t) > 0 ? '第 ' + tripSeq(t) + ' 趟' : '这一趟') + '？这趟的所有记录都会没了').then(ok => {
         if (!ok) return;
         S.trips = S.trips.filter(x => x.id !== detailTripId);
         save(); closeAllSheets(); showView('trips'); toast('已删除');
@@ -1375,8 +1588,29 @@ document.addEventListener('click', e => {
     }
     return;
   }
+  if ((el = q('[data-vehicle-scope]'))) {
+    S.settings.activeVehicleId = el.dataset.vehicleScope;
+    save(); renderCurrent(); return;
+  }
+  if ((el = q('[data-start-vehicle]'))) {
+    startVehicleId = el.dataset.startVehicle;
+    renderStartVehicleChips(); updateStartTip(); return;
+  }
+  if ((el = q('[data-bf-vehicle]'))) {
+    backfillVehicleId = el.dataset.bfVehicle;
+    renderBackfillVehicleChips(); return;
+  }
+  if ((el = q('[data-vehicle-edit]'))) { openVehicleEdit(el.dataset.vehicleEdit); return; }
+  if ((el = q('[data-vehicle-toggle]'))) { toggleVehicle(el.dataset.vehicleToggle); return; }
+  if ((el = q('[data-trip-vehicle]'))) {
+    const t = S.trips.find(item => item.id === detailTripId); if (!t) return;
+    const nextVehicleId = el.dataset.tripVehicle;
+    if (t.status === 'open' && nextVehicleId !== t.vehicleId && openTrip(nextVehicleId)) {
+      toast(vehicleById(nextVehicleId).name + '已有一趟在途中'); return;
+    }
+    t.vehicleId = nextVehicleId; save(); renderTripDetail(); return;
+  }
   if ((el = q('.trip-card[data-trip]'))) { detailTripId = el.dataset.trip; renderTripDetail(); openSheet($('#sheet-trip')); return; }
-  if ((el = q('[data-year]'))) { statYear = el.dataset.year; renderStats(); return; }
   if ((el = q('[data-cat]'))) { quickCatId = el.dataset.cat; renderQuickChips(); return; }
   if ((el = q('[data-amtcat]'))) { if (amtCfg) { amtCfg.catId = el.dataset.amtcat; renderAmtChips(); } return; }
   if ((el = q('[data-newexp]'))) { openNewcat({ type: 'expense', mode: 'new', from: 'quick' }); return; }
@@ -1426,7 +1660,9 @@ document.addEventListener('click', e => {
   }
   if ((el = q('[data-go]'))) {
     const go = el.dataset.go;
-    if (go === 'cats') { renderCats(); openSheet($('#sheet-cats')); }
+    if (go === 'vehicles') { renderVehicles(); openSheet($('#sheet-vehicles')); }
+    else if (go === 'period') openPeriod();
+    else if (go === 'cats') { renderCats(); openSheet($('#sheet-cats')); }
     else if (go === 'backfill') openBackfill();
     else if (go === 'export') exportData();
     else if (go === 'import') $('#importFile').click();
@@ -1549,6 +1785,7 @@ function runSelfTests() {
   eq(yearOf('2026-07-12'), '2026', 'yearOf');
   eq(monthOf('2026-07-12'), '2026-07', 'monthOf');
   eq(esc('<b a="1">'), '&lt;b a=&quot;1&quot;&gt;', 'esc 防 XSS 转义');
+  eq(TTQDomain.periodDays('2026-03-15', '2027-03-14'), 365, '自定义账期支持跨自然年');
 
   /* —— 迁移与数据清洗 —— */
   const dirty = { trips: [{ id: 'x', startDate: '2026-01-01', endDate: '2026-01-02', status: 'closed',
@@ -1558,32 +1795,51 @@ function runSelfTests() {
   eq(Array.isArray(md.maintenance), true, 'migrate 补齐缺失的 maintenance');
   eq(migrate(null).trips.length, 0, 'migrate 空数据回默认');
   eq(typeof migrate(null).settings.lastBackupAt, 'string', 'migrate 合并新增 settings 字段');
+  eq(md.schemaVersion, 2, 'v1 备份迁移到 schema v2');
+  eq(md.vehicles[0].name, '原有车辆', 'v1 备份自动建立原有车辆');
+  eq(md.trips[0].vehicleId, md.vehicles[0].id, 'v1 趟次自动归入原有车辆');
 
   /* —— 统计口径（换夹具数据，测完还原）—— */
   const real = S;
   S = {
-    schemaVersion: 1, settings: defaultData().settings, categories: defaultData().categories,
+    schemaVersion: 2,
+    settings: Object.assign(defaultData().settings, { activeVehicleId: 'all', periodStartDate: '2026-01-01', periodEndDate: '2026-12-31' }),
+    categories: defaultData().categories,
+    vehicles: [
+      { id: 'v1', name: '一号车', plateNo: '', active: true, createdAt: '1' },
+      { id: 'v2', name: '二号车', plateNo: '', active: true, createdAt: '2' }
+    ],
     trips: [
-      { id: 'a', startDate: '2025-12-28', endDate: '2026-01-03', status: 'closed', createdAt: '1',
+      { id: 'a', vehicleId: 'v1', startDate: '2025-12-28', endDate: '2026-01-03', status: 'closed', createdAt: '1',
         expenses: [{ id: 'e1', catId: 'fuel', amount: 1000, date: '2025-12-29', note: '' }],
         incomes: [{ id: 'i1', catId: 'cargo', amount: 3000, date: '2026-01-03' }] },
-      { id: 'b', startDate: '2026-01-05', endDate: '2026-01-09', status: 'closed', createdAt: '2',
+      { id: 'b', vehicleId: 'v1', startDate: '2026-01-05', endDate: '2026-01-09', status: 'closed', createdAt: '2',
         expenses: [{ id: 'e2', catId: 'toll', amount: 500, date: '2026-01-06', note: '' },
                    { id: 'e3', catId: 'fuel', amount: 800, date: '2026-01-07', note: '' }],
         incomes: [{ id: 'i2', catId: 'cargo', amount: 2000, date: '2026-01-09' }] },
-      { id: 'c', startDate: '2026-02-01', endDate: null, status: 'open', createdAt: '3',
-        expenses: [{ id: 'e4', catId: 'fuel', amount: 800, date: '2026-02-01', note: '' }], incomes: [] }
+      { id: 'old', vehicleId: 'v1', startDate: '2026-01-01', endDate: '2026-01-04', status: 'closed', createdAt: '9',
+        expenses: [], incomes: [{ id: 'i3', catId: 'cargo', amount: 100, date: '2026-01-04' }] },
+      { id: 'c', vehicleId: 'v1', startDate: '2026-02-01', endDate: null, status: 'open', createdAt: '3',
+        expenses: [{ id: 'e4', catId: 'fuel', amount: 800, date: '2026-02-01', note: '' }], incomes: [] },
+      { id: 'd', vehicleId: 'v2', startDate: '2026-01-02', endDate: '2026-01-08', status: 'closed', createdAt: '4',
+        expenses: [], incomes: [{ id: 'i4', catId: 'cargo', amount: 500, date: '2026-01-08' }] }
     ],
-    maintenance: [{ id: 'm1', date: '2026-01-15', amount: 600, note: '换机油' }]
+    maintenance: [
+      { id: 'm1', vehicleId: 'v1', date: '2026-01-15', amount: 600, note: '换机油' },
+      { id: 'm2', vehicleId: 'v2', date: '2026-01-16', amount: 200, note: '补胎' }
+    ]
   };
   try {
     eq(tripTotals(S.trips[1]).profit, 700, 'tripTotals 单趟利润 = 收入 - 支出');
-    eq(tripSeq(S.trips[0]), 1, '口径：编号按发车年（2025-12-28 发车 = 2025 年第 1 趟）');
-    eq(tripSeq(S.trips[1]), 1, '口径：跨年从 1 重新编号');
-    eq(closedTripsIn('2026').length, 2, '口径：利润按到家日期归年（跨年趟算 2026）');
-    eq(yearStats('2026').profit, 2700, 'yearStats 年利润');
-    eq(yearStats('2026').maint, 600, 'yearStats 维修费单列、不进趟利润');
-    eq(monthProfits('2026')[0], 2700, 'monthProfits 一月合计');
+    eq(tripSeq(S.trips[0]), 1, '口径：跨年趟按到家日期进入当前账期');
+    eq(tripSeq(S.trips[2]), 2, '口径：补录旧账按到家日期插入趟号');
+    eq(tripSeq(S.trips[1]), 3, '口径：旧账插入后后续趟号顺延');
+    eq(tripSeq(S.trips[4]), 1, '口径：每辆车在账期内独立编号');
+    eq(TTQDomain.closedTripsInPeriod(S, periodStart(), periodEnd(), 'all').length, 4, '口径：汇总统计账期内全部车辆');
+    eq(periodStats('all').profit, 3300, 'periodStats 汇总全部车辆利润');
+    eq(periodStats('v1').profit, 2800, 'periodStats 单车利润互相隔离');
+    eq(periodStats('all').maint, 800, '维修费按车辆汇总且不进趟次利润');
+    eq(periodMonthProfits('all').values[0], 3300, '账期月度利润按到家月份合计');
     eq(commonAmounts('fuel'), [800, 1000], 'commonAmounts 按出现次数排序');
     eq(tripDays(S.trips[1]), 5, 'tripDays 天数含首尾');
   } finally { S = real; }
@@ -1623,12 +1879,20 @@ window.runSelfTests = runSelfTests;
 
   $('#themeBtn').addEventListener('click', toggleTheme);
   $('#btnBackfill').addEventListener('click', openBackfill);
+  $('#btnPeriod').addEventListener('click', openPeriod);
+  $('#btnPeriodSave').addEventListener('click', savePeriod);
+  $('#periodStart').addEventListener('input', updatePeriodTip);
+  $('#periodEnd').addEventListener('input', updatePeriodTip);
+  $('#btnAddVehicle').addEventListener('click', () => openVehicleEdit());
+  $('#btnVehicleSave').addEventListener('click', saveVehicle);
   $('#btnStartGo').addEventListener('click', () => {
     if (!guardOnce()) return;
-    if (openTrip()) { toast('已有在途的趟'); return; }
+    if (!startVehicleId) { toast('先选一辆车'); return; }
+    if (openTrip(startVehicleId)) { toast(vehicleById(startVehicleId).name + '已有在途的趟'); return; }
     const d = $('#startDate').value || todayStr();
-    S.trips.push({ id: uid(), startDate: d, endDate: null, status: 'open', createdAt: new Date().toISOString(), expenses: [], incomes: [] });
-    save(); closeSheet($('#sheet-start')); showView('home'); toast('已发车 🚚 一路顺风');
+    S.trips.push({ id: uid(), vehicleId: startVehicleId, startDate: d, endDate: null, status: 'open', createdAt: new Date().toISOString(), expenses: [], incomes: [] });
+    S.settings.activeVehicleId = startVehicleId;
+    save(); closeSheet($('#sheet-start')); showView('home'); toast(vehicleById(startVehicleId).name + '已发车 🚚 一路顺风');
   });
   $('#startDate').addEventListener('change', updateStartTip);
   $('#quickNoteBtn').addEventListener('click', () => {
@@ -1645,15 +1909,19 @@ window.runSelfTests = runSelfTests;
   initSlide($('#closeSlide'), doCloseTrip);
   $('#sheet-backfill').addEventListener('input', bfUpdateProfit);
   $('#btnBfSave').addEventListener('click', bfSave);
-  $('#btnAddMaint').addEventListener('click', () => openAmtPad({
-    title: '记一笔维修保养', showDate: true, date: todayStr(), showNote: true, note: '', okLabel: '✓ 记 上',
-    onSave: (v, d, n) => { S.maintenance.push({ id: uid(), date: d || todayStr(), amount: v, note: n }); save(); toast('已记上'); }
-  }));
+  $('#btnAddMaint').addEventListener('click', () => {
+    const vehicleId = activeVehicleId();
+    if (vehicleId === 'all') { toast('先在上方选一辆车，再记维修保养'); return; }
+    openAmtPad({
+      title: vehicleById(vehicleId).name + ' · 记维修保养', showDate: true, date: todayStr(), showNote: true, note: '', okLabel: '✓ 记 上',
+      onSave: (v, d, n) => { S.maintenance.push({ id: uid(), vehicleId, date: d || todayStr(), amount: v, note: n }); save(); toast('已记上'); }
+    });
+  });
   $('#btnAddExpCat').addEventListener('click', () => openNewcat({ type: 'expense', mode: 'new' }));
   $('#btnAddIncCat').addEventListener('click', () => openNewcat({ type: 'income', mode: 'new' }));
   $('#btnNewcatSave').addEventListener('click', saveNewcat);
   $('#btnMonthRep').addEventListener('click', () => { const m = $('#repMonth').value; if (m) genReport(m); else toast('先选月份'); });
-  $('#btnYearRep').addEventListener('click', () => genReport(statYear));
+  $('#btnYearRep').addEventListener('click', () => genReport('period'));
   $('#btnCopyRep').addEventListener('click', copyReport);
   $('#btnShareRep').addEventListener('click', shareReport);
   $('#importFile').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; });

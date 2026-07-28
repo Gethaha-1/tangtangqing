@@ -1,10 +1,10 @@
 # 技术架构（ARCHITECTURE）
 
-适用版本：v1.2.0。本文描述 `index.html` 的内部结构与**不允许随意更改的硬约定**。
+适用版本：v1.3.0。本文描述本地版应用结构与**不允许随意更改的硬约定**。
 
 ## 1. 总体思路
 
-单文件、零依赖、本地优先。整个应用 = 一个 HTML 文件里的六个段落，用注释块 `[CSS-1] ... [JS-6]` 标出（文件头部有索引）：
+零外部依赖、零构建、本地优先。业务规则已经从页面中拆到 `src/domain.js`，其余界面暂留在 `index.html`，后续按 `AI-GUIDE.md` 的路由逐步拆分。
 
 | 段落 | 职责 |
 |---|---|
@@ -12,48 +12,60 @@
 | [CSS-2] | 通用布局与组件样式（panel / btn / sheet / chips / pad / nav / stamp…） |
 | [CSS-3] | 各视图专属样式 |
 | [HTML-1] | 五个主视图容器：home / trips / stats / maint / more |
-| [HTML-2] | 弹层（sheet）：发车 / 快记 / 金额盘 / 收车 / 详情 / 补录 / 科目 / 报告 / 确认 |
+| [HTML-2] | 弹层（sheet）：发车 / 快记 / 收车 / 详情 / 补录 / 账期 / 车辆 / 科目 / 报告 / 确认 |
 | [JS-1] | 存储适配层 Store + defaultData + migrate（含导入数据清洗） |
-| [JS-2] | 工具函数 + **统计口径**（硬约定） |
+| [JS-2] | 页面工具函数 + 对 `TTQDomain` 的业务调用 |
 | [JS-3] | 视图渲染 render*（全量重渲染） |
 | [JS-4] | 键盘 makePad / 滑动收车 initSlide / 弹层栈与历史栈 / 事件委托 / 手势 |
 | [JS-5] | 报告生成 / 备份恢复 / 主题 / 启动 init |
 | [JS-6] | 内置自检 runSelfTests（`#test` 触发） |
+| `src/domain.js` | schema v2 迁移、账期范围、到家日期排序、分车趟号、单车/汇总统计 |
+| `tests/domain.test.js` | 可在 Node 中执行的纯业务规则测试 |
+| `scripts/verify-backup.js` | 真实备份升级前后数量与金额守恒校验 |
 
-## 2. 数据模型（schemaVersion = 1）
+## 2. 数据模型（schemaVersion = 2）
 
 ```js
 {
-  schemaVersion: 1,
+  schemaVersion: 2,
   settings: {
     theme: 'day' | 'night',
     lastReportSeen: 'YYYY-MM',   // 已读过的月报横幅
-    lastBackupAt: 'YYYY-MM-DD'   // 上次导出备份日期（v1.2.0 新增）
+    lastBackupAt: 'YYYY-MM-DD',
+    activeVehicleId: 'all' | vehicleId,
+    periodStartDate: 'YYYY-MM-DD',
+    periodEndDate: 'YYYY-MM-DD'
   },
+  vehicles: [{
+    id, name, plateNo, active, createdAt
+  }],
   categories: {
     expense: [{ id, name, icon, builtin, active }],  // 软删除：active=false，不物理删
     income:  [{ id, name, icon, builtin, active }]
   },
   trips: [{
-    id, startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' | null,
-    status: 'open' | 'closed', createdAt: ISOString,
+    id, vehicleId, startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' | null,
+    status: 'open' | 'closed', createdAt: ISOString, closedAt?: ISOString,
     expenses: [{ id, catId, amount, date, note }],
     incomes:  [{ id, catId, amount, date }]          // 收入按科目聚合，一科目一条
   }],
-  maintenance: [{ id, date, amount, note }]
+  maintenance: [{ id, vehicleId, date, amount, note }]
 }
 ```
 
 ## 3. 硬约定（改前必须三思，改动即破坏历史数据语义）
 
-1. **趟次编号口径**：按【发车日期】所在年分组、年内按发车日期排序编第 N 趟。编号是动态算的，补录旧账会使后续趟号整体后移（已在 BACKLOG 登记为已知取舍）。
-2. **利润归属口径**：只统计已收车（closed）的趟，按【到家日期 endDate】归入月/年——"钱到家才算落袋"。在途趟的支出不进年度合计，只在首页"当前趟"卡片单独展示。
-3. **维修口径**：维修保养单独立账（maintenance），**不计入**趟次利润，仅在年度统计中单列展示。
-4. **同时只允许一个在途趟**：`openTrip()` 返回当前 open 趟，发车前必须查。
-5. **金额规则**：入口处统一 `Math.round(x*100)/100` 保留两位小数；不允许负数（evalExpr 对负项返回 NaN）。
-6. **科目软删除**：只翻转 `active`，绝不物理删除，否则历史账目失去科目引用（`catById` 对丢失引用兜底显示"（已删科目）"）。
-7. **单文件、零依赖、零构建**：不引入任何外部 JS/CSS/字体/图片。
-8. **所有用户输入渲染前必须过 `esc()`**（防 XSS）。
+1. **趟次编号口径**：按「车辆 + 当前账期」分组，已收车趟按【到家日期 endDate】正序编号；编号动态计算，补录旧账会使同车后续趟号顺延。
+2. **列表排序口径**：已收车趟按到家日期倒序；在途趟暂按发车日期排序并显示预计趟号。
+3. **利润归属口径**：只统计账期内已收车趟，整趟收入和支出按到家日期归入账期。
+4. **维修口径**：维修按自身日期和车辆归属，单独列账，不计入趟次利润。
+5. **在途限制**：每辆车最多一个在途趟；不同车辆可以同时在途。
+6. **车辆软停用**：有历史记录的车辆不物理删除；在途车不能停用；至少保留一辆启用车。
+7. **金额规则**：入口处统一 `Math.round(x*100)/100` 保留两位小数；不允许负数。
+8. **科目软删除**：只翻转 `active`，绝不物理删除。
+9. **所有用户输入渲染前必须过 `esc()`**（防 XSS）。
+
+完整口径以 [BUSINESS-RULES.md](BUSINESS-RULES.md) 为准。
 
 ## 4. 状态流
 
@@ -65,10 +77,10 @@
 ## 5. 存储适配层与迁移
 
 - 三级降级：localStorage（正常）→ window.storage（Claude 预览环境，首页会挂"预览模式"横幅）→ 内存（兜底，数据不落盘）。
-- **迁移规则**：
-  - 结构性变更（trips/categories 加必填字段等）→ `SCHEMA_VER` +1，并在 `migrations` 表加 `旧版本+1: (d)=>{...; d.schemaVersion=N; return d}`；
-  - 仅给 `settings` 加字段 → 不用升版本，`migrate()` 里的 `Object.assign(base.settings, d.settings)` 默认值合并会自动补上（`lastBackupAt` 即此例）；
-  - `migrate()` 末尾有**数据清洗**：所有金额强转数字、坏值归 0、缺失数组补齐——恢复备份的数据同样过这一关。
+- `src/domain.js` 的 `TTQDomain.migrate()` 是唯一迁移入口；
+- v1 → v2 自动创建「原有车辆」并给旧趟次、旧维修补 `vehicleId`；
+- 金额、日期、ID、科目和备注不改写；金额仅做数字类型清洗；
+- 规则详见 [DATA-MIGRATION.md](DATA-MIGRATION.md)。
 
 ## 6. 弹层栈 + 历史栈（系统返回键，v1.2.0）
 
@@ -96,4 +108,4 @@
 
 ## 9. 性能与规模边界
 
-全量重渲染 + `tripSeq` 的 O(n²) 在几百趟/年的量级下毫无压力（<10ms）；若未来到数千趟，优先给 `tripSeq` 做一次性编号缓存，而不是引框架。单文件超过约 3000 行时再考虑拆分构建，当前不做。
+全量重渲染 + 动态 `tripSeq` 在几百趟/账期的量级下足够。若未来达到数千趟，先为「车辆 + 账期」建立一次性编号缓存。联网阶段开始前再决定是否引入构建工具，不在本地阶段提前加入框架。
