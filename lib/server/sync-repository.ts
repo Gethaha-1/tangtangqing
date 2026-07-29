@@ -71,6 +71,573 @@ export async function markFleetInitialized(
     .run();
 }
 
+export type AtomicSyncResponse = {
+  operationId: string;
+  results: SyncResult[];
+  hasConflicts: false;
+  hasRejected: false;
+  syncedAt: string;
+  replayed?: boolean;
+};
+
+export class AtomicSyncBatchError extends Error {
+  status: 409 | 422;
+  code: string;
+  results?: SyncResult[];
+
+  constructor(
+    status: 409 | 422,
+    code: string,
+    message: string,
+    results?: SyncResult[],
+  ) {
+    super(message);
+    this.name = "AtomicSyncBatchError";
+    this.status = status;
+    this.code = code;
+    this.results = results;
+  }
+}
+
+type AtomicEntry =
+  | {
+      operation: SyncOperation;
+      current: RawRow | null;
+      normalized: Normalized;
+      vehicleId?: string;
+      result: Extract<SyncResult, { status: "applied" }>;
+    }
+  | {
+      operation: SyncOperation;
+      current: RawRow;
+      vehicleId?: string;
+      result: Extract<SyncResult, { status: "applied" }>;
+    };
+
+type BatchProjection = {
+  puts: Map<string, Normalized>;
+  deletes: Set<string>;
+};
+
+export async function hashSyncPayload(payload: string): Promise<string> {
+  const bytes = new TextEncoder().encode(payload);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+export async function applyAtomicSyncBatch(
+  d1: D1Database,
+  actor: Actor,
+  operationId: string,
+  requestHash: string,
+  operations: SyncOperation[],
+  finalize: boolean,
+): Promise<AtomicSyncResponse> {
+  await requireActiveMembership(d1, actor);
+  const replay = await readSyncCommit(d1, actor.fleetId, operationId);
+  if (replay) return replaySyncCommit(replay, requestHash);
+
+  const projection = buildBatchProjection(operations);
+  const entries: AtomicEntry[] = [];
+  const failures: SyncResult[] = [];
+
+  for (const operation of operations) {
+    try {
+      const current = await getCurrent(d1, actor.fleetId, operation);
+      if (current) {
+        await authorizeCurrentRecord(d1, actor, operation.type, current);
+      }
+
+      if (operation.op === "delete") {
+        if (operation.type === "fleet_settings") {
+          throw new RecordValidationError(
+            "protected_record",
+            "不能删除车队设置",
+          );
+        }
+        if (
+          !current ||
+          classifyVersion(
+            operation.expectedVersion,
+            Number(current.version),
+          ) !== "update"
+        ) {
+          failures.push(conflict(operation, current));
+          continue;
+        }
+        if (operation.type === "vehicle") {
+          requireOwner(actor);
+        }
+        if (operation.type === "category") {
+          requireOwner(actor);
+        }
+        entries.push({
+          operation,
+          current,
+          vehicleId: await operationVehicleId(
+            d1,
+            actor.fleetId,
+            operation,
+            current,
+            undefined,
+            projection,
+          ),
+          result: {
+            op: operation.op,
+            type: operation.type,
+            id: operation.id,
+            status: "applied",
+            version: operation.expectedVersion + 1,
+          },
+        });
+        continue;
+      }
+
+      const normalized = projection.puts.get(batchRecordKey(operation));
+      if (!normalized) {
+        throw new RecordValidationError(
+          "missing_data",
+          "同步记录缺少 data",
+        );
+      }
+      if ("createdAt" in normalized && !normalized.createdAt) {
+        normalized.createdAt =
+          (current?.created_at as string | undefined) ??
+          new Date().toISOString();
+      }
+      const decision = classifyVersion(
+        operation.expectedVersion,
+        current ? Number(current.version) : null,
+      );
+      if (decision === "conflict") {
+        failures.push(conflict(operation, current));
+        continue;
+      }
+      await validateRelationships(
+        d1,
+        actor,
+        operation,
+        normalized,
+        current,
+        projection,
+      );
+      entries.push({
+        operation,
+        current,
+        normalized,
+        vehicleId: await operationVehicleId(
+          d1,
+          actor.fleetId,
+          operation,
+          current,
+          normalized,
+          projection,
+        ),
+        result: {
+          op: operation.op,
+          type: operation.type,
+          id: operation.id,
+          status: "applied",
+          version: operation.expectedVersion + 1,
+          data: clientDataFromNormalized(operation.type, normalized),
+        },
+      });
+    } catch (error) {
+      if (error instanceof RecordValidationError) {
+        failures.push(rejected(operation, error.code, error.message));
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (failures.length) {
+    const conflictFound = failures.some(
+      (result) => result.status === "conflict",
+    );
+    throw new AtomicSyncBatchError(
+      conflictFound ? 409 : 422,
+      conflictFound ? "version_conflict" : "batch_rejected",
+      conflictFound
+        ? "云端记录已变化，本批次没有写入"
+        : "本批次有记录未通过校验，所有记录都没有写入",
+      failures,
+    );
+  }
+
+  const syncedAt = new Date().toISOString();
+  const response: AtomicSyncResponse = {
+    operationId,
+    results: entries.map((entry) => entry.result),
+    hasConflicts: false,
+    hasRejected: false,
+    syncedAt,
+  };
+  // Authorization is checked again inside the same D1 transaction as the
+  // business writes. A membership revocation/role change racing the preflight
+  // therefore aborts the whole batch instead of permitting a stale actor.
+  const statements: D1PreparedStatement[] = [
+    prepareActorGuard(d1, actor, operationId),
+  ];
+  if (actor.role === "driver") {
+    Array.from(
+      new Set(
+        entries
+          .map((entry) => entry.vehicleId)
+          .filter((vehicleId): vehicleId is string => Boolean(vehicleId)),
+      ),
+    ).forEach((vehicleId, index) => {
+      statements.push(
+        prepareAssignmentGuard(
+          d1,
+          actor,
+          operationId,
+          -2 - index,
+          vehicleId,
+        ),
+      );
+    });
+  }
+  entries.forEach((entry, ordinal) => {
+    statements.push(
+      prepareVersionGuard(
+        d1,
+        actor.fleetId,
+        operationId,
+        ordinal,
+        entry.operation,
+      ),
+      prepareAtomicWrite(d1, actor.fleetId, entry),
+    );
+  });
+  statements.push(
+    d1
+      .prepare(
+        "DELETE FROM sync_assertions WHERE fleet_id = ? AND operation_id = ?",
+      )
+      .bind(actor.fleetId, operationId),
+  );
+  if (finalize && entries.length > 0) {
+    statements.push(
+      d1
+        .prepare(
+          "UPDATE fleet_settings SET initialized_at = COALESCE(initialized_at, ?) WHERE fleet_id = ?",
+        )
+        .bind(syncedAt, actor.fleetId),
+    );
+  }
+  statements.push(
+    d1
+      .prepare(
+        "INSERT INTO sync_commits (fleet_id, operation_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .bind(
+        actor.fleetId,
+        operationId,
+        requestHash,
+        JSON.stringify(response),
+        syncedAt,
+      ),
+  );
+
+  try {
+    await d1.batch(statements);
+    return response;
+  } catch (error) {
+    const raced = await readSyncCommit(d1, actor.fleetId, operationId);
+    if (raced) return replaySyncCommit(raced, requestHash);
+    const message = error instanceof Error ? error.message : String(error);
+    if (/sync_assertions_ok_check|CHECK constraint failed: ok/i.test(message)) {
+      throw new AtomicSyncBatchError(
+        409,
+        "version_conflict",
+        "云端记录已变化，本批次没有写入",
+      );
+    }
+    if (isConstraintError(error)) {
+      throw new AtomicSyncBatchError(
+        422,
+        "constraint_failed",
+        readableConstraintMessage(error) +
+          "；本批次所有记录都没有写入",
+      );
+    }
+    throw error;
+  }
+}
+
+function buildBatchProjection(
+  operations: SyncOperation[],
+): BatchProjection {
+  const puts = new Map<string, Normalized>();
+  const deletes = new Set<string>();
+  for (const operation of operations) {
+    const key = batchRecordKey(operation);
+    if (operation.op === "put") {
+      puts.set(key, normalizePut(operation));
+    } else {
+      deletes.add(key);
+    }
+  }
+  return { puts, deletes };
+}
+
+function batchRecordKey(
+  operation: Pick<SyncOperation, "type" | "id">,
+): string {
+  return `${operation.type}\u0000${operation.id}`;
+}
+
+async function readSyncCommit(
+  d1: D1Database,
+  fleetId: string,
+  operationId: string,
+): Promise<{ request_hash: string; response_json: string } | null> {
+  return d1
+    .prepare(
+      "SELECT request_hash, response_json FROM sync_commits WHERE fleet_id = ? AND operation_id = ? LIMIT 1",
+    )
+    .bind(fleetId, operationId)
+    .first<{ request_hash: string; response_json: string }>();
+}
+
+function replaySyncCommit(
+  row: { request_hash: string; response_json: string },
+  requestHash: string,
+): AtomicSyncResponse {
+  if (row.request_hash !== requestHash) {
+    throw new AtomicSyncBatchError(
+      409,
+      "operation_id_reused",
+      "这个 operationId 已用于另一批数据，请为新操作生成新的标识",
+    );
+  }
+  const response = JSON.parse(row.response_json) as AtomicSyncResponse;
+  return { ...response, replayed: true };
+}
+
+function prepareVersionGuard(
+  d1: D1Database,
+  fleetId: string,
+  operationId: string,
+  ordinal: number,
+  operation: SyncOperation,
+): D1PreparedStatement {
+  const target = versionGuardTarget(operation);
+  const predicate =
+    operation.expectedVersion === 0
+      ? `NOT EXISTS (SELECT 1 FROM ${target.table} WHERE ${target.where})`
+      : `EXISTS (SELECT 1 FROM ${target.table} WHERE ${target.where} AND version = ?)`;
+  const values: unknown[] = [
+    fleetId,
+    operationId,
+    ordinal,
+    fleetId,
+    ...target.values,
+  ];
+  if (operation.expectedVersion !== 0) {
+    values.push(operation.expectedVersion);
+  }
+  return d1
+    .prepare(
+      `INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+       VALUES (?, ?, ?, CASE WHEN ${predicate} THEN 1 ELSE 0 END)`,
+    )
+    .bind(...values);
+}
+
+function prepareActorGuard(
+  d1: D1Database,
+  actor: Actor,
+  operationId: string,
+): D1PreparedStatement {
+  return d1
+    .prepare(
+      `INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+       VALUES (
+         ?, ?, -1,
+         CASE WHEN EXISTS (
+           SELECT 1
+           FROM fleet_members
+           WHERE id = ?
+             AND fleet_id = ?
+             AND user_id = ?
+             AND active = 1
+             AND version = ?
+             AND role = ?
+         ) THEN 1 ELSE 0 END
+       )`,
+    )
+    .bind(
+      actor.fleetId,
+      operationId,
+      actor.membershipId,
+      actor.fleetId,
+      actor.userId,
+      actor.membershipVersion,
+      actor.role,
+    );
+}
+
+function prepareAssignmentGuard(
+  d1: D1Database,
+  actor: Actor,
+  operationId: string,
+  ordinal: number,
+  vehicleId: string,
+): D1PreparedStatement {
+  return d1
+    .prepare(
+      `INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+       VALUES (
+         ?, ?, ?,
+         CASE WHEN EXISTS (
+           SELECT 1
+           FROM vehicle_assignments
+           WHERE fleet_id = ?
+             AND user_id = ?
+             AND vehicle_id = ?
+             AND active = 1
+             AND datetime(starts_at) <= CURRENT_TIMESTAMP
+             AND (ends_at IS NULL OR datetime(ends_at) > CURRENT_TIMESTAMP)
+         ) THEN 1 ELSE 0 END
+       )`,
+    )
+    .bind(
+      actor.fleetId,
+      operationId,
+      ordinal,
+      actor.fleetId,
+      actor.userId,
+      vehicleId,
+    );
+}
+
+function versionGuardTarget(operation: SyncOperation): {
+  table: string;
+  where: string;
+  values: unknown[];
+} {
+  if (operation.type === "fleet_settings") {
+    return {
+      table: "fleet_settings",
+      where: "fleet_id = ?",
+      values: [],
+    };
+  }
+  if (operation.type === "category") {
+    const separator = operation.id.indexOf(":");
+    return {
+      table: "categories",
+      where: "fleet_id = ? AND kind = ? AND id = ?",
+      values: [
+        operation.id.slice(0, separator),
+        operation.id.slice(separator + 1),
+      ],
+    };
+  }
+  if (
+    operation.type === "trip_expense" ||
+    operation.type === "trip_income"
+  ) {
+    const child = childRecordKey(operation.id);
+    return {
+      table:
+        operation.type === "trip_expense"
+          ? "trip_expenses"
+          : "trip_incomes",
+      where: "fleet_id = ? AND trip_id = ? AND id = ?",
+      values: [child.tripId, child.id],
+    };
+  }
+  const target = recordTarget(operation);
+  return {
+    table: target.table,
+    where: "fleet_id = ? AND id = ?",
+    values: [target.id],
+  };
+}
+
+function prepareAtomicWrite(
+  d1: D1Database,
+  fleetId: string,
+  entry: AtomicEntry,
+): D1PreparedStatement {
+  const { operation } = entry;
+  if (operation.op === "put" && "normalized" in entry) {
+    if (entry.current) {
+      return prepareUpdateRecord(
+        d1,
+        fleetId,
+        operation.type,
+        entry.normalized,
+        operation.expectedVersion,
+        operation.expectedVersion + 1,
+      );
+    }
+    return prepareInsertRecord(
+      d1,
+      fleetId,
+      operation.type,
+      entry.normalized,
+    );
+  }
+
+  const current = entry.current;
+  if (!current) {
+    throw new Error("原子删除缺少预检记录");
+  }
+  const nextVersion = operation.expectedVersion + 1;
+  const now = new Date().toISOString();
+  if (operation.type === "category") {
+    return d1
+      .prepare(
+        "UPDATE categories SET active = 0, updated_at = ?, version = ? WHERE fleet_id = ? AND kind = ? AND id = ? AND version = ?",
+      )
+      .bind(
+        now,
+        nextVersion,
+        fleetId,
+        current.kind,
+        current.id,
+        operation.expectedVersion,
+      );
+  }
+  if (operation.type === "vehicle") {
+    return d1
+      .prepare(
+        "UPDATE vehicles SET active = 0, updated_at = ?, version = ? WHERE fleet_id = ? AND id = ? AND version = ?",
+      )
+      .bind(
+        now,
+        nextVersion,
+        fleetId,
+        current.id,
+        operation.expectedVersion,
+      );
+  }
+  const target = physicalDeleteTarget(operation, current);
+  if (target.tripId) {
+    return d1
+      .prepare(
+        `DELETE FROM ${target.table} WHERE fleet_id = ? AND trip_id = ? AND id = ? AND version = ?`,
+      )
+      .bind(
+        fleetId,
+        target.tripId,
+        target.id,
+        operation.expectedVersion,
+      );
+  }
+  return d1
+    .prepare(
+      `DELETE FROM ${target.table} WHERE fleet_id = ? AND id = ? AND version = ?`,
+    )
+    .bind(fleetId, target.id, operation.expectedVersion);
+}
+
 async function putRecord(
   d1: D1Database,
   actor: Actor,
@@ -463,12 +1030,40 @@ function normalizeMaintenance(
   };
 }
 
+async function operationVehicleId(
+  d1: D1Database,
+  fleetId: string,
+  operation: SyncOperation,
+  current: RawRow | null,
+  normalized: Normalized | undefined,
+  projection: BatchProjection,
+): Promise<string | undefined> {
+  if (
+    operation.type === "fleet_settings" ||
+    operation.type === "category" ||
+    operation.type === "vehicle"
+  ) {
+    return undefined;
+  }
+  if (operation.type === "trip" || operation.type === "maintenance") {
+    const vehicleId = normalized?.vehicleId ?? current?.vehicle_id;
+    return vehicleId == null ? undefined : String(vehicleId);
+  }
+  const tripId = String(normalized?.tripId ?? current?.trip_id ?? "");
+  if (!tripId) return undefined;
+  const trip = operation.op === "delete"
+    ? await requireTrip(d1, fleetId, tripId)
+    : await projectedTrip(d1, fleetId, tripId, projection);
+  return String(trip.vehicle_id ?? trip.vehicleId);
+}
+
 async function validateRelationships(
   d1: D1Database,
   actor: Actor,
   operation: SyncOperation,
   data: Normalized,
   current: RawRow | null,
+  projection?: BatchProjection,
 ): Promise<void> {
   if (
     operation.type === "fleet_settings" ||
@@ -483,7 +1078,12 @@ async function validateRelationships(
       const activeVehicleId = String(data.activeVehicleId);
       if (
         activeVehicleId !== "all" &&
-        !(await vehicleExists(d1, actor.fleetId, activeVehicleId))
+        !(await projectedVehicleExists(
+          d1,
+          actor.fleetId,
+          activeVehicleId,
+          projection,
+        ))
       ) {
         throw new RecordValidationError(
           "vehicle_not_found",
@@ -493,7 +1093,7 @@ async function validateRelationships(
       break;
     }
     case "vehicle": {
-      if (data.active === false) {
+      if (data.active === false && !projection) {
         await validateVehicleDeactivation(
           d1,
           actor.fleetId,
@@ -505,7 +1105,12 @@ async function validateRelationships(
     }
     case "trip": {
       const vehicleId = String(data.vehicleId);
-      const vehicle = await requireVehicle(d1, actor.fleetId, vehicleId);
+      const vehicle = await projectedVehicle(
+        d1,
+        actor.fleetId,
+        vehicleId,
+        projection,
+      );
       if (data.status === "open" && !Boolean(vehicle.active)) {
         throw new RecordValidationError(
           "vehicle_inactive",
@@ -514,13 +1119,37 @@ async function validateRelationships(
       }
       await requireVehicleWriteAccess(d1, actor, vehicleId);
       if (data.status === "open") {
+        if (projection) {
+          const otherProjectedOpen = Array.from(
+            projection.puts.entries(),
+          ).find(([key, value]) =>
+            key.startsWith("trip\u0000") &&
+            key !== batchRecordKey(operation) &&
+            value.vehicleId === vehicleId &&
+            value.status === "open"
+          );
+          if (otherProjectedOpen) {
+            throw new RecordValidationError(
+              "vehicle_has_open_trip",
+              "这辆车同一批次里已有另一趟在途中",
+            );
+          }
+        }
         const other = await d1
           .prepare(
             "SELECT id FROM trips WHERE fleet_id = ? AND vehicle_id = ? AND status = 'open' AND id <> ? LIMIT 1",
           )
           .bind(actor.fleetId, vehicleId, data.id)
           .first();
-        if (other) {
+        const otherId = other && String((other as RawRow).id);
+        const otherWillClose =
+          otherId &&
+          projection &&
+          (projection.deletes.has(`trip\u0000${otherId}`) ||
+            (projection.puts.has(`trip\u0000${otherId}`) &&
+              projection.puts.get(`trip\u0000${otherId}`)?.status !==
+                "open"));
+        if (other && !otherWillClose) {
           throw new RecordValidationError(
             "vehicle_has_open_trip",
             "这辆车已有一趟在途中",
@@ -531,31 +1160,123 @@ async function validateRelationships(
     }
     case "trip_expense":
     case "trip_income": {
-      const trip = await requireTrip(
+      const trip = await projectedTrip(
         d1,
         actor.fleetId,
         String(data.tripId),
+        projection,
       );
       await requireVehicleWriteAccess(
         d1,
         actor,
-        String(trip.vehicle_id),
+        String(trip.vehicle_id ?? trip.vehicleId),
       );
-      await requireCategory(
+      await requireProjectedCategory(
         d1,
         actor.fleetId,
         String(data.categoryId),
         operation.type === "trip_expense" ? "expense" : "income",
+        projection,
       );
       break;
     }
     case "maintenance": {
       const vehicleId = String(data.vehicleId);
-      await requireVehicle(d1, actor.fleetId, vehicleId);
+      await projectedVehicle(
+        d1,
+        actor.fleetId,
+        vehicleId,
+        projection,
+      );
       await requireVehicleWriteAccess(d1, actor, vehicleId);
       break;
     }
   }
+}
+
+async function projectedVehicleExists(
+  d1: D1Database,
+  fleetId: string,
+  vehicleId: string,
+  projection?: BatchProjection,
+): Promise<boolean> {
+  const key = `vehicle\u0000${vehicleId}`;
+  if (projection?.deletes.has(key)) return false;
+  if (projection?.puts.has(key)) return true;
+  return vehicleExists(d1, fleetId, vehicleId);
+}
+
+async function projectedVehicle(
+  d1: D1Database,
+  fleetId: string,
+  vehicleId: string,
+  projection?: BatchProjection,
+): Promise<RawRow> {
+  const key = `vehicle\u0000${vehicleId}`;
+  if (projection?.deletes.has(key)) {
+    throw new RecordValidationError(
+      "vehicle_not_found",
+      "车辆在本批次中已停用或删除",
+    );
+  }
+  const proposed = projection?.puts.get(key);
+  if (proposed) {
+    return {
+      id: proposed.id,
+      active: proposed.active,
+    };
+  }
+  return requireVehicle(d1, fleetId, vehicleId);
+}
+
+async function projectedTrip(
+  d1: D1Database,
+  fleetId: string,
+  tripId: string,
+  projection?: BatchProjection,
+): Promise<RawRow> {
+  const key = `trip\u0000${tripId}`;
+  if (projection?.deletes.has(key)) {
+    throw new RecordValidationError(
+      "trip_not_found",
+      "趟次在本批次中已删除",
+    );
+  }
+  const proposed = projection?.puts.get(key);
+  if (proposed) {
+    return {
+      id: proposed.id,
+      vehicle_id: proposed.vehicleId,
+    };
+  }
+  return requireTrip(d1, fleetId, tripId);
+}
+
+async function requireProjectedCategory(
+  d1: D1Database,
+  fleetId: string,
+  categoryId: string,
+  kind: "expense" | "income",
+  projection?: BatchProjection,
+): Promise<void> {
+  const key = `category\u0000${kind}:${categoryId}`;
+  if (projection?.deletes.has(key)) {
+    throw new RecordValidationError(
+      "category_not_found",
+      "科目在本批次中已停用或删除",
+    );
+  }
+  const proposed = projection?.puts.get(key);
+  if (proposed) {
+    if (proposed.kind !== kind) {
+      throw new RecordValidationError(
+        "category_not_found",
+        "科目类型不匹配",
+      );
+    }
+    return;
+  }
+  return requireCategory(d1, fleetId, categoryId, kind);
 }
 
 async function authorizeCurrentRecord(
@@ -850,6 +1571,15 @@ async function insertRecord(
   type: SyncType,
   data: Normalized,
 ): Promise<void> {
+  await prepareInsertRecord(d1, fleetId, type, data).run();
+}
+
+function prepareInsertRecord(
+  d1: D1Database,
+  fleetId: string,
+  type: SyncType,
+  data: Normalized,
+): D1PreparedStatement {
   const now = new Date().toISOString();
   const createdAt = data.createdAt || now;
   let statement: D1PreparedStatement;
@@ -979,7 +1709,7 @@ async function insertRecord(
         );
       break;
   }
-  await statement.run();
+  return statement;
 }
 
 async function updateRecord(
@@ -990,6 +1720,25 @@ async function updateRecord(
   expectedVersion: number,
   nextVersion: number,
 ): Promise<boolean> {
+  const result = await prepareUpdateRecord(
+    d1,
+    fleetId,
+    type,
+    data,
+    expectedVersion,
+    nextVersion,
+  ).run();
+  return Number(result.meta.changes) === 1;
+}
+
+function prepareUpdateRecord(
+  d1: D1Database,
+  fleetId: string,
+  type: SyncType,
+  data: Normalized,
+  expectedVersion: number,
+  nextVersion: number,
+): D1PreparedStatement {
   const now = new Date().toISOString();
   let statement: D1PreparedStatement;
 
@@ -1123,8 +1872,7 @@ async function updateRecord(
         );
       break;
   }
-  const result = await statement.run();
-  return Number(result.meta.changes) === 1;
+  return statement;
 }
 
 function physicalDeleteTarget(

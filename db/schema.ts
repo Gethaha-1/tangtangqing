@@ -389,3 +389,43 @@ export const maintenance = sqliteTable(
     ),
   ],
 );
+
+// A commit receipt is written in the same D1 batch as its business writes.
+// Retrying the same operationId can therefore return the original acknowledgement
+// without applying the records twice.
+export const syncCommits = sqliteTable(
+  "sync_commits",
+  {
+    fleetId: text("fleet_id")
+      .notNull()
+      .references(() => fleets.id, { onDelete: "cascade" }),
+    operationId: text("operation_id").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseJson: text("response_json").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.fleetId, table.operationId] }),
+    index("sync_commits_created_at_idx").on(table.createdAt),
+  ],
+);
+
+// Version guards live only for the duration of one D1 batch. A failed CHECK
+// aborts the entire batch; successful guard rows are removed before commit.
+export const syncAssertions = sqliteTable(
+  "sync_assertions",
+  {
+    fleetId: text("fleet_id")
+      .notNull()
+      .references(() => fleets.id, { onDelete: "cascade" }),
+    operationId: text("operation_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    ok: integer("ok").notNull(),
+  },
+  (table) => [
+    check("sync_assertions_ok_check", sql`${table.ok} = 1`),
+    primaryKey({
+      columns: [table.fleetId, table.operationId, table.ordinal],
+    }),
+  ],
+);

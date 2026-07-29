@@ -8,15 +8,14 @@ import {
   getTrustedIdentity,
 } from "../../../lib/server/auth";
 import {
-  parseSyncOperations,
-  orderSyncOperations,
+  canonicalSyncPayload,
+  parseSyncRequest,
   RecordValidationError,
-  shouldMarkFleetInitialized,
-  summarizeSyncResults,
 } from "../../../lib/server/sync-contract";
 import {
-  applySyncOperation,
-  markFleetInitialized,
+  applyAtomicSyncBatch,
+  AtomicSyncBatchError,
+  hashSyncPayload,
 } from "../../../lib/server/sync-repository";
 
 export const dynamic = "force-dynamic";
@@ -25,34 +24,26 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const identity = getTrustedIdentity(request);
     const input = await readJson(request);
-    const operations = orderSyncOperations(parseSyncOperations(input));
-    const finalize =
-      !input ||
-      typeof input !== "object" ||
-      !("finalize" in input) ||
-      input.finalize !== false;
+    const syncRequest = parseSyncRequest(input);
+    const requestHash = await hashSyncPayload(
+      canonicalSyncPayload(
+        syncRequest.operations,
+        syncRequest.finalize,
+      ),
+    );
 
     await ensureSchema();
     const d1 = getD1();
     const actor = await resolveOrCreateActor(d1, identity);
-    const results = [];
-    for (const operation of operations) {
-      results.push(await applySyncOperation(d1, actor, operation));
-    }
-
-    if (finalize && shouldMarkFleetInitialized(results)) {
-      await markFleetInitialized(d1, actor.fleetId);
-    }
-
-    const summary = summarizeSyncResults(results);
-    return json(
-      {
-        results,
-        ...summary,
-        syncedAt: new Date().toISOString(),
-      },
-      200,
+    const response = await applyAtomicSyncBatch(
+      d1,
+      actor,
+      syncRequest.operationId,
+      requestHash,
+      syncRequest.operations,
+      syncRequest.finalize,
     );
+    return json(response, 200);
   } catch (error) {
     if (error instanceof AuthenticationError) {
       return json(
@@ -64,6 +55,17 @@ export async function POST(request: Request): Promise<Response> {
       return json(
         { error: { code: error.code, message: error.message } },
         400,
+      );
+    }
+    if (error instanceof AtomicSyncBatchError) {
+      return json(
+        {
+          error: { code: error.code, message: error.message },
+          results: error.results || [],
+          hasConflicts: error.status === 409,
+          hasRejected: error.status === 422,
+        },
+        error.status,
       );
     }
     if (error instanceof SyntaxError) {
@@ -95,7 +97,7 @@ async function readJson(request: Request): Promise<unknown> {
   if (contentLength > 2_000_000) {
     throw new RecordValidationError(
       "payload_too_large",
-      "一次同步的数据太多，请分批重试",
+      "一次原子提交的数据太多，本次没有写入；请使用受控的大型导入流程",
     );
   }
   return request.json();

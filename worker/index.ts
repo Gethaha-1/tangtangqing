@@ -4,6 +4,11 @@ import {
   handleImageOptimization,
 } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import {
+  isLocalAuthHost,
+  LOCAL_AUTH_COOKIE,
+  safeAuthReturnTo,
+} from "../lib/auth/logout";
 
 interface Env {
   ASSETS: Fetcher;
@@ -25,17 +30,8 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
-const LOCAL_AUTH_COOKIE = "ttq_local_auth";
 const LOCAL_EMAIL = "local-owner@ttq.test";
 const LOCAL_FULL_NAME = "本地测试车主";
-
-function isLocalHost(hostname: string): boolean {
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1"
-  );
-}
 
 function cookieValue(request: Request, name: string): string | null {
   const cookie = request.headers.get("cookie") ?? "";
@@ -46,17 +42,6 @@ function cookieValue(request: Request, name: string): string | null {
   return null;
 }
 
-function safeReturnTo(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
-  try {
-    const url = new URL(value, "https://app.local");
-    if (url.origin !== "https://app.local") return "/";
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return "/";
-  }
-}
-
 function redirect(location: string, cookie?: string): Response {
   const headers = new Headers({ location });
   if (cookie) headers.set("set-cookie", cookie);
@@ -64,7 +49,7 @@ function redirect(location: string, cookie?: string): Response {
 }
 
 function withLocalIdentity(request: Request, url: URL): Request {
-  if (!isLocalHost(url.hostname)) return request;
+  if (!isLocalAuthHost(url.hostname)) return request;
   const headers = new Headers(request.headers);
   // Local development has no Sites dispatcher. Strip caller-supplied identity
   // assertions, then mint the fixed test identity only from our HttpOnly cookie.
@@ -99,21 +84,10 @@ const worker = {
     const url = new URL(originalRequest.url);
 
     if (url.pathname === "/api/local-auth/signin") {
-      if (!isLocalHost(url.hostname)) return new Response("Not found", { status: 404 });
+      if (!isLocalAuthHost(url.hostname)) return new Response("Not found", { status: 404 });
       return redirect(
-        safeReturnTo(url.searchParams.get("return_to")),
+        safeAuthReturnTo(url.searchParams.get("return_to")),
         `${LOCAL_AUTH_COOKIE}=owner; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`,
-      );
-    }
-
-    if (
-      url.pathname === "/signout-with-chatgpt" &&
-      isLocalHost(url.hostname) &&
-      cookieValue(originalRequest, LOCAL_AUTH_COOKIE)
-    ) {
-      return redirect(
-        safeReturnTo(url.searchParams.get("return_to")),
-        `${LOCAL_AUTH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
       );
     }
 

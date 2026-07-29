@@ -419,6 +419,37 @@
     return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
   }
 
+  function validCalendarDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
+    const parsed = new Date(String(value) + 'T00:00:00Z');
+    return !Number.isNaN(parsed.valueOf()) &&
+      parsed.toISOString().slice(0, 10) === value;
+  }
+
+  function inspectImportPeriod(backup, current) {
+    const backupSettings = backup && backup.settings || {};
+    const currentSettings = current && current.settings || {};
+    const start = backupSettings.periodStartDate;
+    const end = backupSettings.periodEndDate;
+    const days = validCalendarDate(start) && validCalendarDate(end)
+      ? Math.round(
+          (new Date(end + 'T00:00:00Z') -
+            new Date(start + 'T00:00:00Z')) / 86400000
+        ) + 1
+      : 0;
+    const backupPeriodValid = days >= 1 && days <= 366;
+    return {
+      backupPeriodValid,
+      preservedCurrentPeriod: !backupPeriodValid,
+      periodStartDate: backupPeriodValid
+        ? start
+        : currentSettings.periodStartDate,
+      periodEndDate: backupPeriodValid
+        ? end
+        : currentSettings.periodEndDate
+    };
+  }
+
   function summarizeState(source) {
     const records = hasStateSnapshot(source) ? normalizeState(source) : asRecords(source);
     const summary = {
@@ -483,17 +514,6 @@
       });
     });
     return { equal: differences.length === 0, differences, before: left, after: right };
-  }
-
-  function chunkOperations(operations, maxSize) {
-    const size = maxSize == null ? 200 : Number(maxSize);
-    if (!Number.isSafeInteger(size) || size < 1)
-      throw new TypeError('同步分批大小必须是正整数');
-    const source = Array.isArray(operations) ? operations : [];
-    const chunks = [];
-    for (let i = 0; i < source.length; i += size)
-      chunks.push(source.slice(i, i + size));
-    return chunks;
   }
 
   function inspectPendingCache(cache, remote) {
@@ -570,7 +590,7 @@
       next.set(key, {
         type: operation.type,
         id: String(operation.id),
-        data: clone(operation.data),
+        data: clone(result.data),
         version: Number(result.version)
       });
     });
@@ -616,12 +636,228 @@
     });
   }
 
-  function saveFailureResult(error, deviceCached) {
+  function createOperationId(randomUUID) {
+    const uuid = typeof randomUUID === 'function'
+      ? randomUUID()
+      : (typeof crypto !== 'undefined' && crypto &&
+          typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : '');
+    if (uuid) return 'write-' + String(uuid);
+    const random = Math.random().toString(36).slice(2);
+    return 'write-' + Date.now().toString(36) + '-' + random;
+  }
+
+  function strictPendingCacheDecision(cache, remote) {
+    const inspection = inspectPendingCache(cache, remote);
+    if (inspection.status === 'none') {
+      return {
+        status: 'discard',
+        requiresExplicitAction: false,
+        operations: [],
+        conflicts: []
+      };
+    }
+    if (inspection.status === 'safe') {
+      return {
+        status: 'confirm-upload',
+        requiresExplicitAction: true,
+        operations: inspection.operations,
+        conflicts: []
+      };
+    }
     return {
-      ok: false,
-      conflict: !!(error && error.status === 409),
-      deviceCached: deviceCached === true,
-      error
+      status: 'export-conflict',
+      requiresExplicitAction: true,
+      operations: inspection.operations,
+      conflicts: inspection.conflicts
+    };
+  }
+
+  function baselineSetting(baseline, field) {
+    const setting = asRecords(baseline).find(item =>
+      item.type === 'fleet_settings' && item.id === SETTINGS_ID
+    );
+    return setting && setting.data ? setting.data[field] : undefined;
+  }
+
+  function cloudBusinessState(state, baseline) {
+    const result = clone(state);
+    if (!result || !result.settings) return result;
+    const remoteTheme = baselineSetting(baseline, 'theme');
+    if (remoteTheme !== undefined) result.settings.theme = remoteTheme;
+    return result;
+  }
+
+  function createOnlineCommitter(options) {
+    const config = options || {};
+    if (typeof config.requestSync !== 'function')
+      throw new TypeError('在线提交器需要 requestSync');
+    if (typeof config.bootstrap !== 'function')
+      throw new TypeError('在线提交器需要 bootstrap');
+
+    let committedState = clone(config.state);
+    let baselineRecords = clone(asRecords(config.baselineRecords));
+    let phase = config.online === false ? 'readonly' : 'online';
+    let lastError = null;
+
+    function status() {
+      return {
+        phase,
+        writable: phase === 'online',
+        saving: phase === 'saving',
+        error: lastError
+      };
+    }
+
+    function setPhase(next, error) {
+      phase = next;
+      lastError = error || null;
+      if (typeof config.onStatus === 'function') config.onStatus(status());
+    }
+
+    function serverError(body, fallback) {
+      const message = body && body.error && body.error.message
+        ? body.error.message
+        : fallback;
+      const error = new Error(message || '云端没有确认这次保存');
+      if (body && body.status) error.status = body.status;
+      error.details = body;
+      return error;
+    }
+
+    function validateAcknowledgement(operations, response) {
+      if (!response || response.hasConflicts || response.hasRejected)
+        throw serverError(response, '云端没有接受这次保存');
+      return applySyncResults(
+        baselineRecords,
+        operations,
+        response.results
+      );
+    }
+
+    async function sendToken(token) {
+      setPhase('saving');
+      try {
+        const response = await config.requestSync({
+          operationId: token.operationId,
+          operations: clone(token.operations),
+          finalize: true
+        });
+        const nextBaseline = validateAcknowledgement(
+          token.operations,
+          response
+        );
+        baselineRecords = nextBaseline;
+        committedState = clone(token.proposal);
+        setPhase('online');
+        return {
+          ok: true,
+          operationId: token.operationId,
+          state: clone(committedState),
+          baselineRecords: clone(baselineRecords),
+          replayed: response.replayed === true
+        };
+      } catch (error) {
+        const statusCode = Number(error && error.status);
+        setPhase(
+          statusCode === 401
+            ? 'unauthenticated'
+            : (statusCode === 409 ? 'conflict' : 'readonly'),
+          error
+        );
+        return {
+          ok: false,
+          conflict: statusCode === 409,
+          unauthenticated: statusCode === 401,
+          readonly: statusCode !== 401,
+          error,
+          retryToken: clone(token)
+        };
+      }
+    }
+
+    return {
+      get state() { return clone(committedState); },
+      get baselineRecords() { return clone(baselineRecords); },
+      get status() { return status(); },
+      noteNavigatorOffline() {
+        if (phase !== 'unauthenticated') setPhase('readonly');
+        return status();
+      },
+      noteNavigatorOnline() {
+        // navigator.onLine is only a hint. A real bootstrap is required before
+        // write controls may be enabled again.
+        return status();
+      },
+      async commit(proposal, operationId) {
+        if (phase !== 'online') {
+          return {
+            ok: false,
+            readonly: true,
+            error: new Error('当前未连接云端，账本为只读')
+          };
+        }
+        const cloudState = cloudBusinessState(proposal, baselineRecords);
+        const operations = planSync(cloudState, baselineRecords);
+        if (!operations.length) {
+          committedState = clone(proposal);
+          return {
+            ok: true,
+            unchanged: true,
+            state: clone(committedState),
+            baselineRecords: clone(baselineRecords)
+          };
+        }
+        return sendToken({
+          operationId: operationId || createOperationId(config.randomUUID),
+          operations,
+          proposal: clone(proposal)
+        });
+      },
+      async retry(retryToken) {
+        if (!retryToken || !retryToken.operationId ||
+            !Array.isArray(retryToken.operations) || !retryToken.proposal)
+          throw new TypeError('缺少完整的显式重试令牌');
+        if (phase === 'saving')
+          return { ok: false, busy: true, error: new Error('正在保存') };
+        return sendToken(clone(retryToken));
+      },
+      async recover() {
+        if (phase === 'saving')
+          return { ok: false, busy: true, error: new Error('正在保存') };
+        setPhase('checking');
+        try {
+          const remote = await config.bootstrap();
+          const records = clone(asRecords(remote));
+          const state = recordsToState(
+            records,
+            typeof config.fallbackState === 'function'
+              ? config.fallbackState()
+              : config.fallbackState
+          );
+          baselineRecords = records;
+          committedState = state;
+          setPhase('online');
+          return {
+            ok: true,
+            state: clone(committedState),
+            baselineRecords: clone(baselineRecords)
+          };
+        } catch (error) {
+          const statusCode = Number(error && error.status);
+          setPhase(
+            statusCode === 401 ? 'unauthenticated' : 'readonly',
+            error
+          );
+          return {
+            ok: false,
+            unauthenticated: statusCode === 401,
+            readonly: statusCode !== 401,
+            error
+          };
+        }
+      }
     };
   }
 
@@ -637,14 +873,17 @@
     buildSyncOperations: planSync,
     decideInitialMigration,
     summarizeState,
+    inspectImportPeriod,
     compareSummaries,
     compareConservation: compareSummaries,
-    chunkOperations,
     inspectPendingCache,
     applySyncResults,
     mergeRemoteState,
     compareMigrationTarget,
-    saveFailureResult,
-    snapshotFingerprint
+    snapshotFingerprint,
+    createOperationId,
+    strictPendingCacheDecision,
+    cloudBusinessState,
+    createOnlineCommitter
   };
 });

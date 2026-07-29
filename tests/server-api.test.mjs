@@ -7,10 +7,12 @@ import { INVARIANT_SCHEMA_STATEMENTS } from "../db/invariants.ts";
 import { authorizeBeforeExpose } from "../lib/server/authorization.ts";
 import {
   amountToCents,
+  canonicalSyncPayload,
   classifyVersion,
   dateValue,
   orderSyncOperations,
   parseSyncOperations,
+  parseSyncRequest,
   periodDays,
   RecordValidationError,
   rejectOwnershipFields,
@@ -294,6 +296,51 @@ test("同步外层契约拒绝客户端自造类型与无效版本", () => {
   );
 });
 
+test("严格同步要求稳定 operationId，且相同语义生成稳定哈希输入", () => {
+  const first = parseSyncRequest({
+    operationId: "write-12345678",
+    operations: [
+      {
+        op: "put",
+        type: "vehicle",
+        id: "v1",
+        expectedVersion: 1,
+        data: { name: "一号车", id: "v1" },
+      },
+    ],
+  });
+  const second = parseSyncRequest({
+    operations: [
+      {
+        data: { id: "v1", name: "一号车" },
+        expectedVersion: 1,
+        id: "v1",
+        type: "vehicle",
+        op: "put",
+      },
+    ],
+    operationId: "write-12345678",
+  });
+  assert.equal(
+    canonicalSyncPayload(first.operations, first.finalize),
+    canonicalSyncPayload(second.operations, second.finalize),
+  );
+  assert.throws(
+    () => parseSyncRequest({ operations: [] }),
+    (error) =>
+      error instanceof RecordValidationError &&
+      error.code === "invalid_operation_id",
+  );
+  assert.throws(
+    () =>
+      parseSyncRequest({
+        operationId: "new id with spaces",
+        operations: [],
+      }),
+    /operationId/,
+  );
+});
+
 test("服务端拒绝客户端指定车队、身份、成员、角色或车辆分配", () => {
   for (const field of [
     "fleetId",
@@ -362,6 +409,10 @@ test("服务端拒绝客户端指定车队、身份、成员、角色或车辆�
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const initialMigration = readFileSync(
   `${repositoryRoot}/drizzle/0000_public_wildside.sql`,
+  "utf8",
+).replaceAll("--> statement-breakpoint", "");
+const atomicSyncMigration = readFileSync(
+  `${repositoryRoot}/drizzle/0001_smart_the_twelve.sql`,
   "utf8",
 ).replaceAll("--> statement-breakpoint", "");
 const seedLedger = `
@@ -477,6 +528,47 @@ test("正式 schema CHECK 拒绝越权角色、非法状态/布尔/版本/排序
   );
 });
 
+test("严格同步 migration 可升级既有 D1，并落下幂等回执与版本守卫", () => {
+  const database = hardenedDatabase();
+  try {
+    database.exec(atomicSyncMigration);
+    assert.deepEqual(
+      database
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('sync_assertions', 'sync_commits') ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+      ["sync_assertions", "sync_commits"],
+    );
+    database
+      .prepare(
+        "INSERT INTO sync_commits (fleet_id, operation_id, request_hash, response_json) VALUES (?, ?, ?, ?)",
+      )
+      .run("f1", "write-migration-1", "hash-a", "{}");
+    assert.throws(
+      () =>
+        database
+          .prepare(
+            "INSERT INTO sync_commits (fleet_id, operation_id, request_hash, response_json) VALUES (?, ?, ?, ?)",
+          )
+          .run("f1", "write-migration-1", "hash-b", "{}"),
+      /UNIQUE constraint failed/,
+    );
+    assert.throws(
+      () =>
+        database
+          .prepare(
+            "INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok) VALUES (?, ?, ?, ?)",
+          )
+          .run("f1", "write-migration-1", 0, 0),
+      /sync_assertions_ok_check/,
+    );
+  } finally {
+    database.close();
+  }
+});
+
 test("原子触发器封住最后启用车辆与发车/停用交错竞态", () => {
   assertSqlFails(
     `
@@ -529,4 +621,116 @@ DELETE FROM trips WHERE fleet_id = 'f1' AND id = 't2';
 `,
     /trip_has_entries/,
   );
+});
+
+test("严格同步的 version guard 与业务写在同一事务失败时全部回滚", () => {
+  const database = hardenedDatabase();
+  try {
+    database.exec(`
+      CREATE TABLE sync_commits (
+        fleet_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (fleet_id, operation_id)
+      );
+      CREATE TABLE sync_assertions (
+        fleet_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        ok INTEGER NOT NULL CONSTRAINT sync_assertions_ok_check CHECK (ok = 1),
+        PRIMARY KEY (fleet_id, operation_id, ordinal)
+      );
+    `);
+    assert.throws(() => {
+      database.exec("BEGIN");
+      try {
+        database
+          .prepare(
+            `INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+             VALUES (?, ?, ?, CASE WHEN EXISTS (
+               SELECT 1 FROM vehicles WHERE fleet_id = ? AND id = ? AND version = ?
+             ) THEN 1 ELSE 0 END)`,
+          )
+          .run("f1", "write-atomic-1", 0, "f1", "v2", 1);
+        database
+          .prepare(
+            "UPDATE vehicles SET name = ?, version = 2 WHERE fleet_id = ? AND id = ? AND version = 1",
+          )
+          .run("不应部分保存", "f1", "v2");
+        database.exec(`
+          INSERT INTO trip_incomes (
+            fleet_id, id, trip_id, category_id, amount_cents, date
+          ) VALUES ('f1', 'i-first', 't2', 'cargo', 30000, '2026-07-04');
+          INSERT INTO trip_incomes (
+            fleet_id, id, trip_id, category_id, amount_cents, date
+          ) VALUES ('f1', 'i-second', 't2', 'cargo', 40000, '2026-07-04');
+        `);
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    }, /UNIQUE constraint failed/);
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `SELECT
+               (SELECT name FROM vehicles WHERE fleet_id = 'f1' AND id = 'v2') AS vehicle_name,
+               (SELECT COUNT(*) FROM trip_incomes WHERE fleet_id = 'f1' AND trip_id = 't2') AS incomes,
+               (SELECT COUNT(*) FROM sync_assertions) AS assertions,
+               (SELECT COUNT(*) FROM sync_commits) AS commits`,
+          )
+          .get(),
+      },
+      {
+        vehicle_name: "二号车",
+        incomes: 0,
+        assertions: 0,
+        commits: 0,
+      },
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("version guard 在预检后发生并发变化时用 CHECK 中止批次", () => {
+  const database = hardenedDatabase();
+  try {
+    database.exec(`
+      CREATE TABLE sync_assertions (
+        fleet_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        ok INTEGER NOT NULL CONSTRAINT sync_assertions_ok_check CHECK (ok = 1),
+        PRIMARY KEY (fleet_id, operation_id, ordinal)
+      );
+      UPDATE vehicles SET version = 2 WHERE fleet_id = 'f1' AND id = 'v2';
+    `);
+    assert.throws(
+      () =>
+        database
+          .prepare(
+            `INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+             VALUES (?, ?, ?, CASE WHEN EXISTS (
+               SELECT 1 FROM vehicles WHERE fleet_id = ? AND id = ? AND version = ?
+             ) THEN 1 ELSE 0 END)`,
+          )
+          .run("f1", "write-raced-1", 0, "f1", "v2", 1),
+      /sync_assertions_ok_check/,
+    );
+    assert.equal(
+      database
+        .prepare(
+          "SELECT name FROM vehicles WHERE fleet_id = 'f1' AND id = 'v2'",
+        )
+        .get().name,
+      "二号车",
+    );
+  } finally {
+    database.close();
+  }
 });

@@ -202,6 +202,26 @@ export const RUNTIME_SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS maintenance_fleet_vehicle_date_idx
     ON maintenance(fleet_id, vehicle_id, date)`,
+  `CREATE TABLE IF NOT EXISTS sync_commits (
+    fleet_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (fleet_id, operation_id),
+    FOREIGN KEY (fleet_id) REFERENCES fleets(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS sync_commits_created_at_idx
+    ON sync_commits(created_at)`,
+  `CREATE TABLE IF NOT EXISTS sync_assertions (
+    fleet_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    ok INTEGER NOT NULL,
+    CONSTRAINT sync_assertions_ok_check CHECK (ok = 1),
+    PRIMARY KEY (fleet_id, operation_id, ordinal),
+    FOREIGN KEY (fleet_id) REFERENCES fleets(id) ON DELETE CASCADE
+  )`,
   ...INVARIANT_SCHEMA_STATEMENTS,
 ] as const;
 

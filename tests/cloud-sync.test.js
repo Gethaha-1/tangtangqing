@@ -194,6 +194,52 @@ test('守恒比较会明确列出金额或数量差异', () => {
   );
 });
 
+test('JSON 导入账期缺失或非法时明确保留当前有效账期', () => {
+  const current = stateFixture();
+  const missing = Cloud.inspectImportPeriod(
+    { schemaVersion: 2, settings: {} },
+    current
+  );
+  assert.deepEqual(missing, {
+    backupPeriodValid: false,
+    preservedCurrentPeriod: true,
+    periodStartDate: current.settings.periodStartDate,
+    periodEndDate: current.settings.periodEndDate
+  });
+  assert.equal(
+    Cloud.inspectImportPeriod({
+      settings: {
+        periodStartDate: '2026-02-30',
+        periodEndDate: '2026-03-10'
+      }
+    }, current).backupPeriodValid,
+    false
+  );
+  assert.equal(
+    Cloud.inspectImportPeriod({
+      settings: {
+        periodStartDate: '2026-01-01',
+        periodEndDate: '2027-01-02'
+      }
+    }, current).backupPeriodValid,
+    false
+  );
+  assert.deepEqual(
+    Cloud.inspectImportPeriod({
+      settings: {
+        periodStartDate: '2026-04-01',
+        periodEndDate: '2027-03-31'
+      }
+    }, current),
+    {
+      backupPeriodValid: true,
+      preservedCurrentPeriod: false,
+      periodStartDate: '2026-04-01',
+      periodEndDate: '2027-03-31'
+    }
+  );
+});
+
 test('首次迁移明确区分上传提示、使用云端和双方数据冲突', () => {
   const local = stateFixture();
   assert.deepEqual(
@@ -273,14 +319,6 @@ test('首次上传按外键依赖顺序写入，删除时反向清理', () => {
   );
 });
 
-test('大型旧账上传会稳定拆成可重试的小批次', () => {
-  const operations = Array.from({ length: 501 }, (_, index) => ({ id: index }));
-  const chunks = Cloud.chunkOperations(operations, 200);
-  assert.deepEqual(chunks.map(items => items.length), [200, 200, 101]);
-  assert.equal(chunks[2][100].id, 500);
-  assert.throws(() => Cloud.chunkOperations(operations, 0), /正整数/);
-});
-
 test('设备待上传缓存只在云端版本未变化时安全续传', () => {
   const baseline = Cloud.normalizeState(stateFixture(), {
     'vehicle:v1': 3,
@@ -301,7 +339,7 @@ test('设备待上传缓存只在云端版本未变化时安全续传', () => {
   assert.deepEqual(conflict.conflicts, ['vehicle:v1']);
 });
 
-test('超过一批的混合同步仍全局先删除依赖，再写入新记录', () => {
+test('大型混合同步仍全局先删除依赖，再写入新记录', () => {
   const before = stateFixture();
   before.trips = Array.from({ length: 205 }, (_, index) => ({
     id: 'old-' + index,
@@ -332,8 +370,6 @@ test('超过一批的混合同步仍全局先删除依赖，再写入新记录',
   assert.ok(firstPut > 200);
   assert.equal(operations.slice(0, firstPut).every(item => item.op === 'delete'), true);
   assert.equal(operations.slice(firstPut).every(item => item.op === 'put'), true);
-  const chunks = Cloud.chunkOperations(operations, 200);
-  assert.equal(chunks[0].every(item => item.op === 'delete'), true);
 });
 
 test('旧账处理标记对字段顺序稳定，内容变化时会改变', () => {
@@ -447,10 +483,134 @@ test('首次迁移只核对目标 key，远端并发额外记录不破坏守恒'
   assert.equal(Cloud.hydrateState(remote).maintenance.length, 2);
 });
 
-test('设备缓存写入失败时保存失败结果明确 deviceCached=false', () => {
-  const error = new Error('云端暂时不可用');
-  const failure = Cloud.saveFailureResult(error, false);
-  assert.equal(failure.ok, false);
-  assert.equal(failure.deviceCached, false);
-  assert.equal(failure.error, error);
+test('严格模式检测旧待上传缓存只给显式处理结论，绝不自动续传', () => {
+  const before = stateFixture();
+  const baseline = Cloud.normalizeState(before, Object.fromEntries(
+    Cloud.normalizeState(before).map(item => [Cloud.recordKey(item.type, item.id), 1])
+  ));
+  assert.deepEqual(
+    Cloud.strictPendingCacheDecision(
+      { state: before, baselineRecords: baseline },
+      { records: baseline }
+    ),
+    {
+      status: 'discard',
+      requiresExplicitAction: false,
+      operations: [],
+      conflicts: []
+    }
+  );
+
+  const pending = clone(before);
+  pending.vehicles[0].name = '待确认改名';
+  const decision = Cloud.strictPendingCacheDecision(
+    { state: pending, baselineRecords: baseline },
+    { records: baseline }
+  );
+  assert.equal(decision.status, 'confirm-upload');
+  assert.equal(decision.requiresExplicitAction, true);
+  assert.deepEqual(
+    decision.operations.map(item => Cloud.recordKey(item.type, item.id)),
+    ['vehicle:v1']
+  );
+});
+
+test('在线提交器失败不改正式状态，显式重试复用 operationId 后才提交', async () => {
+  const before = stateFixture();
+  const baseline = Cloud.normalizeState(before, Object.fromEntries(
+    Cloud.normalizeState(before).map(item => [Cloud.recordKey(item.type, item.id), 1])
+  ));
+  const proposal = clone(before);
+  proposal.vehicles[0].name = '服务器确认后的名字';
+  const calls = [];
+  let fail = true;
+  const committer = Cloud.createOnlineCommitter({
+    state: before,
+    baselineRecords: baseline,
+    randomUUID: () => '11111111-2222-3333-4444-555555555555',
+    bootstrap: async () => ({ records: baseline }),
+    requestSync: async body => {
+      calls.push(clone(body));
+      if (fail) throw new Error('服务器不可达');
+      return {
+        operationId: body.operationId,
+        results: body.operations.map(operation => ({
+          op: operation.op,
+          type: operation.type,
+          id: operation.id,
+          status: 'applied',
+          version: operation.expectedVersion + 1,
+          data: operation.data
+        })),
+        hasConflicts: false,
+        hasRejected: false
+      };
+    }
+  });
+
+  const failed = await committer.commit(proposal);
+  assert.equal(failed.ok, false);
+  assert.equal(committer.status.phase, 'readonly');
+  assert.equal(committer.state.vehicles[0].name, before.vehicles[0].name);
+  assert.equal(calls[0].operationId, 'write-11111111-2222-3333-4444-555555555555');
+  assert.equal(failed.retryToken.operationId, calls[0].operationId);
+
+  fail = false;
+  const saved = await committer.retry(failed.retryToken);
+  assert.equal(saved.ok, true);
+  assert.equal(committer.status.phase, 'online');
+  assert.equal(committer.state.vehicles[0].name, '服务器确认后的名字');
+  assert.equal(calls[1].operationId, calls[0].operationId);
+  assert.deepEqual(calls[1].operations, calls[0].operations);
+});
+
+test('navigator 恢复在线不会解除只读，必须真实 bootstrap 成功', async () => {
+  const before = stateFixture();
+  const baseline = Cloud.normalizeState(before);
+  let bootstraps = 0;
+  const committer = Cloud.createOnlineCommitter({
+    state: before,
+    baselineRecords: baseline,
+    online: false,
+    requestSync: async () => {
+      throw new Error('不应写入');
+    },
+    bootstrap: async () => {
+      bootstraps++;
+      return { records: baseline };
+    }
+  });
+  assert.equal(committer.noteNavigatorOnline().writable, false);
+  const blocked = await committer.commit(clone(before));
+  assert.equal(blocked.readonly, true);
+  assert.equal(bootstraps, 0);
+
+  const recovered = await committer.recover();
+  assert.equal(recovered.ok, true);
+  assert.equal(bootstraps, 1);
+  assert.equal(committer.status.writable, true);
+});
+
+test('theme 是设备偏好，单独切换不会生成业务云写入', async () => {
+  const before = stateFixture();
+  const baseline = Cloud.normalizeState(before, Object.fromEntries(
+    Cloud.normalizeState(before).map(item => [Cloud.recordKey(item.type, item.id), 1])
+  ));
+  const proposal = clone(before);
+  proposal.settings.theme = before.settings.theme === 'night' ? 'day' : 'night';
+  let requests = 0;
+  const committer = Cloud.createOnlineCommitter({
+    state: before,
+    baselineRecords: baseline,
+    requestSync: async () => {
+      requests++;
+      throw new Error('不应上传 theme');
+    },
+    bootstrap: async () => ({ records: baseline })
+  });
+  const result = await committer.commit(proposal);
+  assert.equal(result.ok, true);
+  assert.equal(result.unchanged, true);
+  assert.equal(requests, 0);
+  assert.equal(committer.state.settings.theme, proposal.settings.theme);
 });

@@ -8,7 +8,7 @@
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
-  趟趟清 v1.4.0 —— 车队云账本第一阶段 · 多车辆 · 自定义账期
+  趟趟清 v1.5.0 —— 严格在线写入 · 离线只读 · 原子云端确认
   文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md / AI-GUIDE.md）：
     [CSS-1] 主题令牌（日「宣纸账房」/ 夜「瓷青泥金」双主题）
     [CSS-2] 通用布局 / 组件
@@ -314,6 +314,16 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   border:1px solid var(--line); border-radius:999px; padding:3px 8px; margin-bottom:7px; }
 .save-state { display:block; width:100%; min-height:44px; margin-top:2px; border:0; background:transparent;
   font-size:12px; color:var(--sub); text-align:center; }
+.cloud-mode-banner { position:fixed; z-index:75; left:50%; bottom:74px; width:min(calc(100% - 24px), 536px);
+  transform:translateX(-50%); padding:11px 14px; border:1px solid rgba(194,65,48,.42);
+  border-radius:12px; background:color-mix(in srgb, var(--panel) 94%, #b83d30 6%);
+  box-shadow:0 8px 28px rgba(32,24,20,.18); color:var(--text); font:inherit; font-size:13px;
+  line-height:1.55; text-align:left; cursor:pointer; }
+.cloud-mode-banner[hidden] { display:none; }
+.account-panel { margin-top:12px; }
+.account-panel .account-copy { padding:14px 16px; color:var(--sub); font-size:13px; line-height:1.65; }
+.account-panel .account-copy b { display:block; margin-bottom:2px; color:var(--text); font-size:15px; }
+body.is-saving [data-business-write], body.is-readonly [data-business-write] { opacity:.48; }
 </style>
 </head>
 <body class="theme-day">
@@ -350,7 +360,7 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
       <div class="bars-x" id="homeBarsX"><span></span><span></span><span></span></div>
     </div>
     <button type="button" class="save-state" id="saveState">正在连接云端账本…</button>
-    <div class="foot-note">趟趟清 <span class="js-ver"></span> · 账本归车队 · 每次保存都会核对权限<br>仍建议每月导出一份 JSON 备份</div>
+    <div class="foot-note">趟趟清 <span class="js-ver"></span> · 账本归车队 · 每次保存都会核对权限</div>
   </div>
 </section>
 
@@ -420,6 +430,10 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
       <div class="row" data-go="import"><span class="ric">📥</span><div class="rmain"><b>恢复数据</b><span>换手机后，用备份文件找回全部账</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="theme"><span class="ric">🌗</span><div class="rmain"><b>切换日 / 夜模式</b><span id="themeStateTxt">当前：宣纸账房（日）</span></div><span class="rarrow">›</span></div>
     </div>
+    <div class="panel account-panel">
+      <div class="account-copy"><b id="accountTitle">当前账号</b><span id="accountDetail">正在核对登录状态和车队归属…</span></div>
+      <button type="button" class="btn ghost" id="logoutBtn">退出登录</button>
+    </div>
     <input type="file" id="importFile" accept=".json,application/json" style="display:none">
     <div class="foot-note">趟趟清 <span class="js-ver"></span><br>迭代前先读 AI-GUIDE.md · 改完在地址末尾加 #test 跑自检</div>
   </div>
@@ -433,6 +447,10 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   <button data-v="maint"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4l6.9 4v8.2l-6.9 4-6.9-4V7.4z"/><circle cx="12" cy="11.5" r="2.8"/></svg>维修</button>
   <button data-v="more"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" stroke="none"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>更多</button>
 </nav>
+
+<button type="button" class="cloud-mode-banner" id="cloudModeBanner" aria-live="polite" hidden>
+  当前未连接云端，账本已切换为只读；点这里重新核对云端后可继续记账。
+</button>
 
 <!-- ================= [HTML-2] 弹层 ================= -->
 
@@ -637,24 +655,25 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
 <script src="/ledger/cloud-sync.js"></script>
 <script>
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.4.0';
+const APP_VER = '1.5.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const STORE_KEY = 'tangtangqing-data';
 const CACHE_KEY = 'tangtangqing-cloud-cache-v1';
 const CONFLICT_CACHE_KEY = 'tangtangqing-conflict-backup-v1';
+const LEGACY_MARKER_KEY = 'tangtangqing-cloud-migration-v2';
+const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 
 /*
- * D1 是正式数据源；localStorage 只保留旧账迁移来源、设备缓存和主题偏好。
- * 同步请求按独立记录发送 expectedVersion，绝不把整份 JSON 当作云端覆盖写。
+ * D1 是唯一正式数据源。新版本不再把失败业务写入保存成可自动续传的
+ * localStorage 快照；localStorage 仅保留旧版迁移来源、一次性迁移标记和设备偏好。
+ * 每个用户动作只发送一个带 expectedVersion + operationId 的原子批次。
  */
 const Store = (() => {
   let baselineRecords = [];
   let bootstrapInfo = null;
-  let saveQueue = Promise.resolve(true);
-  let lastState = null;
-  let online = navigator.onLine !== false;
-  let blockedByConflict = false;
-  let deviceCacheOK = true;
+  let connection = 'connecting';
+  let inFlight = null;
+  let pendingAction = null;
 
   const clone = value => JSON.parse(JSON.stringify(value));
   const localGet = key => {
@@ -665,35 +684,35 @@ const Store = (() => {
   };
   const localSet = (key, value) => {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; }
-    catch (e) { console.error('设备缓存失败', e); return false; }
+    catch (e) { console.error('设备偏好保存失败', e); return false; }
+  };
+  const localRemove = key => {
+    try { localStorage.removeItem(key); return true; }
+    catch (e) { console.error('旧版缓存清理失败', e); return false; }
   };
   const legacy = () => localGet(STORE_KEY);
   const cache = () => localGet(CACHE_KEY);
-  const writeCache = state => {
-    const previous = cache();
-    const fleetId = bootstrapInfo && bootstrapInfo.fleet && bootstrapInfo.fleet.id || '';
-    deviceCacheOK = localSet(CACHE_KEY, {
-      state: clone(state),
-      baselineRecords: clone(baselineRecords),
-      fleetId,
-      legacyHandled:
-        previous && previous.fleetId === fleetId
-          ? previous.legacyHandled || ''
-          : '',
-      savedAt: new Date().toISOString()
-    });
-    return deviceCacheOK;
-  };
 
   async function requestJSON(path, options) {
-    const response = await fetch(path, Object.assign({
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: { 'content-type': 'application/json' }
-    }, options || {}));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    let response;
+    try {
+      response = await fetch(path, Object.assign({
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal
+      }, options || {}));
+    } finally {
+      clearTimeout(timeout);
+    }
     if (response.status === 401) {
-      location.href = '/';
-      throw new Error('登录已失效');
+      connection = 'unauthenticated';
+      location.replace('/?reason=session-expired');
+      const error = new Error('登录已失效，请重新登录');
+      error.status = 401;
+      throw error;
     }
     let body = {};
     try { body = await response.json(); } catch (e) {}
@@ -712,70 +731,126 @@ const Store = (() => {
   async function refreshBaseline() {
     bootstrapInfo = await requestJSON('/api/bootstrap');
     baselineRecords = Array.isArray(bootstrapInfo.records) ? bootstrapInfo.records : [];
-    online = true;
+    connection = 'online';
     return bootstrapInfo;
   }
 
-  async function syncSnapshot(state) {
-    lastState = clone(state);
-    let deviceCached = writeCache(lastState);
-    const operations = TTQCloudSync.planSync(lastState, baselineRecords);
-    if (!operations.length) {
-      online = true;
-      return { ok: true, unchanged: true, deviceCached };
+  function operationId(prefix) {
+    const generated = TTQCloudSync.createOperationId();
+    return String(prefix || 'commit').replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 32) + ':' + generated;
+  }
+
+  function stateFromBaseline() {
+    return TTQCloudSync.hydrateState(baselineRecords, defaultData());
+  }
+
+  async function postAction(action) {
+    const result = await requestJSON('/api/sync', {
+      method: 'POST',
+      body: JSON.stringify(action.request)
+    });
+    if (result.operationId && result.operationId !== action.request.operationId)
+      throw new Error('云端回执与本次操作不匹配');
+    if (result.hasConflicts || result.hasRejected)
+      throw new Error('云端没有完整确认本次业务操作');
+    baselineRecords = TTQCloudSync.applySyncResults(
+      baselineRecords,
+      action.request.operations,
+      result.results
+    );
+    pendingAction = null;
+    connection = 'online';
+    return {
+      ok: true,
+      state: stateFromBaseline(),
+      operationId: action.request.operationId,
+      replayed: result.replayed === true
+    };
+  }
+
+  async function commitProposal(state, options) {
+    if (connection !== 'online') {
+      return {
+        ok: false,
+        readonly: true,
+        conflict: connection === 'conflict',
+        error: new Error('当前未连接云端，账本处于只读状态')
+      };
     }
-    try {
-      let result = null;
-      const chunks = TTQCloudSync.chunkOperations(operations, 200);
-      for (let i = 0; i < chunks.length; i++) {
-        result = await requestJSON('/api/sync', {
-          method: 'POST',
-          body: JSON.stringify({
-            operations: chunks[i],
-            finalize: i === chunks.length - 1
-          })
-        });
-        baselineRecords = TTQCloudSync.applySyncResults(
-          baselineRecords,
-          chunks[i],
-          result.results
-        );
-        if (result.hasConflicts || result.hasRejected) {
-          const failed = (result.results || []).find(item => item.status === 'conflict' || item.status === 'rejected');
-          const error = new Error(
-            failed && failed.error && failed.error.message
-              ? failed.error.message
-              : (result.hasConflicts ? '云端记录有新改动' : '有记录未通过服务端校验')
-          );
-          error.status = result.hasConflicts ? 409 : 422;
-          error.details = result;
-          if (result.hasConflicts) blockedByConflict = true;
-          throw error;
-        }
+    if (inFlight) {
+      return { ok: false, busy: true, error: new Error('上一笔还在保存，请稍候') };
+    }
+    const proposal = clone(state);
+    const cloudProposal = TTQCloudSync.cloudBusinessState(proposal, baselineRecords);
+    const operations = TTQCloudSync.planSync(cloudProposal, baselineRecords);
+    if (!operations.length) {
+      return { ok: true, unchanged: true, state: stateFromBaseline() };
+    }
+    if (operations.length > 500) {
+      return {
+        ok: false,
+        validation: true,
+        error: new Error('这次恢复包含超过 500 条变更，未发送也未覆盖云端；请联系管理员安全处理')
+      };
+    }
+    const action = {
+      proposal,
+      baselineRecords: clone(baselineRecords),
+      request: {
+        operationId: options && options.operationId || operationId(options && options.kind),
+        operations,
+        finalize: true
       }
-      online = true;
-      blockedByConflict = false;
-      deviceCached = writeCache(lastState);
-      return { ok: true, deviceCached };
+    };
+    connection = 'saving';
+    inFlight = postAction(action);
+    try {
+      return await inFlight;
     } catch (error) {
-      online = false;
-      deviceCached = writeCache(lastState);
       console.error('云端保存失败', error);
-      return TTQCloudSync.saveFailureResult(error, deviceCached);
+      if (error.status === 422 || error.status === 400) {
+        connection = 'online';
+        return { ok: false, validation: true, error };
+      }
+      pendingAction = action;
+      connection = error.status === 409 ? 'conflict' : 'offline';
+      return {
+        ok: false,
+        conflict: error.status === 409,
+        readonly: true,
+        error
+      };
+    } finally {
+      inFlight = null;
     }
   }
 
   return {
     mode: 'cloud',
-    get online() { return online; },
-    get deviceCached() { return deviceCacheOK; },
+    get online() { return connection === 'online'; },
+    get state() { return connection; },
+    get saving() { return Boolean(inFlight); },
+    get hasPending() { return Boolean(pendingAction); },
+    get pendingState() { return pendingAction ? clone(pendingAction.proposal) : null; },
+    get fleet() { return bootstrapInfo && bootstrapInfo.fleet || null; },
     legacy,
     cache,
     legacyFingerprint: TTQCloudSync.snapshotFingerprint,
+    whenIdle() { return inFlight || Promise.resolve({ ok: true }); },
     markLegacyHandled(data) {
-      const cached = cache() || {};
-      cached.legacyHandled = TTQCloudSync.snapshotFingerprint(data);
-      return localSet(CACHE_KEY, cached);
+      const marker = localGet(LEGACY_MARKER_KEY) || {};
+      marker.legacyHandled = TTQCloudSync.snapshotFingerprint(data);
+      return localSet(LEGACY_MARKER_KEY, marker);
+    },
+    isLegacyHandled(data) {
+      const marker = localGet(LEGACY_MARKER_KEY);
+      return Boolean(marker && marker.legacyHandled === TTQCloudSync.snapshotFingerprint(data));
+    },
+    clearLegacyCache() {
+      return localRemove(CACHE_KEY);
+    },
+    noteOffline() {
+      if (!inFlight) connection = 'offline';
     },
     preserveConflict(data) {
       return localSet(CONFLICT_CACHE_KEY, {
@@ -786,115 +861,91 @@ const Store = (() => {
       });
     },
     async open() {
-      try {
-        const remote = await refreshBaseline();
-        const cached = cache();
-        const scopedCache = cached &&
-          cached.fleetId === remote.fleet.id
-          ? cached
-          : null;
-        return { remote, legacy: legacy(), cache: scopedCache, offline: false };
-      } catch (error) {
-        throw error;
-      }
+      const remote = await refreshBaseline();
+      const cached = cache();
+      const scopedCache = cached && cached.fleetId === remote.fleet.id ? cached : null;
+      return { remote, legacy: legacy(), cache: scopedCache, offline: false };
     },
-    async save(data) {
-      const snapshot = clone(data);
-      saveQueue = saveQueue.catch(() => false).then(() => syncSnapshot(snapshot));
-      return saveQueue;
+    commit(data, options) {
+      return commitProposal(data, options);
     },
     async uploadInitial(data) {
-      const result = await syncSnapshot(data);
+      const result = await commitProposal(data, {
+        kind: 'initial',
+        operationId: 'initial:' + TTQCloudSync.snapshotFingerprint(data).replace(/[^A-Za-z0-9._:-]/g, '-')
+      });
       if (!result.ok) return result;
       await refreshBaseline();
       const uploaded = TTQCloudSync.hydrateState(baselineRecords, defaultData());
       const conservation = TTQCloudSync.compareMigrationTarget(data, baselineRecords);
       if (!conservation.equal)
-        return TTQCloudSync.saveFailureResult(
-          new Error('上传后守恒核对失败'),
-          writeCache(data)
-        );
-      lastState = clone(uploaded);
-      const deviceCached = writeCache(uploaded);
-      return { ok: true, state: uploaded, deviceCached };
+        return { ok: false, validation: true, error: new Error('上传后守恒核对失败') };
+      return { ok: true, state: uploaded };
     },
     useRemote(remote) {
       bootstrapInfo = remote;
       baselineRecords = Array.isArray(remote && remote.records) ? remote.records : [];
       const state = TTQCloudSync.hydrateState(baselineRecords, defaultData());
-      blockedByConflict = false;
-      writeCache(state);
+      pendingAction = null;
+      connection = 'online';
       return state;
     },
-    resumeCache(cached, remote) {
+    legacyPendingProposal(cached, remote) {
       bootstrapInfo = remote;
-      const merged = TTQCloudSync.mergeRemoteState(
+      return TTQCloudSync.mergeRemoteState(
         cached.state,
         cached.baselineRecords,
         remote,
         defaultData()
       );
-      baselineRecords = clone(remote.records || []);
-      lastState = clone(merged);
-      online = true;
-      blockedByConflict = false;
-      writeCache(lastState);
-      return lastState;
     },
-    async retry() {
-      if (blockedByConflict) {
-        return {
-          ok: false,
-          conflict: true,
-          error: new Error('云端记录有新改动，请刷新后明确处理')
-        };
-      }
+    async reconnect() {
       try {
-        if (!lastState) return { ok: true };
         const remote = await requestJSON('/api/bootstrap');
-        const pending = TTQCloudSync.inspectPendingCache({
-          state: lastState,
-          baselineRecords
+        bootstrapInfo = remote;
+        const remoteRecords = clone(remote.records || []);
+        if (!pendingAction) {
+          baselineRecords = remoteRecords;
+          connection = 'online';
+          return { ok: true, state: stateFromBaseline(), reloaded: true };
+        }
+        const pendingCheck = TTQCloudSync.inspectPendingCache({
+          state: pendingAction.proposal,
+          baselineRecords: pendingAction.baselineRecords
         }, remote);
-        if (pending.status === 'conflict') {
-          blockedByConflict = true;
+        if (pendingCheck.status === 'conflict') {
+          baselineRecords = remoteRecords;
+          connection = 'conflict';
           return {
             ok: false,
             conflict: true,
-            error: new Error('云端记录有新改动，请刷新后明确处理')
+            readonly: true,
+            error: new Error('云端记录有新改动，未确认的本次输入没有覆盖云端')
           };
         }
-        const merged = TTQCloudSync.mergeRemoteState(
-          lastState,
-          baselineRecords,
-          remote,
-          defaultData()
-        );
-        bootstrapInfo = remote;
-        baselineRecords = clone(remote.records || []);
-        lastState = clone(merged);
-        const deviceCached = writeCache(lastState);
-        if (pending.status === 'none') {
-          online = true;
-          return {
-            ok: true,
-            unchanged: true,
-            state: clone(lastState),
-            deviceCached
-          };
-        }
-        const result = await syncSnapshot(lastState);
-        result.state = clone(lastState);
-        return result;
+        baselineRecords = remoteRecords;
+        connection = 'saving';
+        inFlight = postAction(pendingAction);
+        const resumed = await inFlight;
+        return Object.assign({}, resumed, { resumed: true });
       } catch (error) {
-        const failure = TTQCloudSync.saveFailureResult(
-          error,
-          lastState ? writeCache(lastState) : false
-        );
-        if (lastState) failure.state = clone(lastState);
-        return failure;
+        if (error.status === 400 || error.status === 422) {
+          pendingAction = null;
+          connection = 'online';
+          return { ok: false, validation: true, error };
+        }
+        if (error.status !== 401) connection = error.status === 409 ? 'conflict' : 'offline';
+        return {
+          ok: false,
+          conflict: error.status === 409,
+          readonly: true,
+          error
+        };
+      } finally {
+        inFlight = null;
       }
-    }
+    },
+    retry() { return this.reconnect(); }
   };
 })();
 
@@ -937,27 +988,129 @@ function migrate(d) {
   return TTQDomain.migrate(d, defaultData());
 }
 
-let S = null;               /* 全局状态（单一数据源） */
-let saveTimer = null;
-function save() {
-  clearTimeout(saveTimer);
+const DevicePrefs = (() => {
+  let value = {};
+  try { value = JSON.parse(localStorage.getItem(DEVICE_PREFS_KEY) || '{}') || {}; }
+  catch (e) { value = {}; }
+  const persist = () => {
+    try { localStorage.setItem(DEVICE_PREFS_KEY, JSON.stringify(value)); }
+    catch (e) { console.error('设备偏好保存失败', e); }
+  };
+  return {
+    init(state) {
+      if (value.theme !== 'day' && value.theme !== 'night')
+        value.theme = state && state.settings && state.settings.theme === 'night' ? 'night' : 'day';
+      if (typeof value.activeVehicleId !== 'string')
+        value.activeVehicleId = state && state.settings && state.settings.activeVehicleId || 'all';
+      if (typeof value.lastReportSeen !== 'string')
+        value.lastReportSeen = state && state.settings && state.settings.lastReportSeen || '';
+      persist();
+    },
+    get theme() { return value.theme === 'night' ? 'night' : 'day'; },
+    set theme(next) { value.theme = next === 'night' ? 'night' : 'day'; persist(); },
+    get activeVehicleId() { return value.activeVehicleId || 'all'; },
+    set activeVehicleId(next) { value.activeVehicleId = String(next || 'all'); persist(); },
+    get lastReportSeen() { return value.lastReportSeen || ''; },
+    set lastReportSeen(next) { value.lastReportSeen = String(next || ''); persist(); }
+  };
+})();
+
+let S = null;               /* 只保存服务器已确认的正式状态 */
+let businessBusy = false;
+
+function updateCloudModeUI(message) {
   const stateEl = $('#saveState');
-  if (stateEl) stateEl.textContent = '正在保存…';
-  saveTimer = setTimeout(async () => {
-    const result = await Store.save(S);
-    if (stateEl) stateEl.textContent = result.ok
-      ? '已保存到云端'
-      : (result.deviceCached === false
-        ? '保存失败 · 设备缓存也失败，请立即导出'
-        : (result.conflict
-          ? '云端有新改动 · 刷新后处理'
-          : '尚未上传 · 已暂存在此设备'));
-    if (!result.ok) toast(result.deviceCached === false
-      ? '⚠️ 云端没保存，设备缓存也失败；请立即到「更多 → 备份数据」导出'
-      : (result.conflict
-        ? '⚠️ 云端已有新改动，这次没有覆盖；请刷新后再处理'
-        : '⚠️ 还没传到云端，已暂存在这台设备；联网后点这里重试'));
-  }, 150);
+  const banner = $('#cloudModeBanner');
+  const saving = businessBusy || Store.saving;
+  const readonly = !Store.online && !saving;
+  document.body.classList.toggle('is-saving', saving);
+  document.body.classList.toggle('is-readonly', readonly);
+  if (banner) {
+    banner.hidden = !readonly;
+    banner.textContent = Store.state === 'conflict'
+      ? '云端已有新改动，本次输入未覆盖云端；账本保持只读，点这里重新加载核对。'
+      : '当前未连接云端，账本已切换为只读；点这里重新核对云端后可继续记账。';
+  }
+  if (stateEl) {
+    stateEl.textContent = message || (saving
+      ? '正在保存，等待云端确认…'
+      : (Store.online
+        ? '已连接云端 · 写入需服务器确认'
+        : (Store.state === 'conflict'
+          ? '云端有新改动 · 点这里重新核对'
+          : '只读模式 · 点这里重新连接云端')));
+  }
+}
+
+function canStartBusinessWrite() {
+  if (businessBusy || Store.saving) {
+    toast('上一笔正在保存，请等云端确认');
+    return false;
+  }
+  if (!Store.online) {
+    updateCloudModeUI();
+    toast('当前是只读模式；恢复连接并重新核对云端后才能记账');
+    return false;
+  }
+  return true;
+}
+
+async function submitBusinessMutation(mutator, options) {
+  if (!canStartBusinessWrite()) return { ok: false, readonly: !Store.online };
+  const proposal = JSON.parse(JSON.stringify(S));
+  let context;
+  try {
+    context = mutator(proposal) || {};
+  } catch (error) {
+    console.error('业务提案生成失败', error);
+    toast(error.message || '这次修改不能提交');
+    return { ok: false, validation: true, error };
+  }
+  businessBusy = true;
+  updateCloudModeUI(options && options.savingText);
+  const result = await Store.commit(proposal, {
+    kind: options && options.kind,
+    operationId: options && options.operationId
+  });
+  businessBusy = false;
+  if (!result.ok) {
+    updateCloudModeUI(result.validation ? '云端未接受，本次没有保存' : undefined);
+    toast(result.conflict
+      ? '⚠️ 云端已有新改动，本次没有覆盖；请重新加载核对'
+      : (result.validation
+        ? '⚠️ ' + (result.error && result.error.message || '服务器未接受，本次没有保存')
+        : '⚠️ 未收到云端确认，账本已切换只读；表单内容仍在当前页面'));
+    if (options && options.onFailure) options.onFailure(result, context);
+    return result;
+  }
+  S = migrate(result.state || proposal);
+  DevicePrefs.init(S);
+  updateCloudModeUI(options && options.savedText || '已保存到云端');
+  if (options && options.onSuccess) options.onSuccess(S, context, result);
+  return result;
+}
+
+async function reconnectCloud() {
+  if (businessBusy || Store.saving) return Store.whenIdle();
+  businessBusy = true;
+  updateCloudModeUI('正在重新核对身份、车队和云端版本…');
+  const result = await Store.reconnect();
+  businessBusy = false;
+  if (result.ok && result.state) {
+    S = migrate(result.state);
+    DevicePrefs.init(S);
+    applyTheme();
+    renderCurrent();
+    if (result.resumed) closeAllSheets();
+    updateCloudModeUI(result.resumed ? '云端已确认刚才的保存' : '已重新连接云端');
+    toast(result.resumed ? '已核对：刚才的记录已由云端确认' : '已重新连接云端，可以继续记账');
+    return result;
+  }
+  updateCloudModeUI();
+  toast(result.conflict
+    ? '云端已有新改动；本次未确认输入没有覆盖云端'
+    : '仍未连接云端，账本继续保持只读');
+  return result;
 }
 
 /* ================= [JS-2] 工具函数 + 统计口径 ================= */
@@ -1013,7 +1166,10 @@ function vehicleLabel(id) {
   return v.name + (v.plateNo ? ' · ' + v.plateNo : '');
 }
 function activeVehicleId() {
-  return S.settings.activeVehicleId || 'all';
+  const selected = DevicePrefs.activeVehicleId;
+  return selected === 'all' || S.vehicles.some(vehicle => vehicle.id === selected)
+    ? selected
+    : 'all';
 }
 function periodStart() { return S.settings.periodStartDate; }
 function periodEnd() { return S.settings.periodEndDate; }
@@ -1149,17 +1305,10 @@ function renderHome() {
   const bn = $('#homeBanner'); let html = '';
   const now = new Date(); const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prev = pm.getFullYear() + '-' + String(pm.getMonth() + 1).padStart(2, '0');
-  if ((closedTripsIn(prev).length || maintIn(prev).length) && S.settings.lastReportSeen !== prev)
+  if ((closedTripsIn(prev).length || maintIn(prev).length) && DevicePrefs.lastReportSeen !== prev)
     html += '<div class="banner" data-act="prevrep" data-m="' + prev + '">📄 <b>' + prev.slice(5) + ' 月月报</b>已生成 · 点这里看，看完可转发</div>';
-  /* 备份提醒：有账、且从没备份过或距上次备份超 30 天 */
-  const hasData = S.trips.length || S.maintenance.length;
-  const bGap = S.settings.lastBackupAt ? Math.floor((new Date(todayStr()) - new Date(S.settings.lastBackupAt)) / 86400000) : -1;
-  if (hasData && (bGap === -1 || bGap >= 30))
-    html += '<div class="banner" data-act="backup">🔒 ' + (bGap === -1 ? '账本还<b>没备份过</b>' : '已 <b>' + bGap + ' 天</b>没备份') + ' · 点这里导出一份，发微信收藏最保险</div>';
   if (!Store.online)
-    html += Store.deviceCached
-      ? '<div class="banner" data-act="retry-sync">⚠️ 当前<b>没有连上云端</b>：新改动只暂存在这台设备，点这里重试上传</div>'
-      : '<div class="banner" data-act="backup">⚠️ <b>设备缓存也失败</b>：请立即导出备份，别关闭这个页面</div>';
+    html += '<div class="banner" data-act="retry-sync">⚠️ 当前<b>未连接云端</b>：账本只读，本页面没有把失败写入当作正式记录。点这里重新核对。</div>';
   bn.innerHTML = html;
 }
 function drawBars(el, arr, maxEl, keys) {
@@ -1252,16 +1401,26 @@ function renderTripDetail() {
   h += '<button class="btn danger" data-act="deltrip">删除这一趟</button>';
   $('#tripDetail').innerHTML = h;
 
-  $('#dStart').addEventListener('change', e => {
+  $('#dStart').addEventListener('change', async e => {
     if (!e.target.value) return;
     if (t.endDate && e.target.value > t.endDate) { toast('发车日期不能晚于到家日期'); e.target.value = t.startDate; return; }
-    t.startDate = e.target.value; save(); renderTripDetail();
+    const nextDate = e.target.value;
+    await submitBusinessMutation(draft => {
+      const nextTrip = draft.trips.find(item => item.id === t.id);
+      if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+      nextTrip.startDate = nextDate;
+    }, { kind: 'trip-date', onSuccess: () => renderTripDetail() });
   });
   const dEnd = $('#dEnd');
-  if (dEnd && !open) dEnd.addEventListener('change', e => {
+  if (dEnd && !open) dEnd.addEventListener('change', async e => {
     if (!e.target.value) return;
     if (e.target.value < t.startDate) { toast('到家日期不能早于发车日期'); e.target.value = t.endDate; return; }
-    t.endDate = e.target.value; save(); renderTripDetail();
+    const nextDate = e.target.value;
+    await submitBusinessMutation(draft => {
+      const nextTrip = draft.trips.find(item => item.id === t.id);
+      if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+      nextTrip.endDate = nextDate;
+    }, { kind: 'trip-date', onSuccess: () => renderTripDetail() });
   });
 }
 
@@ -1322,7 +1481,10 @@ function renderMaint() {
 
 /* ---- 更多 ---- */
 function renderMore() {
-  $('#themeStateTxt').textContent = '当前：' + (S.settings.theme === 'day' ? '宣纸账房（日）· 点了换瓷青泥金（夜）' : '瓷青泥金（夜）· 点了换宣纸账房（日）');
+  $('#themeStateTxt').textContent = '当前：' + (DevicePrefs.theme === 'day' ? '宣纸账房（日）· 点了换瓷青泥金（夜）' : '瓷青泥金（夜）· 点了换宣纸账房（日）');
+  const fleet = Store.fleet;
+  $('#accountTitle').textContent = fleet ? fleet.name : '当前账号';
+  $('#accountDetail').textContent = '已通过当前登录账号核对身份；业务数据归属当前车队。';
   $('#periodStateTxt').textContent = periodLabel();
 }
 
@@ -1416,6 +1578,7 @@ function initSlide(el, onDone) {
 /* —— 记一笔（快记） —— */
 let quickTripId = null, quickCatId = 'fuel', quickPadCtl = null;
 function openQuick(tripId) {
+  if (!canStartBusinessWrite()) return;
   const t = S.trips.find(x => x.id === tripId); if (!t) { toast('先发车，才能记账'); return; }
   quickTripId = tripId;
   const act = S.categories.expense.filter(c => c.active);
@@ -1445,19 +1608,29 @@ function updateQuickDateBtn() {
   const d = $('#quickDate').value;
   $('#quickDateBtn').textContent = (d === todayStr() ? '记在今天' : '记在 ' + fmtMD(d)) + '（点了改日期）';
 }
-function quickSave(v) {
+async function quickSave(v) {
   const t = S.trips.find(x => x.id === quickTripId); if (!t) return;
   const date = $('#quickDate').value || (t.status === 'open' ? todayStr() : (t.endDate || todayStr()));
   const note = $('#quickNote').value.trim();
-  t.expenses.push({ id: uid(), catId: quickCatId, amount: v, date, note });
-  save();
-  toast('已记上 · ' + catById(quickCatId).name + ' ¥' + fmt(v));
-  closeSheet($('#sheet-quick'));
+  const entryId = uid();
+  await submitBusinessMutation(draft => {
+    const nextTrip = draft.trips.find(item => item.id === quickTripId);
+    if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+    nextTrip.expenses.push({ id: entryId, catId: quickCatId, amount: v, date, note });
+  }, {
+    kind: 'trip-expense',
+    onSuccess: () => {
+      toast('已记上 · ' + catById(quickCatId).name + ' ¥' + fmt(v));
+      closeSheet($('#sheet-quick'));
+      renderCurrent();
+    }
+  });
 }
 
 /* —— 通用金额盘（收入 / 改一笔 / 维修） —— */
 let amtCfg = null, amtPadCtl = null;
 function openAmtPad(cfg) {
+  if (!canStartBusinessWrite()) return;
   amtCfg = cfg;
   $('#amtTitle').textContent = cfg.title || '输入金额';
   $('#amtDateWrap').style.display = cfg.showDate ? '' : 'none';
@@ -1482,6 +1655,7 @@ function renderAmtChips() {
 /* —— 发车 —— */
 let startVehicleId = null;
 function openStart() {
+  if (!canStartBusinessWrite()) return;
   const active = S.vehicles.filter(v => v.active);
   if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
   const scoped = activeVehicleId() !== 'all' ? active.find(v => v.id === activeVehicleId() && !openTrip(v.id)) : null;
@@ -1514,6 +1688,7 @@ function updateStartTip() {
 /* —— 收车结算 —— */
 let closeCtx = null;
 function openCloseSheet(tripId) {
+  if (!canStartBusinessWrite()) return;
   const t = S.trips.find(x => x.id === tripId); if (!t) return;
   closeCtx = { tripId, inc: Object.create(null) };
   S.categories.income.forEach(c => {
@@ -1553,20 +1728,32 @@ async function doCloseTrip() {
     const goOn = await ask('这趟还没填收入，确定先收车吗？回头可在趟次详情里补填');
     if (!goOn) { $('#closeSlide').ttqReset(); return; }
   }
-  t.incomes = Object.keys(closeCtx.inc).filter(cid => closeCtx.inc[cid] > 0)
+  const incomeEntries = Object.keys(closeCtx.inc).filter(cid => closeCtx.inc[cid] > 0)
     .map(cid => ({ id: uid(), catId: cid, amount: closeCtx.inc[cid], date: d }));
-  t.endDate = d; t.status = 'closed'; t.closedAt = new Date().toISOString();
-  save();
-  const p = tripTotals(t).profit;
+  const result = await submitBusinessMutation(draft => {
+    const nextTrip = draft.trips.find(item => item.id === closeCtx.tripId);
+    if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+    nextTrip.incomes = incomeEntries;
+    nextTrip.endDate = d;
+    nextTrip.status = 'closed';
+    nextTrip.closedAt = new Date().toISOString();
+  }, {
+    kind: 'close-trip',
+    savingText: '正在保存收车和全部收入…'
+  });
+  if (!result.ok) { $('#closeSlide').ttqReset(); return; }
+  const savedTrip = S.trips.find(item => item.id === closeCtx.tripId);
+  const p = tripTotals(savedTrip).profit;
   closeAllSheets();
   showView('home');
-  const seq = tripSeq(t);
+  const seq = tripSeq(savedTrip);
   toast('已收车 🎉 ' + (seq > 0 ? '第 ' + seq + ' 趟' : '记录在当前账期外') + ' · 利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
 }
 
 /* —— 补录旧账 —— */
 let backfillVehicleId = null;
 function openBackfill() {
+  if (!canStartBusinessWrite()) return;
   const active = S.vehicles.filter(v => v.active);
   if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
   backfillVehicleId = activeVehicleId() !== 'all' && active.some(v => v.id === activeVehicleId()) ? activeVehicleId() : active[0].id;
@@ -1598,7 +1785,7 @@ function bfUpdateProfit() {
   const p = inc.reduce((s, e) => s + e.amount, 0) - exp.reduce((s, e) => s + e.amount, 0);
   $('#bfProfit').textContent = (p >= 0 ? '+' : '−') + fmt(Math.abs(p));
 }
-function bfSave() {
+async function bfSave() {
   if (!guardOnce()) return;
   const s = $('#bfStart').value, e = $('#bfEnd').value;
   if (!s || !e) { toast('发车、到家日期都要填'); return; }
@@ -1609,15 +1796,20 @@ function bfSave() {
   const t = { id: uid(), vehicleId: backfillVehicleId, startDate: s, endDate: e, status: 'closed', createdAt: new Date().toISOString(), closedAt: '',
     expenses: exp.map(x => ({ id: uid(), catId: x.catId, amount: x.amount, date: e, note: '' })),
     incomes: inc.map(x => ({ id: uid(), catId: x.catId, amount: x.amount, date: e })) };
-  S.trips.push(t); save();
+  const result = await submitBusinessMutation(draft => {
+    draft.trips.push(t);
+  }, { kind: 'backfill', savingText: '正在保存整趟补录…' });
+  if (!result.ok) return;
+  const savedTrip = S.trips.find(item => item.id === t.id);
   closeSheet($('#sheet-backfill'));
   showView('trips');
-  const seq = tripSeq(t);
-  toast(seq > 0 ? ('已存入 · ' + vehicleById(t.vehicleId).name + '第 ' + seq + ' 趟') : '已存入 · 到家日期在当前账期外');
+  const seq = tripSeq(savedTrip);
+  toast(seq > 0 ? ('已存入 · ' + vehicleById(savedTrip.vehicleId).name + '第 ' + seq + ' 趟') : '已存入 · 到家日期在当前账期外');
 }
 
 /* —— 账期设置 —— */
 function openPeriod() {
+  if (!canStartBusinessWrite()) return;
   $('#periodStart').value = periodStart();
   $('#periodEnd').value = periodEnd();
   updatePeriodTip();
@@ -1628,15 +1820,17 @@ function updatePeriodTip() {
   const days = TTQDomain.periodDays(start, end);
   $('#periodDaysTip').textContent = days ? ('共 ' + days + ' 天；账期内各车辆趟号都从 1 开始') : '结束日期不能早于开始日期';
 }
-function savePeriod() {
+async function savePeriod() {
   if (!guardOnce()) return;
   const start = $('#periodStart').value, end = $('#periodEnd').value;
   const days = TTQDomain.periodDays(start, end);
   if (!days) { toast('开始、结束日期要填对'); return; }
   if (days > 366) { toast('一个账期最长设置 366 天'); return; }
-  S.settings.periodStartDate = start;
-  S.settings.periodEndDate = end;
-  save();
+  const result = await submitBusinessMutation(draft => {
+    draft.settings.periodStartDate = start;
+    draft.settings.periodEndDate = end;
+  }, { kind: 'period' });
+  if (!result.ok) return;
   closeSheet($('#sheet-period'));
   renderCurrent();
   toast('账期已改好 · 共 ' + days + ' 天');
@@ -1655,6 +1849,7 @@ function renderVehicles() {
   }).join('');
 }
 function openVehicleEdit(id) {
+  if (!canStartBusinessWrite()) return;
   vehicleEditCtx = id ? { mode: 'edit', id } : { mode: 'new' };
   const v = id ? vehicleById(id) : null;
   $('#vehicleEditTitle').textContent = v ? '修改车辆' : '添加车辆';
@@ -1662,32 +1857,49 @@ function openVehicleEdit(id) {
   $('#vehiclePlate').value = v ? v.plateNo : '';
   openSheet($('#sheet-vehicle-edit'));
 }
-function saveVehicle() {
+async function saveVehicle() {
   if (!guardOnce()) return;
   const name = $('#vehicleName').value.trim();
   const plateNo = $('#vehiclePlate').value.trim().toUpperCase();
   if (!name) { toast('先给车辆起个名称'); return; }
   if (S.vehicles.some(v => v.name === name && (!vehicleEditCtx.id || v.id !== vehicleEditCtx.id))) { toast('已经有这个车辆名称了'); return; }
-  if (vehicleEditCtx.mode === 'edit') {
-    const v = S.vehicles.find(item => item.id === vehicleEditCtx.id);
-    if (v) { v.name = name; v.plateNo = plateNo; }
-  } else {
-    const v = { id: 'v_' + uid(), name, plateNo, active: true, createdAt: new Date().toISOString() };
-    S.vehicles.push(v);
-    S.settings.activeVehicleId = v.id;
-  }
-  save();
+  const addedId = vehicleEditCtx.mode === 'new' ? 'v_' + uid() : null;
+  const result = await submitBusinessMutation(draft => {
+    if (vehicleEditCtx.mode === 'edit') {
+      const vehicle = draft.vehicles.find(item => item.id === vehicleEditCtx.id);
+      if (!vehicle) throw new Error('车辆已不存在，请重新加载');
+      vehicle.name = name;
+      vehicle.plateNo = plateNo;
+    } else {
+      draft.vehicles.push({
+        id: addedId,
+        name,
+        plateNo,
+        active: true,
+        createdAt: new Date().toISOString()
+      });
+    }
+  }, { kind: 'vehicle' });
+  if (!result.ok) return;
+  if (addedId) DevicePrefs.activeVehicleId = addedId;
   closeSheet($('#sheet-vehicle-edit'));
   renderVehicles();
   toast('车辆已保存 · ' + name);
 }
-function toggleVehicle(id) {
+async function toggleVehicle(id) {
   const v = S.vehicles.find(item => item.id === id); if (!v) return;
   if (v.active && openTrip(v.id)) { toast('这辆车还在途中，收车后才能停用'); return; }
   if (v.active && S.vehicles.filter(item => item.active).length <= 1) { toast('至少要保留一辆启用的车'); return; }
-  v.active = !v.active;
-  if (!v.active && activeVehicleId() === v.id) S.settings.activeVehicleId = 'all';
-  save(); renderVehicles(); toast(v.active ? '车辆已启用' : '车辆已停用，历史账目还在');
+  const nextActive = !v.active;
+  const result = await submitBusinessMutation(draft => {
+    const vehicle = draft.vehicles.find(item => item.id === id);
+    if (!vehicle) throw new Error('车辆已不存在，请重新加载');
+    vehicle.active = nextActive;
+  }, { kind: 'vehicle-status' });
+  if (!result.ok) return;
+  if (!nextActive && activeVehicleId() === id) DevicePrefs.activeVehicleId = 'all';
+  renderVehicles();
+  toast(nextActive ? '车辆已启用' : '车辆已停用，历史账目还在');
 }
 
 /* —— 科目管理 —— */
@@ -1703,6 +1915,7 @@ function renderCats() {
   $('#catIncList').innerHTML = mk(S.categories.income, 'income');
 }
 function openNewcat(ctx) {
+  if (!canStartBusinessWrite()) return;
   newcatCtx = ctx;
   $('#newcatTitle').textContent = ctx.mode === 'rename' ? '改科目' : (ctx.type === 'expense' ? '添加支出科目' : '添加收入科目');
   const cur = ctx.catId ? catById(ctx.catId) : null;
@@ -1711,21 +1924,39 @@ function openNewcat(ctx) {
   $('#newcatIcons').innerHTML = ICONS.map(ic => '<div class="chip' + (ic === newcatCtx.icon ? ' on' : '') + '" data-ic="' + attrEsc(ic) + '" style="min-width:52px"><em>' + safeIconText(ic) + '</em></div>').join('');
   openSheet($('#sheet-newcat'));
 }
-function saveNewcat() {
+async function saveNewcat() {
   if (!guardOnce()) return;
   const name = $('#newcatName').value.trim();
   if (!name) { toast('先起个名'); return; }
   const list = S.categories[newcatCtx.type];
+  const newId = newcatCtx.mode === 'rename' ? null : 'c_' + uid();
   if (newcatCtx.mode === 'rename') {
-    const c = list.find(x => x.id === newcatCtx.catId);
-    if (c) { c.name = name; c.icon = newcatCtx.icon; }
+    if (!list.some(item => item.id === newcatCtx.catId)) {
+      toast('科目已不存在，请重新加载');
+      return;
+    }
   } else {
     if (list.some(c => c.name === name)) { toast('已经有这个科目了'); return; }
-    const nc = { id: 'c_' + uid(), name, icon: newcatCtx.icon, builtin: false, active: true };
-    list.push(nc);
-    if (newcatCtx.from === 'quick') quickCatId = nc.id;
   }
-  save();
+  const result = await submitBusinessMutation(draft => {
+    const draftList = draft.categories[newcatCtx.type];
+    if (newcatCtx.mode === 'rename') {
+      const category = draftList.find(item => item.id === newcatCtx.catId);
+      if (!category) throw new Error('科目已不存在，请重新加载');
+      category.name = name;
+      category.icon = newcatCtx.icon;
+    } else {
+      draftList.push({
+        id: newId,
+        name,
+        icon: newcatCtx.icon,
+        builtin: false,
+        active: true
+      });
+    }
+  }, { kind: 'category' });
+  if (!result.ok) return;
+  if (newcatCtx.from === 'quick' && newId) quickCatId = newId;
   toast('好了 · ' + name);
   closeSheet($('#sheet-newcat'));
 }
@@ -1815,12 +2046,17 @@ function shareReport() {
 /* —— 备份 / 恢复 —— */
 function exportData() {
   exportSnapshot(S);
-  S.settings.lastBackupAt = todayStr(); save();
-  if (curView === 'home') renderHome();
-  toast('已导出备份，发到自己微信收藏最保险');
+  toast('JSON 已导出；这不会修改云端账本');
 }
 function exportSnapshot(snapshot, suffix) {
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  const payload = JSON.parse(JSON.stringify(snapshot));
+  payload._backupMeta = {
+    format: 'tangtangqing-schema-v2',
+    appVersion: APP_VER,
+    exportedAt: new Date().toISOString(),
+    sourceFleetId: Store.fleet && Store.fleet.id || ''
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = '趟趟清' + (suffix || '备份') + '-' + todayStr().replace(/-/g, '') + '.json';
@@ -1843,45 +2079,80 @@ function preserveSoftDeletedDirectories(next, current) {
   return next;
 }
 function importData(file) {
+  if (!canStartBusinessWrite()) return;
   const r = new FileReader();
   r.onload = async () => {
     try {
       const obj = JSON.parse(r.result);
       if (!obj || !Array.isArray(obj.trips)) { toast('这不是趟趟清的备份文件'); return; }
-      const ok = await ask('恢复会用备份里的 ' + obj.trips.length + ' 趟记录，覆盖现在的 ' + S.trips.length + ' 趟。确定恢复吗？');
+      const periodPlan = TTQCloudSync.inspectImportPeriod(obj, S);
+      const rawStart = periodPlan.periodStartDate;
+      const rawEnd = periodPlan.periodEndDate;
+      const validBackupPeriod = periodPlan.backupPeriodValid;
+      const candidate = preserveSoftDeletedDirectories(migrate(obj), S);
+      candidate.settings.periodStartDate = periodPlan.periodStartDate;
+      candidate.settings.periodEndDate = periodPlan.periodEndDate;
+      ['theme', 'lastReportSeen', 'lastBackupAt', 'activeVehicleId'].forEach(field => {
+        candidate.settings[field] = S.settings[field];
+      });
+      const before = TTQCloudSync.summarizeState(S);
+      const after = TTQCloudSync.summarizeState(candidate);
+      const meta = obj._backupMeta && typeof obj._backupMeta === 'object' ? obj._backupMeta : {};
+      const differentFleet = meta.sourceFleetId && Store.fleet && meta.sourceFleetId !== Store.fleet.id;
+      const sourceText = differentFleet
+        ? '⚠️ 文件来自另一个车队；登录身份不会改变，但内容会写入当前车队。'
+        : (meta.sourceFleetId ? '文件来源与当前车队一致。' : '文件没有可识别的车队来源信息。');
+      const periodText = validBackupPeriod
+        ? '账期也将完整恢复为 ' + rawStart + ' 至 ' + rawEnd + '。'
+        : '⚠️ 文件缺少合法账期；为安全起见会保留当前账期 ' + periodLabel() + '。';
+      const ok = await ask(
+        '这是“完整替换当前账本”。\n' +
+        sourceText + '\n' + periodText + '\n\n' +
+        '当前：车辆 ' + before.counts.vehicles + '、趟次 ' + before.counts.trips +
+        '、收入 ' + before.counts.tripIncomes + ' 笔 ¥' + fmt(before.amounts.tripIncomes) +
+        '、支出 ' + before.counts.tripExpenses + ' 笔 ¥' + fmt(before.amounts.tripExpenses) +
+        '、维修 ' + before.counts.maintenance + ' 笔 ¥' + fmt(before.amounts.maintenance) + '。\n' +
+        '导入后：车辆 ' + after.counts.vehicles + '、趟次 ' + after.counts.trips +
+        '、收入 ' + after.counts.tripIncomes + ' 笔 ¥' + fmt(after.amounts.tripIncomes) +
+        '、支出 ' + after.counts.tripExpenses + ' 笔 ¥' + fmt(after.amounts.tripExpenses) +
+        '、维修 ' + after.counts.maintenance + ' 笔 ¥' + fmt(after.amounts.maintenance) + '。\n\n' +
+        '只有服务器原子确认全部变更后，页面才会切换。确定继续吗？'
+      );
       if (!ok) return;
-      S = preserveSoftDeletedDirectories(migrate(obj), S);
-      applyTheme(); renderCurrent();
-      const result = await Store.save(S);
-      const stateEl = $('#saveState');
-      if (stateEl) stateEl.textContent = result.ok
-        ? '已保存到云端'
-        : (result.deviceCached === false
-          ? '恢复失败 · 设备缓存也失败，请立即导出'
-          : '恢复内容尚未上传 · 已暂存在此设备');
-      toast(result.ok
-        ? '恢复完成，已保存到云端'
-        : (result.deviceCached === false
-          ? '⚠️ 恢复内容没保存，设备缓存也失败；请立即重新导出 JSON'
-          : '恢复内容还没传到云端，已暂存在这台设备'));
-    } catch (e) { toast('文件读取失败'); }
+      const fingerprint = TTQCloudSync.snapshotFingerprint(candidate)
+        .replace(/[^A-Za-z0-9._:-]/g, '-');
+      const result = await submitBusinessMutation(draft => {
+        Object.keys(draft).forEach(key => { delete draft[key]; });
+        Object.assign(draft, JSON.parse(JSON.stringify(candidate)));
+      }, {
+        kind: 'json-import',
+        operationId: 'json-import:' + fingerprint,
+        savingText: '正在原子恢复完整账本…'
+      });
+      if (result.ok) {
+        applyTheme();
+        renderCurrent();
+        toast('恢复完成，全部内容已由云端确认');
+      }
+    } catch (e) { toast('文件读取或预检失败：' + (e.message || '未知错误')); }
   };
   r.readAsText(file);
 }
 
 /* —— 主题 —— */
 function applyTheme() {
-  document.body.className = 'theme-' + (S.settings.theme === 'night' ? 'night' : 'day');
-  $('#themeBtn').innerHTML = S.settings.theme === 'night' ? SVG_SUN : SVG_MOON;
+  document.body.classList.remove('theme-day', 'theme-night');
+  document.body.classList.add('theme-' + DevicePrefs.theme);
+  $('#themeBtn').innerHTML = DevicePrefs.theme === 'night' ? SVG_SUN : SVG_MOON;
 }
 function toggleTheme() {
-  S.settings.theme = S.settings.theme === 'night' ? 'day' : 'night';
-  save(); applyTheme();
+  DevicePrefs.theme = DevicePrefs.theme === 'night' ? 'day' : 'night';
+  applyTheme();
   if (curView === 'more') renderMore();
 }
 
 /* —— 全局事件代理（动态元素统一在这接） —— */
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   const q = sel => e.target.closest(sel);
   let el;
   if ((el = q('[data-close]'))) { closeSheet(el.closest('.sheet')); return; }
@@ -1889,45 +2160,29 @@ document.addEventListener('click', e => {
     const act = el.dataset.act;
     if (act === 'quick') { const t = S.trips.find(item => item.id === el.dataset.trip) || openTripsInScope(activeVehicleId())[0]; if (t) openQuick(t.id); }
     else if (act === 'start') openStart();
-    else if (act === 'prevrep') { genReport(el.dataset.m); S.settings.lastReportSeen = el.dataset.m; save(); }
+    else if (act === 'prevrep') { genReport(el.dataset.m); DevicePrefs.lastReportSeen = el.dataset.m; renderHome(); }
     else if (act === 'backup') exportData();
-    else if (act === 'retry-sync') {
-      const stateEl = $('#saveState');
-      if (stateEl) stateEl.textContent = '正在重试上传…';
-      Store.retry().then(result => {
-        if (result.state) {
-          S = migrate(result.state);
-          applyTheme();
-          renderCurrent();
-        }
-        if (stateEl) stateEl.textContent = result.ok
-          ? '已保存到云端'
-          : (result.deviceCached === false
-            ? '保存失败 · 设备缓存也失败，请立即导出'
-            : '仍未上传 · 点这里再试');
-        toast(result.ok
-          ? '已补传到云端'
-          : (result.deviceCached === false
-            ? '⚠️ 设备缓存失败，请立即到「更多 → 备份数据」导出'
-            : '还是没连上，改动继续留在这台设备'));
-        if (!result.state) renderHome();
-      });
-    }
+    else if (act === 'retry-sync') await reconnectCloud();
     else if (act === 'addexp') openQuick(detailTripId);
     else if (act === 'goclose') openCloseSheet(detailTripId);
     else if (act === 'deltrip') {
       const t = S.trips.find(x => x.id === detailTripId);
-      if (t) ask('删除' + (tripSeq(t) > 0 ? '第 ' + tripSeq(t) + ' 趟' : '这一趟') + '？这趟的所有记录都会没了').then(ok => {
+      if (t) ask('删除' + (tripSeq(t) > 0 ? '第 ' + tripSeq(t) + ' 趟' : '这一趟') + '？这趟的所有记录都会没了').then(async ok => {
         if (!ok) return;
-        S.trips = S.trips.filter(x => x.id !== detailTripId);
-        save(); closeAllSheets(); showView('trips'); toast('已删除');
+        const result = await submitBusinessMutation(draft => {
+          draft.trips = draft.trips.filter(item => item.id !== detailTripId);
+        }, { kind: 'delete-trip', savingText: '正在原子删除趟次和全部子记录…' });
+        if (!result.ok) return;
+        closeAllSheets();
+        showView('trips');
+        toast('已删除');
       });
     }
     return;
   }
   if ((el = q('[data-vehicle-scope]'))) {
-    S.settings.activeVehicleId = el.dataset.vehicleScope;
-    save(); renderCurrent(); return;
+    DevicePrefs.activeVehicleId = el.dataset.vehicleScope;
+    renderCurrent(); return;
   }
   if ((el = q('[data-start-vehicle]'))) {
     startVehicleId = el.dataset.startVehicle;
@@ -1945,7 +2200,13 @@ document.addEventListener('click', e => {
     if (t.status === 'open' && nextVehicleId !== t.vehicleId && openTrip(nextVehicleId)) {
       toast(vehicleById(nextVehicleId).name + '已有一趟在途中'); return;
     }
-    t.vehicleId = nextVehicleId; save(); renderTripDetail(); return;
+    const result = await submitBusinessMutation(draft => {
+      const nextTrip = draft.trips.find(item => item.id === detailTripId);
+      if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+      nextTrip.vehicleId = nextVehicleId;
+    }, { kind: 'move-trip' });
+    if (result.ok) renderTripDetail();
+    return;
   }
   if ((el = q('.trip-card[data-trip]'))) { detailTripId = el.dataset.trip; renderTripDetail(); openSheet($('#sheet-trip')); return; }
   if ((el = q('[data-cat]'))) { quickCatId = el.dataset.cat; renderQuickChips(); return; }
@@ -1956,7 +2217,17 @@ document.addEventListener('click', e => {
   if ((el = q('[data-catact]'))) {
     const act = el.dataset.catact, type = el.dataset.cattype, id = el.dataset.catid;
     if (act === 'rename') openNewcat({ type, mode: 'rename', catId: id });
-    else { const c = S.categories[type].find(x => x.id === id); if (c) { c.active = !c.active; save(); renderCats(); } }
+    else {
+      const category = S.categories[type].find(item => item.id === id);
+      if (category) {
+        const result = await submitBusinessMutation(draft => {
+          const nextCategory = draft.categories[type].find(item => item.id === id);
+          if (!nextCategory) throw new Error('科目已不存在，请重新加载');
+          nextCategory.active = !category.active;
+        }, { kind: 'category-status' });
+        if (result.ok) renderCats();
+      }
+    }
     return;
   }
   if ((el = q('[data-closeinc]'))) {
@@ -1973,8 +2244,17 @@ document.addEventListener('click', e => {
     const cur = t.incomes.filter(x => x.catId === cid).reduce((s, x) => s + x.amount, 0);
     openAmtPad({ title: '改「' + c.name + '」', expr: cur ? String(cur) : '', okLabel: '✓ 保 存',
       canDelete: cur > 0,
-      onSave: v => { t.incomes = t.incomes.filter(x => x.catId !== cid); t.incomes.push({ id: uid(), catId: cid, amount: v, date: t.endDate || todayStr() }); save(); },
-      onDelete: () => { t.incomes = t.incomes.filter(x => x.catId !== cid); save(); } });
+      onSave: v => submitBusinessMutation(draft => {
+        const nextTrip = draft.trips.find(item => item.id === detailTripId);
+        if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+        nextTrip.incomes = nextTrip.incomes.filter(item => item.catId !== cid);
+        nextTrip.incomes.push({ id: uid(), catId: cid, amount: v, date: t.endDate || todayStr() });
+      }, { kind: 'trip-income', onSuccess: () => renderTripDetail() }),
+      onDelete: () => submitBusinessMutation(draft => {
+        const nextTrip = draft.trips.find(item => item.id === detailTripId);
+        if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+        nextTrip.incomes = nextTrip.incomes.filter(item => item.catId !== cid);
+      }, { kind: 'trip-income-delete', onSuccess: () => renderTripDetail() }) });
     return;
   }
   if ((el = q('[data-entry]'))) {
@@ -1983,16 +2263,36 @@ document.addEventListener('click', e => {
     openAmtPad({ title: '改「' + catById(en.catId).name + '」的一笔', expr: String(en.amount),
       showDate: true, date: en.date, showNote: true, note: en.note || '', okLabel: '✓ 保 存', canDelete: true,
       catId: en.catId,
-      onSave: (v, d, n) => { en.amount = v; if (d) en.date = d; en.note = n; if (amtCfg.catId) en.catId = amtCfg.catId; save(); },
-      onDelete: () => { t.expenses = t.expenses.filter(x => x.id !== en.id); save(); } });
+      onSave: (v, d, n) => submitBusinessMutation(draft => {
+        const nextTrip = draft.trips.find(item => item.id === detailTripId);
+        const nextEntry = nextTrip && nextTrip.expenses.find(item => item.id === en.id);
+        if (!nextEntry) throw new Error('记录已不存在，请重新加载');
+        nextEntry.amount = v;
+        if (d) nextEntry.date = d;
+        nextEntry.note = n;
+        if (amtCfg.catId) nextEntry.catId = amtCfg.catId;
+      }, { kind: 'trip-expense-edit', onSuccess: () => renderTripDetail() }),
+      onDelete: () => submitBusinessMutation(draft => {
+        const nextTrip = draft.trips.find(item => item.id === detailTripId);
+        if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+        nextTrip.expenses = nextTrip.expenses.filter(item => item.id !== en.id);
+      }, { kind: 'trip-expense-delete', onSuccess: () => renderTripDetail() }) });
     return;
   }
   if ((el = q('[data-maint]'))) {
     const m = S.maintenance.find(x => x.id === el.dataset.maint); if (!m) return;
     openAmtPad({ title: '改这笔维修保养', expr: String(m.amount),
       showDate: true, date: m.date, showNote: true, note: m.note || '', okLabel: '✓ 保 存', canDelete: true,
-      onSave: (v, d, n) => { m.amount = v; if (d) m.date = d; m.note = n; save(); },
-      onDelete: () => { S.maintenance = S.maintenance.filter(x => x.id !== m.id); save(); } });
+      onSave: (v, d, n) => submitBusinessMutation(draft => {
+        const next = draft.maintenance.find(item => item.id === m.id);
+        if (!next) throw new Error('维修记录已不存在，请重新加载');
+        next.amount = v;
+        if (d) next.date = d;
+        next.note = n;
+      }, { kind: 'maintenance-edit', onSuccess: () => renderMaint() }),
+      onDelete: () => submitBusinessMutation(draft => {
+        draft.maintenance = draft.maintenance.filter(item => item.id !== m.id);
+      }, { kind: 'maintenance-delete', onSuccess: () => renderMaint() }) });
     return;
   }
   if ((el = q('[data-go]'))) {
@@ -2253,10 +2553,35 @@ async function chooseInitialState(opened) {
   const stateEl = $('#saveState');
   const pendingCache = TTQCloudSync.inspectPendingCache(opened.cache, opened.remote);
   if (pendingCache.status === 'safe') {
-    if (stateEl) stateEl.textContent = '发现设备待上传改动 · 正在续传';
-    const pendingState = migrate(Store.resumeCache(opened.cache, opened.remote));
-    setTimeout(() => { if (S) save(); }, 300);
-    return pendingState;
+    const cachedState = migrate(opened.cache.state);
+    const proposal = migrate(Store.legacyPendingProposal(opened.cache, opened.remote));
+    const choice = await migrationChoice({
+      title: '发现旧版留下的待上传内容',
+      text: '云端相关记录尚未变化，但新版本不会自动上传。请明确选择是否现在联网核对并提交。',
+      summary: migrationSummaryText(cachedState),
+      primaryLabel: '在线核对并上传',
+      secondaryLabel: '只进入云端账本',
+      localState: cachedState,
+      note: '上传会使用旧基线的版本保护；也可先导出 JSON。选择只进入云端时，旧内容不会覆盖云端。'
+    });
+    Store.useRemote(opened.remote);
+    if (choice === 'primary') {
+      if (stateEl) stateEl.textContent = '正在核对并提交旧版待上传内容…';
+      const fingerprint = TTQCloudSync.snapshotFingerprint(proposal)
+        .replace(/[^A-Za-z0-9._:-]/g, '-');
+      const uploaded = await Store.commit(proposal, {
+        kind: 'legacy-cache',
+        operationId: 'legacy-cache:' + fingerprint
+      });
+      if (!uploaded.ok) throw uploaded.error || new Error('旧版待上传内容未能安全提交');
+      Store.clearLegacyCache();
+      if (stateEl) stateEl.textContent = '旧版待上传内容已由云端确认';
+      return migrate(uploaded.state);
+    }
+    Store.preserveConflict(cachedState);
+    Store.clearLegacyCache();
+    if (stateEl) stateEl.textContent = '已进入云端账本 · 旧版内容未上传';
+    return migrate(Store.useRemote(opened.remote));
   }
   if (pendingCache.status === 'conflict') {
     const cachedState = migrate(opened.cache.state);
@@ -2275,13 +2600,14 @@ async function chooseInitialState(opened) {
     }
     if (stateEl) stateEl.textContent = '已进入云端账本 · 设备冲突改动未上传';
     Store.preserveConflict(cachedState);
+    Store.clearLegacyCache();
     return migrate(Store.useRemote(opened.remote));
   }
+  if (opened.cache) Store.clearLegacyCache();
 
-  const localRaw = opened.legacy && (
-    !opened.cache ||
-    opened.cache.legacyHandled !== Store.legacyFingerprint(opened.legacy)
-  ) ? opened.legacy : null;
+  const localRaw = opened.legacy && !Store.isLegacyHandled(opened.legacy)
+    ? opened.legacy
+    : null;
   const localState = localRaw ? migrate(localRaw) : null;
   const decision = TTQCloudSync.decideInitialMigration(localState, opened.remote);
 
@@ -2359,26 +2685,33 @@ async function chooseInitialState(opened) {
       summary: '这次没有上传，也没有覆盖任何账目。',
       primaryLabel: '重新加载',
       secondaryLabel: '返回登录页',
-      note: '若旧浏览器里有账，原 localStorage 仍保留。',
-      localState: Store.legacy()
+      note: '若旧浏览器里有账，原 localStorage 仍保留；重新确认身份前不会展示或导出。'
     }).then(choice => {
       location.href = choice === 'primary' ? '/ledger' : '/';
     });
     return;
   }
+  DevicePrefs.init(S);
   applyTheme();
+  updateCloudModeUI('已连接云端账本');
   $$('.js-ver').forEach(el => el.textContent = 'v' + APP_VER);
 
   quickPadCtl = makePad($('#quickPad'), $('#quickAmt'), $('#quickEq'), '✓ 记 上', quickSave);
-  amtPadCtl = makePad($('#amtPad'), $('#amtVal'), $('#amtEq'), '✓ 保 存', v => {
+  amtPadCtl = makePad($('#amtPad'), $('#amtVal'), $('#amtEq'), '✓ 保 存', async v => {
     if (!amtCfg) return;
-    amtCfg.onSave(v, $('#amtDate').value, $('#amtNote').value.trim());
-    closeSheet($('#sheet-amt'));
+    const result = await amtCfg.onSave(v, $('#amtDate').value, $('#amtNote').value.trim());
+    if (!result || result.ok) closeSheet($('#sheet-amt'));
   });
   $('#amtDelBtn').addEventListener('click', async () => {
     if (!amtCfg || !amtCfg.onDelete) return;
     const ok = await ask('删掉这一笔？');
-    if (ok) { amtCfg.onDelete(); closeSheet($('#sheet-amt')); toast('已删除'); }
+    if (ok) {
+      const result = await amtCfg.onDelete();
+      if (!result || result.ok) {
+        closeSheet($('#sheet-amt'));
+        toast('已删除');
+      }
+    }
   });
 
   $('#themeBtn').addEventListener('click', toggleTheme);
@@ -2389,14 +2722,30 @@ async function chooseInitialState(opened) {
   $('#periodEnd').addEventListener('input', updatePeriodTip);
   $('#btnAddVehicle').addEventListener('click', () => openVehicleEdit());
   $('#btnVehicleSave').addEventListener('click', saveVehicle);
-  $('#btnStartGo').addEventListener('click', () => {
+  $('#btnStartGo').addEventListener('click', async () => {
     if (!guardOnce()) return;
     if (!startVehicleId) { toast('先选一辆车'); return; }
     if (openTrip(startVehicleId)) { toast(vehicleById(startVehicleId).name + '已有在途的趟'); return; }
     const d = $('#startDate').value || todayStr();
-    S.trips.push({ id: uid(), vehicleId: startVehicleId, startDate: d, endDate: null, status: 'open', createdAt: new Date().toISOString(), expenses: [], incomes: [] });
-    S.settings.activeVehicleId = startVehicleId;
-    save(); closeSheet($('#sheet-start')); showView('home'); toast(vehicleById(startVehicleId).name + '已发车 🚚 一路顺风');
+    const tripId = uid();
+    const vehicleId = startVehicleId;
+    const result = await submitBusinessMutation(draft => {
+      draft.trips.push({
+        id: tripId,
+        vehicleId,
+        startDate: d,
+        endDate: null,
+        status: 'open',
+        createdAt: new Date().toISOString(),
+        expenses: [],
+        incomes: []
+      });
+    }, { kind: 'start-trip' });
+    if (!result.ok) return;
+    DevicePrefs.activeVehicleId = vehicleId;
+    closeSheet($('#sheet-start'));
+    showView('home');
+    toast(vehicleById(vehicleId).name + '已发车 🚚 一路顺风');
   });
   $('#startDate').addEventListener('change', updateStartTip);
   $('#quickNoteBtn').addEventListener('click', () => {
@@ -2414,11 +2763,26 @@ async function chooseInitialState(opened) {
   $('#sheet-backfill').addEventListener('input', bfUpdateProfit);
   $('#btnBfSave').addEventListener('click', bfSave);
   $('#btnAddMaint').addEventListener('click', () => {
+    if (!canStartBusinessWrite()) return;
     const vehicleId = activeVehicleId();
     if (vehicleId === 'all') { toast('先在上方选一辆车，再记维修保养'); return; }
     openAmtPad({
       title: vehicleById(vehicleId).name + ' · 记维修保养', showDate: true, date: todayStr(), showNote: true, note: '', okLabel: '✓ 记 上',
-      onSave: (v, d, n) => { S.maintenance.push({ id: uid(), vehicleId, date: d || todayStr(), amount: v, note: n }); save(); toast('已记上'); }
+      onSave: (v, d, n) => submitBusinessMutation(draft => {
+        draft.maintenance.push({
+          id: uid(),
+          vehicleId,
+          date: d || todayStr(),
+          amount: v,
+          note: n
+        });
+      }, {
+        kind: 'maintenance',
+        onSuccess: () => {
+          renderMaint();
+          toast('已记上');
+        }
+      })
     });
   });
   $('#btnAddExpCat').addEventListener('click', () => openNewcat({ type: 'expense', mode: 'new' }));
@@ -2432,31 +2796,34 @@ async function chooseInitialState(opened) {
 
   initEdgeSwipe();
   initPullDown();
-  $('#saveState').addEventListener('click', () => {
+  const requestReconnect = async () => {
     if (Store.online) return;
-    const stateEl = $('#saveState');
-    stateEl.textContent = '正在重试上传…';
-    Store.retry().then(result => {
-      if (result.state) {
-        S = migrate(result.state);
-        applyTheme();
-        renderCurrent();
-      }
-      stateEl.textContent = result.ok
-        ? '已保存到云端'
-        : (result.deviceCached === false
-          ? '保存失败 · 设备缓存也失败，请立即导出'
-          : '仍未上传 · 点这里再试');
-      toast(result.ok
-        ? '已补传到云端'
-        : (result.deviceCached === false
-          ? '⚠️ 设备缓存失败，请立即到「更多 → 备份数据」导出'
-          : '还是没连上，改动继续留在这台设备'));
-      if (!result.state && curView === 'home') renderHome();
-    });
-  });
+    await reconnectCloud();
+  };
+  $('#saveState').addEventListener('click', requestReconnect);
+  $('#cloudModeBanner').addEventListener('click', requestReconnect);
   window.addEventListener('online', () => {
-    if (!Store.online) save();
+    if (!Store.online) updateCloudModeUI('网络似乎已恢复 · 点这里重新核对云端');
+  });
+  window.addEventListener('offline', () => {
+    if (!Store.saving) {
+      Store.noteOffline();
+      updateCloudModeUI();
+    }
+  });
+  $('#logoutBtn').addEventListener('click', async () => {
+    if (Store.saving || businessBusy) {
+      updateCloudModeUI('正在等待本次保存确认，确认前不会退出…');
+      await Store.whenIdle();
+    }
+    if (Store.hasPending) {
+      const shouldExport = await ask('还有一笔没有收到云端确认，不能直接退出。是否先导出这份未确认内容供核对？');
+      if (shouldExport && Store.pendingState)
+        exportSnapshot(Store.pendingState, '未确认内容');
+      updateCloudModeUI();
+      return;
+    }
+    location.assign('/auth/logout?return_to=%2F');
   });
   showView('home');
   if (location.hash === '#test') setTimeout(runSelfTests, 60);

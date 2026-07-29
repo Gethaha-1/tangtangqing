@@ -1,5 +1,40 @@
 # 变更记录（CHANGELOG）
 
+## v1.5.0 · 2026-07-29
+
+### 严格在线写入
+
+- D1 成为唯一正式业务状态；已加载账本在无网络/API 不可达时切换只读，浏览、统计、详情和 JSON 导出仍可用；
+- 所有业务入口统一为 clone proposal → server acknowledgement → commit UI，移除“先改全局 S + 150ms 后保存”的乐观模式；
+- 保存中锁定相关提交；失败不显示成功、不改变正式列表、不写新的自动上传 localStorage 快照；
+- 网络恢复先重新 bootstrap 身份、车队、权限和版本；`navigator.onLine` 不再直接解锁；
+- 旧 `tangtangqing-cloud-cache-v1` 只检测一次：无差异清理、安全差异明确确认、双方变化停止并保留导出。
+
+### 原子性、并发与幂等
+
+- `/api/sync` 每个用户动作使用单个 D1 `batch()`，加入 transaction 内 membership、driver assignment 和逐记录 version guards；
+- 新增 `operationId` + SHA-256 payload hash + `sync_commits` 回执，同请求超时重试安全回放，不同 payload 复用 ID 返回 409；
+- 收车+多收入、删除趟次+子记录、车辆关联动作和 JSON 替换全成或全不成；
+- 新增 `drizzle/0001_smart_the_twelve.sql` 和 runtime schema；
+- 版本冲突、数据库约束和服务端拒绝均保证零部分写入。
+
+### JSON、设备偏好与风险提示
+
+- 保留完整 JSON 导出/恢复并在 Sites 可用；
+- 导入前展示来源、车辆/趟次/收入/支出/维修数量和金额，明确“完整替换当前账本”；
+- 缺失/非法/超长账期保留当前有效账期；相同文件重复导入幂等；服务器版本冲突不覆盖；
+- 超过 500 operations 的导入明确拒绝，不恢复非原子 chunking；
+- theme、当前车辆筛选、已查看报告改为设备偏好，不参与业务同步；
+- 删除首页周期备份提醒和“每月导出 JSON”常规文案，保留真实服务器/冲突/未确认数据风险提示。
+
+### 认证退出与交付
+
+- 新增稳定 `/auth/logout`；生产委托 Sites dispatcher-owned `/signout-with-chatgpt`，localhost 只清除测试 cookie；
+- UI 不再直连 provider，`return_to` 统一同源校验；应用不实现 Sites 三条保留认证路由；
+- 账本“更多”页增加账号/退出区；退出前等待保存，未确认请求阻止退出；
+- 登录首页保持手动“继续到账本”，不自动跳转；
+- 更新架构、迁移、测试、AI 接手、依赖/体积和发布文档；未增加新依赖，未推 GitHub。
+
 ## v1.4.0 · 2026-07-28
 
 ### 第一阶段联网保存

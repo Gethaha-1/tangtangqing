@@ -19,6 +19,12 @@ export type SyncOperation = {
   expectedVersion: number;
 };
 
+export type SyncRequest = {
+  operationId: string;
+  operations: SyncOperation[];
+  finalize: boolean;
+};
+
 export type VersionDecision = "create" | "update" | "conflict";
 
 export function classifyVersion(
@@ -262,6 +268,58 @@ export function parseSyncOperations(input: unknown): SyncOperation[] {
       expectedVersion: Number(expectedVersion),
     };
   });
+}
+
+export function parseSyncRequest(input: unknown): SyncRequest {
+  if (!isObject(input)) {
+    throw new RecordValidationError(
+      "invalid_body",
+      "请求必须是 JSON 对象",
+    );
+  }
+  return {
+    operationId: requiredOperationId(input.operationId),
+    operations: orderSyncOperations(parseSyncOperations(input)),
+    finalize: !("finalize" in input) || input.finalize !== false,
+  };
+}
+
+export function requiredOperationId(value: unknown): string {
+  const operationId = typeof value === "string" ? value.trim() : "";
+  if (
+    operationId.length < 8 ||
+    operationId.length > 160 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(operationId)
+  ) {
+    throw new RecordValidationError(
+      "invalid_operation_id",
+      "operationId 必须是 8 到 160 位的稳定请求标识",
+    );
+  }
+  return operationId;
+}
+
+export function canonicalSyncPayload(
+  operations: SyncOperation[],
+  finalize: boolean,
+): string {
+  return canonicalJson({ finalize, operations });
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (isObject(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJson(value[key])}`,
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function requiredId(value: unknown, field: string): string {

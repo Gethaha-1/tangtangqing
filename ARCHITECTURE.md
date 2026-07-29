@@ -1,152 +1,106 @@
-# 技术架构（ARCHITECTURE）
+# 技术架构
 
-适用版本：**v1.4.0 · 第一阶段联网保存**。本文描述当前 Sites/D1 架构与不允许随意更改的业务、安全约定。
+适用版本：**v1.5.0 · 严格在线写入**。
 
-## 1. 总体结构
-
-项目在保留成熟账本 UI 和 `src/domain.js` 业务规则的前提下，增加 Vinext/Next、Sites Worker、服务端 API 和 D1：
+## 1. 分层
 
 | 层 | 位置 | 职责 |
 |---|---|---|
-| 登录页 | `app/page.tsx`、`app/chatgpt-auth.ts` | 展示 SIWC 登录状态；不做业务授权 |
-| 账本 UI | `legacy/ledger.html` | 原有页面、交互、设备缓存、首次迁移提示 |
-| 业务规则 | `src/domain.js` | schema v2 清洗、账期、趟号、排序和统计口径 |
-| 云端适配 | `src/cloud-sync.js` | schema v2 与独立云记录互转、差异计划、迁移守恒 |
-| API | `app/api/bootstrap`、`app/api/sync` | 服务端读取身份、解析车队、校验并保存记录 |
-| 授权/仓储 | `lib/server/` | 内部账号初始化、车队隔离、角色与车辆分配检查、版本控制 |
-| 持久化 | `db/`、`drizzle/` | D1 schema、运行时建表和已生成 SQL migration |
-| 分发 | `worker/index.ts` | 账本路由保护、静态资源、本地认证替身 |
+| 登录页 | `app/page.tsx`、`app/chatgpt-auth.ts` | 展示 Sites 身份；已登录仍等待用户点“继续到账本” |
+| 通用退出 | `lib/auth/logout.ts`、`app/auth/logout/route.ts` | 安全 `return_to`、provider 适配、本地退出 |
+| 账本 UI | `legacy/ledger.html` | 浏览、表单、提案→确认→正式状态接线、JSON 交互 |
+| 纯业务规则 | `src/domain.js` | schema v2 清洗、账期、趟号、排序、统计 |
+| 云同步纯核心 | `src/cloud-sync.js` | 状态↔独立记录、diff、回执校验、旧缓存判定、在线状态机 |
+| API | `app/api/bootstrap`、`app/api/sync` | 身份读取、原子写入契约、HTTP 状态 |
+| 服务端 | `lib/server/` | fleet/role/assignment 授权、输入校验、D1 批次与幂等 |
+| 持久化 | `db/`、`drizzle/` | D1 schema、运行时建表、正式 migration |
+| Worker | `worker/index.ts` | 账本路由保护、静态资源、localhost 测试身份 |
 
-`.openai/hosting.json` 声明逻辑 D1 binding `DB`；R2 为 `null`。正式账目不存入 R2。
+成熟 UI 仍在单文件中，避免大重写。高风险逻辑已经在第一方纯模块或服务端边界中可测试：认证 provider、状态/记录转换、在线提交语义、原子 repository。
 
-## 2. 身份与数据归属
-
-身份和账本归属分开建模：
+## 2. 身份与退出
 
 ```text
 Sites 身份头
   → identities(provider, provider_subject)
-  → users(id)
-  → fleet_members(fleet_id, user_id, role)
-  → fleets(id)
-  → 车队内车辆和账目
+  → users
+  → fleet_members(role)
+  → fleets
+  → fleet-scoped business rows
 ```
 
-- `users.id` 是内部用户主键。
-- `identities` 保存登录提供方与 `provider_subject` 的关联；当前提供方为 `chatgpt`。邮箱只保存在身份层用于当前 SIWC 关联，不作为车辆、趟次或账本主键。
-- 一个用户通过 `fleet_members` 加入车队，角色预留 `owner` / `driver`。
-- `vehicle_assignments` 保存司机与车辆的有效期和启用状态。
-- 第一阶段首次登录会创建内部用户、ChatGPT identity、一个 fleet 和 owner membership；完整司机邀请/分配 UI 尚未开放。
-- 将来新增手机号身份时，只需给同一内部 user 增加 identity，不迁移车队账本。
+- API 只信任 `oai-authenticated-user-*` 转发头。
+- 请求体、query、localStorage 不能指定 user、fleet、role、membership 或 assignment。
+- SIWC 是认证；fleet membership/role/assignment 是服务端业务授权。
+- `/auth/logout` 是 UI 唯一稳定退出入口。生产委托 dispatcher-owned `/signout-with-chatgpt`；本地清理固定测试 cookie。
+- `return_to` 只接受同源根相对路径，拒绝绝对 URL、`//`、反斜杠、控制字符和认证循环。
+- 应用不实现 `/signin-with-chatgpt`、`/signout-with-chatgpt`、`/callback`。
 
-## 3. 服务端鉴权边界
+## 3. 正式状态与设备状态
 
-1. API 只信任 Sites/Worker 转发的 `oai-authenticated-user-*` 请求头。
-2. 请求体、查询参数和 localStorage 都不能提供用户、车队、角色或归属。
-3. 服务端先由 identity 找到内部 user 和活动 membership，再把每次查询限定到 `fleet_id`。
-4. `owner` 可查看和写入所属车队全部车辆；内部 `driver` 规则只允许查看和写入仍有活动 assignment 的车辆。
-5. 客户端不能通过同步 API修改 `fleetId`、`userId`、role 或 membership。
-6. 登录只等于确认 ChatGPT 身份，不等于任意车队权限；车队归属检查必须在每次 API 请求中完成。
+D1 是业务唯一正式状态。浏览器只保存：
 
-`localhost` 测试入口由 Worker 写入 HttpOnly、SameSite=Lax 的短期 cookie，再在服务端注入固定测试身份。该逻辑遇到非本地主机直接返回 404，不能作为生产认证。
+- `tangtangqing-data`：旧版账本的只读迁移来源；
+- `tangtangqing-cloud-cache-v1`：只在升级时检测一次的旧版待上传快照；新版本不再写；
+- `tangtangqing-cloud-migration-v2`：旧账处理指纹；
+- `tangtangqing-device-prefs-v1`：theme、当前车辆筛选、已查看报告月份；
+- 冲突导出副本：仅用于人工核对，不自动上传。
 
-## 4. D1 数据模型
+未重新 bootstrap 时不展示未经重新授权的业务缓存。主题等设备偏好不进入 fleet settings 写入；历史 D1 字段保留以兼容 schema。
 
-所有业务表以 `fleet_id` 隔离。主要表如下：
+## 4. 严格在线状态机
 
-| 表 | 用途 |
-|---|---|
-| `users` | 内部用户 |
-| `identities` | `provider + provider_subject` 到内部 user 的唯一关联 |
-| `fleets` | 车队账户 |
-| `fleet_members` | user 在 fleet 中的 owner/driver 角色 |
-| `vehicles` | 车队车辆目录 |
-| `vehicle_assignments` | 司机到车辆的活动分配 |
-| `fleet_settings` | 主题、当前车辆、账期、迁移初始化状态 |
-| `categories` | 收入/支出科目；停用代替物理删除 |
-| `trips` | 趟次主记录 |
-| `trip_expenses` | 一笔一行的趟次支出 |
-| `trip_incomes` | 一笔一行的趟次收入 |
-| `maintenance` | 一笔一行的维修保养 |
+```text
+online
+  → clone current confirmed S
+  → mutate proposal in memory
+  → plan record operations with expectedVersion
+  → POST one operationId-bound atomic batch
+  → validate complete acknowledgement
+  → replace S from acknowledged baseline
 
-金额在 D1 中以整数分保存；所有可写记录都有 `updated_at` 和正整数 `version`。正式 migration 与运行时 schema 使用相同的 `CHECK`、主键、索引和外键约束。`db/invariants.ts` 中的数据库触发器还原子保证：至少保留一辆启用车辆、在途车辆不能停用、停用车辆不能新增或迁入在途趟、仍有收入/支出的趟次不能删除。这样两台设备的写入交错时也不会越过跨记录业务规则。
-
-## 5. 逐记录同步与并发
-
-客户端界面仍使用原 schema v2 状态 `S`，但云端从不接收“整份 JSON 最后写入覆盖”：
-
-1. `/api/bootstrap` 返回当前车队可见的独立 records 及各自 version。
-2. `TTQCloudSync.planSync()` 比较当前状态与最近云端基线，只生成变化记录的 `put` / `delete`。
-3. 每个操作携带 `expectedVersion`：新建为 `0`，更新或删除必须匹配当前 version。
-4. 服务端逐条检查 fleet 归属、owner/driver 权限、车辆 assignment、字段和业务边界。
-5. 版本不匹配返回该记录的 `conflict` 和当前值；非法输入返回 `rejected`。成功记录单独递增 version。
-6. 正常保存只推进本批成功记录的基线，不会把另一设备刚新增的记录误判成删除。
-7. 断线重试先以完整远端为底做三方合并：只有本机相对旧基线改过的 key 才覆盖到待上传状态；远端新增的其他 key 会保留。同一 key 两边都变过则停止并提示冲突。
-
-大型账本按最多 200 条记录分批上传；只有最后一批全部成功才标记车队初始化完成。一个批次可以部分成功，因此重试必须先重新读取基线，再只提交剩余差异。该机制让不同车辆、不同趟次和同一趟里的不同收入/支出可以独立写入。
-
-## 6. 正式数据源、缓存与断网
-
-- D1 是正式数据源。
-- `localStorage["tangtangqing-data"]` 只作为 v1.3.0 及以前旧账的迁移来源。
-- `localStorage["tangtangqing-cloud-cache-v1"]` 按当前 `fleet_id` 标记最近设备快照和云端基线，用于当前会话断网暂存与联网后的安全续传，不代表云端成功。
-- 联网恢复时，只有待上传记录的云端 version 未变化才自动续传；同一记录两边都变过会停止，并另存设备冲突缓存供导出核对。
-- 主题等设备偏好可以继续留在浏览器。
-- 离线或保存失败时，界面必须显示「尚未上传」；重新加载时不离线展示未重新确认归属的业务缓存，用户恢复网络后再由服务端确认身份和 fleet。
-- 如果浏览器配额或隐私模式导致设备缓存也写入失败，界面必须明确要求立即导出 JSON，不能声称改动已留在设备。
-- 当前缓存是第一阶段安全兜底，不是完整离线队列。多次跨设备离线编辑的自动合并留到第二阶段。
-
-首次迁移和 JSON 备份恢复见 [DATA-MIGRATION.md](DATA-MIGRATION.md)。
-
-## 7. schema v2 业务状态适配
-
-页面内状态仍保持：
-
-```js
-{
-  schemaVersion: 2,
-  settings: {
-    theme, lastReportSeen, lastBackupAt, activeVehicleId,
-    periodStartDate, periodEndDate
-  },
-  vehicles: [{ id, name, plateNo, active, createdAt }],
-  categories: {
-    expense: [{ id, name, icon, builtin, active }],
-    income: [{ id, name, icon, builtin, active }]
-  },
-  trips: [{
-    id, vehicleId, startDate, endDate, status, createdAt, closedAt,
-    expenses: [{ id, catId, amount, date, note }],
-    incomes: [{ id, catId, amount, date }]
-  }],
-  maintenance: [{ id, vehicleId, date, amount, note }]
-}
+network/server failure → keep old S + readonly + in-memory retry token
+409 conflict           → keep old S + readonly + require reload/review
+400/422 rejection      → keep old S + remain connected for corrected retry
+401                    → return to login
 ```
 
-`src/cloud-sync.js` 把嵌套的 expenses/incomes 拆成独立 D1 records，回读时再重组。`src/domain.js` 继续是业务口径唯一实现，不因联网保存改变趟号或统计含义。
+相关提交控件在 saving 阶段锁定。失败表单仍留在当前 UI；失败提案不会成为正式记录，也不会写入自动续传缓存。
 
-## 8. 不可变的业务硬约定
+恢复网络后先 `/api/bootstrap`，重新核对身份、fleet、权限和版本。若上一次响应丢失，客户端只在远端仍安全时用原 `operationId` 和完全相同 operations 重放；服务器回放原回执。
 
-1. 趟号按「车辆 + 当前账期」分组，已收车按 `endDate` 正序动态编号。
-2. 已收车列表按到家日期倒序；在途趟按发车日期并显示预计趟号。
-3. 趟次利润只统计账期内已收车趟，整趟按到家日期归期。
-4. 维修按自身日期和车辆单列，不计入趟次利润。
-5. 每辆车最多一个在途趟，不同车辆可以同时在途。
-6. 有历史的车辆只能停用；在途车不能停用；至少保留一辆启用车。
-7. 金额入口保留两位小数、拒绝负数；D1 中转为整数分。
-8. 科目只软删除。
-9. 用户文本、HTML 属性和科目图标必须分别经过 `esc()`、`attrEsc()`、`safeIconText()`；不得把恢复备份中的值直接拼成 HTML。
+## 5. 原子批次与幂等
 
-完整口径以 [BUSINESS-RULES.md](BUSINESS-RULES.md) 为准。
+每个业务动作是一批 operations：
 
-## 9. 原账本交互约定
+- 新建 `expectedVersion=0`；
+- 更新/删除必须匹配当前正整数 version；
+- `operationId` 为 8–160 位稳定标识；
+- 同 fleet + 同 ID + 同 request hash 返回原回执；
+- 同 ID 不同 payload 返回 409；
+- 任一 version guard、授权 guard、数据库约束或写入失败，D1 `batch()` 整批回滚。
 
-- 页面仍采用全量 `render*` 和 document 级事件委托。
-- 弹层必须走 `openSheet/closeSheet`，保持 History API 返回键语义。
-- 提交型动作使用 `guardOnce()`；关闭弹层使用 `tapShield()` 防穿透。
-- `makePad`、`openAmtPad`、`ask`、`toast`、`initSlide` 继续作为复用入口。
-- 构建前脚本从 `legacy/ledger.html` 生成 `public/ledger/index.html`；不要直接编辑生成文件。
+`sync_assertions` 的 `CHECK(ok=1)` 把 membership、driver assignment 和记录 version 守卫放进同一事务；`sync_commits` 在同批保存请求 hash 与回执。删除趟次+子账、收车+多笔收入、车辆关联动作因此全成或全不成。
 
-## 10. 当前交付状态
+跨记录触发器继续保证：至少一辆启用车、在途车不可停用、停用车不可发车/迁入在途趟、含子账趟次不可删除。
 
-v1.4.0 已完成本地结构、逻辑绑定、schema、migration、认证和同步实现。本轮明确 **local-only**：尚未创建 Sites 项目，未部署生产，未推送 GitHub，未创建 PR。生产域名、访问策略、监控和恢复演练不属于本阶段。
+## 6. JSON 恢复
+
+JSON 导出/恢复本版继续开放。导入：
+
+1. 解析并清洗 schema v2；
+2. 显示当前与目标的数量/金额摘要、来源提示和完整替换确认；
+3. 缺失/非法账期保留当前合法账期；
+4. 保留软删除目录语义；
+5. 用稳定导入指纹作为 operation ID，通过同一原子 API；
+6. 只有完整回执后替换 UI。
+
+单次最多 500 条变化。平台容量或超时导致的失败仍保证零部分写入；更大型专用 staging/import endpoint 在 backlog。
+
+## 7. 不变业务口径
+
+趟号、账期、车辆、金额和统计以 [BUSINESS-RULES.md](BUSINESS-RULES.md) 为准。联网改造不改变到家日归期、动态趟号、维修单列、金额两位小数和科目/有历史车辆软删除规则。
+
+## 8. 构建与部署
+
+`.openai/hosting.json` 只保存 Sites `project_id` 与逻辑 D1/R2 bindings。迁移保存在 `drizzle/`；`db/runtime-schema.ts` 支持本地/首次运行。构建输出和本地缓存不提交。

@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
+import { authLogoutPath } from "../lib/auth/logout";
 import {
   chatGPTSignInPath,
-  chatGPTSignOutPath,
   getChatGPTUser,
 } from "./chatgpt-auth";
 
@@ -83,7 +83,7 @@ export default async function LoginPage() {
                   </a>
                   <a
                     className="action action-secondary"
-                    href={chatGPTSignOutPath("/")}
+                    href={authLogoutPath("/")}
                   >
                     退出这个账号
                   </a>
