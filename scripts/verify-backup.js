@@ -1,6 +1,8 @@
-const fs = require('node:fs');
-const assert = require('node:assert/strict');
-const D = require('../src/domain.js');
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import '../src/domain.js';
+
+const D = globalThis.TTQDomain;
 
 const backupPath = process.argv[2];
 if (!backupPath) {

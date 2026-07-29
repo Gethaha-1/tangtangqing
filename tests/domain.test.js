@@ -1,6 +1,8 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const D = require('../src/domain.js');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import '../src/domain.js';
+
+const D = globalThis.TTQDomain;
 
 function baseData() {
   return {
