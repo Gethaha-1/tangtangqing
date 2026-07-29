@@ -1,2 +1,8 @@
 .DS_Store
 *备份*.json
+/dist/
+/.vinext/
+/.wrangler/
+/node_modules/
+/public/index.html
+/public/src/domain.js
