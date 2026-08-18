@@ -5,8 +5,15 @@ import {
 } from "../../../lib/server/bootstrap";
 import {
   AuthenticationError,
-  getTrustedIdentity,
+  getTrustedPrincipal,
 } from "../../../lib/server/auth";
+import {
+  enforceMutationRequest,
+  readJsonWithinLimit,
+  RequestSecurityError,
+  secureJson,
+} from "../../../lib/server/http-security";
+import { serverAuthOptions } from "../../../lib/server/auth-runtime";
 import {
   canonicalSyncPayload,
   parseSyncRequest,
@@ -22,8 +29,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    const identity = getTrustedIdentity(request);
-    const input = await readJson(request);
+    enforceMutationRequest(request);
+    const input = await readJsonWithinLimit(request);
+    const identity = getTrustedPrincipal(request, serverAuthOptions());
     const syncRequest = parseSyncRequest(input);
     const requestHash = await hashSyncPayload(
       canonicalSyncPayload(
@@ -43,22 +51,32 @@ export async function POST(request: Request): Promise<Response> {
       syncRequest.operations,
       syncRequest.finalize,
     );
-    return json(response, 200);
+    return secureJson(request, response, 200);
   } catch (error) {
+    if (error instanceof RequestSecurityError) {
+      return secureJson(
+        request,
+        { error: { code: error.code, message: error.message } },
+        error.status,
+      );
+    }
     if (error instanceof AuthenticationError) {
-      return json(
-        { error: { code: "unauthenticated", message: error.message } },
-        401,
+      return secureJson(
+        request,
+        { error: { code: error.code, message: error.message } },
+        error.code === "unauthenticated" ? 401 : 503,
       );
     }
     if (error instanceof RecordValidationError) {
-      return json(
+      return secureJson(
+        request,
         { error: { code: error.code, message: error.message } },
         400,
       );
     }
     if (error instanceof AtomicSyncBatchError) {
-      return json(
+      return secureJson(
+        request,
         {
           error: { code: error.code, message: error.message },
           results: error.results || [],
@@ -68,8 +86,9 @@ export async function POST(request: Request): Promise<Response> {
         error.status,
       );
     }
-    if (error instanceof SyntaxError) {
-      return json(
+    if (error instanceof SyntaxError || error instanceof TypeError) {
+      return secureJson(
+        request,
         {
           error: {
             code: "invalid_json",
@@ -80,7 +99,8 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     console.error("sync failed", error);
-    return json(
+    return secureJson(
+      request,
       {
         error: {
           code: "sync_failed",
@@ -90,22 +110,4 @@ export async function POST(request: Request): Promise<Response> {
       500,
     );
   }
-}
-
-async function readJson(request: Request): Promise<unknown> {
-  const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > 2_000_000) {
-    throw new RecordValidationError(
-      "payload_too_large",
-      "一次原子提交的数据太多，本次没有写入；请使用受控的大型导入流程",
-    );
-  }
-  return request.json();
-}
-
-function json(value: unknown, status: number): Response {
-  return Response.json(value, {
-    status,
-    headers: { "cache-control": "no-store" },
-  });
 }

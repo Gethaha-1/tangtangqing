@@ -354,6 +354,21 @@ a {
   text-decoration: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.auth-error {
+  margin: 8px 0 0;
+  color: #a4372a;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .action-primary {

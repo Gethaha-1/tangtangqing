@@ -282,6 +282,8 @@ export const tripExpenses = sqliteTable(
     tripId: text("trip_id").notNull(),
     categoryId: text("category_id").notNull(),
     amountCents: integer("amount_cents").notNull(),
+    fuelUnitPriceX10000: integer("fuel_unit_price_x10000"),
+    fuelVolumeMl: integer("fuel_volume_ml"),
     date: text("date").notNull(),
     note: text("note").notNull().default(""),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -293,6 +295,10 @@ export const tripExpenses = sqliteTable(
     check(
       "trip_expenses_amount_check",
       sql`${table.amountCents} >= 0`,
+    ),
+    check(
+      "trip_expenses_fuel_metadata_check",
+      sql`(${table.fuelUnitPriceX10000} IS NULL AND ${table.fuelVolumeMl} IS NULL) OR (${table.categoryId} = 'fuel' AND ${table.fuelUnitPriceX10000} IS NOT NULL AND ${table.fuelVolumeMl} IS NOT NULL AND ${table.fuelUnitPriceX10000} BETWEEN 1 AND 9999999 AND ${table.fuelVolumeMl} BETWEEN 1 AND 100000000)`,
     ),
     check(
       "trip_expenses_sort_order_check",

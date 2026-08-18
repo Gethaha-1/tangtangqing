@@ -169,6 +169,7 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
       elements.set(selector, {
         innerHTML: "",
         textContent: "",
+        style: {},
         addEventListener() {},
       });
     }
@@ -223,6 +224,7 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
       quickCatId: state.categories.expense[0].id,
       detailTripId: state.trips[0].id,
       closeSheet() {},
+      syncBusinessWriteControls() {},
     },
   );
 
@@ -303,4 +305,38 @@ test("持久化字段的模板回归检查要求属性转义和安全图标文�
     ledgerSource,
     /data-maint="' \+ attrEsc\(m\.id\)/,
   );
+});
+
+test("油费按车辆卡片不会把恶意 vehicleName 变成 HTML", () => {
+  const { functions } = compileLedgerFunctions(["esc", "fuelCardHTML"], {
+    moneyCents: (value) => String(value),
+    volumeMl: (value) => String(value),
+    unitPriceX10000: (value) => String(value ?? "—"),
+    vehicleById: () => ({ name: htmlAttack }),
+  });
+  const html = functions.fuelCardHTML(
+    {
+      fuel: {
+        totalCostCents: 100,
+        volumeMl: 1000,
+        weightedUnitPriceX10000: 10000,
+        minUnitPriceX10000: 10000,
+        maxUnitPriceX10000: 10000,
+        coverage: { structuredRecords: 1, totalRecords: 1 },
+        legacyCoverageWarning: `警告 ${htmlAttack}`,
+        byVehicle: [
+          {
+            vehicleId: "v1",
+            vehicleName: `一号车 ${htmlAttack}`,
+            totalCostCents: 100,
+            volumeMl: 1000,
+          },
+        ],
+      },
+    },
+    true,
+  );
+  assert.doesNotMatch(html, /<img\b/i);
+  assert.match(html, /一号车 &lt;img src=x onerror=/);
+  assert.match(html, /警告 &lt;img src=x onerror=/);
 });

@@ -6,38 +6,65 @@ import {
 } from "../../../lib/server/bootstrap";
 import {
   AuthenticationError,
-  getTrustedIdentity,
+  getTrustedPrincipal,
 } from "../../../lib/server/auth";
+import {
+  enforceMutationRequest,
+  readJsonWithinLimit,
+  RequestSecurityError,
+  secureJson,
+  withSecurityHeaders,
+} from "../../../lib/server/http-security";
+import { serverAuthOptions } from "../../../lib/server/auth-runtime";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
-  return bootstrap(request);
+  return withSecurityHeaders(
+    new Response(null, { status: 405, headers: { allow: "POST" } }),
+    request,
+  );
 }
 
-// POST is kept as an equivalent same-origin entry point for clients that avoid
-// caching identity-aware bootstrap requests. It does not accept identity data.
 export async function POST(request: Request): Promise<Response> {
   return bootstrap(request);
 }
 
 async function bootstrap(request: Request): Promise<Response> {
   try {
-    const identity = getTrustedIdentity(request);
+    enforceMutationRequest(request);
+    await readJsonWithinLimit(request);
+    const identity = getTrustedPrincipal(request, serverAuthOptions());
     await ensureSchema();
     const d1 = getD1();
     const actor = await resolveOrCreateActor(d1, identity);
     const payload = await loadBootstrap(d1, actor);
-    return json(payload, 200);
+    return secureJson(request, payload, 200);
   } catch (error) {
+    if (error instanceof RequestSecurityError) {
+      return secureJson(
+        request,
+        { error: { code: error.code, message: error.message } },
+        error.status,
+      );
+    }
     if (error instanceof AuthenticationError) {
-      return json(
-        { error: { code: "unauthenticated", message: error.message } },
-        401,
+      return secureJson(
+        request,
+        { error: { code: error.code, message: error.message } },
+        error.code === "unauthenticated" ? 401 : 503,
+      );
+    }
+    if (error instanceof SyntaxError || error instanceof TypeError) {
+      return secureJson(
+        request,
+        { error: { code: "invalid_json", message: "请求不是有效 JSON" } },
+        400,
       );
     }
     console.error("bootstrap failed", error);
-    return json(
+    return secureJson(
+      request,
       {
         error: {
           code: "bootstrap_failed",
@@ -47,11 +74,4 @@ async function bootstrap(request: Request): Promise<Response> {
       500,
     );
   }
-}
-
-function json(value: unknown, status: number): Response {
-  return Response.json(value, {
-    status,
-    headers: { "cache-control": "no-store" },
-  });
 }

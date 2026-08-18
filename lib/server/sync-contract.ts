@@ -139,6 +139,21 @@ export class RecordValidationError extends Error {
   }
 }
 
+export type NormalizedFuelData = {
+  fuelUnitPriceX10000: number | null;
+  fuelVolumeMl: number | null;
+};
+
+export type FuelData = {
+  unitPrice: string;
+  liters: string;
+};
+
+const MAX_AMOUNT_CENTS = 99_999_999_999n;
+const MAX_FUEL_UNIT_PRICE_X10000 = 9_999_999n;
+const MAX_FUEL_VOLUME_ML = 100_000_000n;
+const FUEL_AMOUNT_TOLERANCE_CENTS = 1n;
+
 const PUT_ORDER: Record<SyncType, number> = {
   category: 0,
   vehicle: 1,
@@ -428,6 +443,172 @@ export function amountToCents(value: unknown): number {
 
 export function centsToAmount(value: unknown): number {
   return Number(value || 0) / 100;
+}
+
+/**
+ * Validate the optional structured fuel payload and convert it to the integer
+ * database representation. A fuel expense without `fuel` is an intentional
+ * legacy record; any present payload must be complete and consistent.
+ */
+export function normalizeFuelData(
+  categoryId: string,
+  amount: unknown,
+  fuel: unknown,
+): NormalizedFuelData {
+  if (categoryId !== "fuel") {
+    if (fuel !== undefined) {
+      throw new RecordValidationError(
+        "fuel_metadata_forbidden",
+        "只有油费支出可以携带 fuel 元数据",
+      );
+    }
+    return { fuelUnitPriceX10000: null, fuelVolumeMl: null };
+  }
+  if (fuel === undefined) {
+    return { fuelUnitPriceX10000: null, fuelVolumeMl: null };
+  }
+  if (!isObject(fuel)) {
+    throw new RecordValidationError(
+      "invalid_fuel_metadata",
+      "fuel 必须同时包含 unitPrice 和 liters",
+    );
+  }
+  const keys = Object.keys(fuel);
+  if (
+    !Object.hasOwn(fuel, "unitPrice") ||
+    !Object.hasOwn(fuel, "liters") ||
+    keys.some((key) => key !== "unitPrice" && key !== "liters")
+  ) {
+    throw new RecordValidationError(
+      "invalid_fuel_metadata",
+      "fuel 必须且只能包含 unitPrice 和 liters",
+    );
+  }
+
+  const amountCents = decimalUnits(
+    amount,
+    2,
+    MAX_AMOUNT_CENTS,
+    "fuel.totalAmount",
+    true,
+  );
+  const fuelUnitPriceX10000 = decimalUnits(
+    fuel.unitPrice,
+    4,
+    MAX_FUEL_UNIT_PRICE_X10000,
+    "fuel.unitPrice",
+    false,
+  );
+  const fuelVolumeMl = decimalUnits(
+    fuel.liters,
+    3,
+    MAX_FUEL_VOLUME_ML,
+    "fuel.liters",
+    false,
+  );
+  const expectedAmountCents = roundHalfUp(
+    fuelUnitPriceX10000 * fuelVolumeMl,
+    100_000n,
+  );
+  const difference =
+    amountCents >= expectedAmountCents
+      ? amountCents - expectedAmountCents
+      : expectedAmountCents - amountCents;
+  if (amountCents === 0n || difference > FUEL_AMOUNT_TOLERANCE_CENTS) {
+    throw new RecordValidationError(
+      "fuel_amount_inconsistent",
+      "油费总价与单价、升数不一致（允许固定 0.01 元误差）",
+    );
+  }
+
+  return {
+    fuelUnitPriceX10000: Number(fuelUnitPriceX10000),
+    fuelVolumeMl: Number(fuelVolumeMl),
+  };
+}
+
+/** Rebuild canonical sync data from the two nullable database columns. */
+export function fuelDataFromScaled(
+  unitPriceX10000: unknown,
+  volumeMl: unknown,
+): FuelData | undefined {
+  if (unitPriceX10000 == null && volumeMl == null) return undefined;
+  if (
+    !Number.isSafeInteger(unitPriceX10000) ||
+    !Number.isSafeInteger(volumeMl) ||
+    Number(unitPriceX10000) <= 0 ||
+    Number(volumeMl) <= 0 ||
+    BigInt(Number(unitPriceX10000)) > MAX_FUEL_UNIT_PRICE_X10000 ||
+    BigInt(Number(volumeMl)) > MAX_FUEL_VOLUME_ML
+  ) {
+    throw new RecordValidationError(
+      "invalid_stored_fuel_metadata",
+      "数据库中的 fuel 定点字段不完整或超出范围",
+    );
+  }
+  return {
+    unitPrice: scaledToCanonical(BigInt(Number(unitPriceX10000)), 4),
+    liters: scaledToCanonical(BigInt(Number(volumeMl)), 3),
+  };
+}
+
+function decimalUnits(
+  value: unknown,
+  scale: number,
+  maximum: bigint,
+  field: string,
+  allowZero: boolean,
+): bigint {
+  let text: string;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    text = String(value);
+  } else if (typeof value === "string") {
+    text = value.trim();
+  } else {
+    text = "";
+  }
+  const error = (message: string): never => {
+    throw new RecordValidationError(
+      "invalid_fuel_number",
+      message,
+    );
+  };
+  if (text.length > 32) {
+    return error(`${field} 超出支持范围`);
+  }
+  if (/[eE]/.test(text)) {
+    return error(`${field} 必须使用普通十进制，不能使用指数形式`);
+  }
+  const match = /^\+?(?:(\d+)(?:\.(\d*))?|\.(\d+))$/.exec(text);
+  if (!match) {
+    return error(`${field} 必须是正的普通十进制数`);
+  }
+  const integer = match[1] || "0";
+  const fraction = (match[2] !== undefined ? match[2] : match[3]) || "";
+  if (fraction.length > scale) {
+    return error(`${field} 最多保留 ${scale} 位小数`);
+  }
+  const factor = 10n ** BigInt(scale);
+  const units =
+    BigInt(integer) * factor +
+    BigInt((fraction + "0".repeat(scale)).slice(0, scale) || "0");
+  if ((!allowZero && units === 0n) || units > maximum) {
+    return error(`${field} 必须大于零且不能超过支持范围`);
+  }
+  return units;
+}
+
+function roundHalfUp(numerator: bigint, denominator: bigint): bigint {
+  return (numerator + denominator / 2n) / denominator;
+}
+
+function scaledToCanonical(units: bigint, scale: number): string {
+  const factor = 10n ** BigInt(scale);
+  const integer = units / factor;
+  const fraction = String(units % factor).padStart(scale, "0");
+  return `${integer}.${fraction}`
+    .replace(/\.0+$/, "")
+    .replace(/(\.\d*?)0+$/, "$1");
 }
 
 export function periodDays(start: string, end: string): number {

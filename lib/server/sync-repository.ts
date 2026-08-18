@@ -11,8 +11,11 @@ import {
   amountToCents,
   booleanValue,
   classifyVersion,
+  centsToAmount,
   dateValue,
+  fuelDataFromScaled,
   isObject,
+  normalizeFuelData,
   optionalIsoDateTime,
   optionalText,
   periodDays,
@@ -104,19 +107,22 @@ type AtomicEntry =
       operation: SyncOperation;
       current: RawRow | null;
       normalized: Normalized;
-      vehicleId?: string;
+      vehicleIds: string[];
+      parentTripIds: string[];
       result: Extract<SyncResult, { status: "applied" }>;
     }
   | {
       operation: SyncOperation;
       current: RawRow;
-      vehicleId?: string;
+      vehicleIds: string[];
+      parentTripIds: string[];
       result: Extract<SyncResult, { status: "applied" }>;
     };
 
 type BatchProjection = {
   puts: Map<string, Normalized>;
   deletes: Set<string>;
+  tripCreates: Set<string>;
 };
 
 export async function hashSyncPayload(payload: string): Promise<string> {
@@ -173,17 +179,18 @@ export async function applyAtomicSyncBatch(
         if (operation.type === "category") {
           requireOwner(actor);
         }
+        const authorization = await operationAuthorizationFootprint(
+          d1,
+          actor.fleetId,
+          operation,
+          current,
+          undefined,
+          projection,
+        );
         entries.push({
           operation,
           current,
-          vehicleId: await operationVehicleId(
-            d1,
-            actor.fleetId,
-            operation,
-            current,
-            undefined,
-            projection,
-          ),
+          ...authorization,
           result: {
             op: operation.op,
             type: operation.type,
@@ -223,18 +230,19 @@ export async function applyAtomicSyncBatch(
         current,
         projection,
       );
+      const authorization = await operationAuthorizationFootprint(
+        d1,
+        actor.fleetId,
+        operation,
+        current,
+        normalized,
+        projection,
+      );
       entries.push({
         operation,
         current,
         normalized,
-        vehicleId: await operationVehicleId(
-          d1,
-          actor.fleetId,
-          operation,
-          current,
-          normalized,
-          projection,
-        ),
+        ...authorization,
         result: {
           op: operation.op,
           type: operation.type,
@@ -281,14 +289,12 @@ export async function applyAtomicSyncBatch(
   const statements: D1PreparedStatement[] = [
     prepareActorGuard(d1, actor, operationId),
   ];
-  if (actor.role === "driver") {
-    Array.from(
-      new Set(
-        entries
-          .map((entry) => entry.vehicleId)
-          .filter((vehicleId): vehicleId is string => Boolean(vehicleId)),
-      ),
-    ).forEach((vehicleId, index) => {
+  const assignmentVehicleIds = assignmentGuardVehicleIds(
+    actor.role,
+    entries,
+  );
+  assignmentVehicleIds.forEach(
+    (vehicleId, index) => {
       statements.push(
         prepareAssignmentGuard(
           d1,
@@ -298,8 +304,21 @@ export async function applyAtomicSyncBatch(
           vehicleId,
         ),
       );
-    });
-  }
+    },
+  );
+  // A child version guard cannot detect its parent trip moving vehicles.
+  // Re-authorize each existing parent against its current vehicle in-transaction.
+  parentTripGuardIds(actor.role, entries).forEach((tripId, index) => {
+    statements.push(
+      prepareParentTripAssignmentGuard(
+        d1,
+        actor,
+        operationId,
+        -2 - assignmentVehicleIds.length - index,
+        tripId,
+      ),
+    );
+  });
   entries.forEach((entry, ordinal) => {
     statements.push(
       prepareVersionGuard(
@@ -373,6 +392,7 @@ function buildBatchProjection(
 ): BatchProjection {
   const puts = new Map<string, Normalized>();
   const deletes = new Set<string>();
+  const tripCreates = batchTripCreateIds(operations);
   for (const operation of operations) {
     const key = batchRecordKey(operation);
     if (operation.op === "put") {
@@ -381,7 +401,24 @@ function buildBatchProjection(
       deletes.add(key);
     }
   }
-  return { puts, deletes };
+  return { puts, deletes, tripCreates };
+}
+
+export function batchTripCreateIds(
+  operations: ReadonlyArray<
+    Pick<SyncOperation, "expectedVersion" | "op" | "type" | "id">
+  >,
+): Set<string> {
+  return new Set(
+    operations
+      .filter(
+        (operation) =>
+          operation.type === "trip" &&
+          operation.op === "put" &&
+          operation.expectedVersion === 0,
+      )
+      .map((operation) => operation.id),
+  );
 }
 
 function batchRecordKey(
@@ -512,6 +549,43 @@ function prepareAssignmentGuard(
       actor.fleetId,
       actor.userId,
       vehicleId,
+    );
+}
+
+function prepareParentTripAssignmentGuard(
+  d1: D1Database,
+  actor: Actor,
+  operationId: string,
+  ordinal: number,
+  tripId: string,
+): D1PreparedStatement {
+  return d1
+    .prepare(
+      `INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+       VALUES (
+         ?, ?, ?,
+         CASE WHEN EXISTS (
+           SELECT 1
+           FROM trips AS t
+           JOIN vehicle_assignments AS a
+             ON a.fleet_id = t.fleet_id
+            AND a.vehicle_id = t.vehicle_id
+            AND a.user_id = ?
+            AND a.active = 1
+            AND datetime(a.starts_at) <= CURRENT_TIMESTAMP
+            AND (a.ends_at IS NULL OR datetime(a.ends_at) > CURRENT_TIMESTAMP)
+           WHERE t.fleet_id = ?
+             AND t.id = ?
+         ) THEN 1 ELSE 0 END
+       )`,
+    )
+    .bind(
+      actor.fleetId,
+      operationId,
+      ordinal,
+      actor.userId,
+      actor.fleetId,
+      tripId,
     );
 }
 
@@ -977,14 +1051,18 @@ function normalizeExpense(
   const id = dataRecordId(data.id, "trip_expense.id");
   const tripId = dataRecordId(data.tripId, "trip_expense.tripId");
   assertChildId(operation, tripId, id);
+  const categoryId = dataRecordId(
+    data.categoryId ?? data.catId,
+    "trip_expense.categoryId",
+  );
+  const amountCents = amountToCents(data.amount);
+  const fuel = normalizeFuelData(categoryId, data.amount, data.fuel);
   return {
     id,
     tripId,
-    categoryId: dataRecordId(
-      data.categoryId ?? data.catId,
-      "trip_expense.categoryId",
-    ),
-    amountCents: amountToCents(data.amount),
+    categoryId,
+    amountCents,
+    ...fuel,
     date: dateValue(data.date, "trip_expense.date"),
     note: optionalText(data.note, "trip_expense.note", 300),
     sortOrder: sortOrder(data.sortOrder),
@@ -1030,31 +1108,96 @@ function normalizeMaintenance(
   };
 }
 
-async function operationVehicleId(
+export function authorizationVehicleFootprint(
+  operation: Pick<SyncOperation, "op" | "type">,
+  current: RawRow | null,
+  normalized: Normalized | undefined,
+  currentTrip?: RawRow | null,
+  projectedTrip?: RawRow | null,
+): string[] {
+  const vehicleIds: string[] = [];
+  const addVehicleId = (value: unknown): void => {
+    if (value == null) return;
+    const vehicleId = String(value);
+    if (vehicleId && !vehicleIds.includes(vehicleId)) {
+      vehicleIds.push(vehicleId);
+    }
+  };
+
+  if (operation.type === "trip" || operation.type === "maintenance") {
+    addVehicleId(current?.vehicle_id);
+    if (operation.op === "put") addVehicleId(normalized?.vehicleId);
+  } else if (
+    operation.type === "trip_expense" ||
+    operation.type === "trip_income"
+  ) {
+    addVehicleId(currentTrip?.vehicle_id ?? currentTrip?.vehicleId);
+    addVehicleId(projectedTrip?.vehicle_id ?? projectedTrip?.vehicleId);
+  }
+  return vehicleIds;
+}
+
+export function assignmentGuardVehicleIds(
+  role: Actor["role"],
+  entries: ReadonlyArray<{ vehicleIds: readonly string[] }>,
+): string[] {
+  if (role !== "driver") return [];
+  return Array.from(
+    new Set(entries.flatMap((entry) => entry.vehicleIds)),
+  );
+}
+
+export function parentTripGuardIds(
+  role: Actor["role"],
+  entries: ReadonlyArray<{ parentTripIds: readonly string[] }>,
+): string[] {
+  if (role !== "driver") return [];
+  return Array.from(
+    new Set(entries.flatMap((entry) => entry.parentTripIds)),
+  );
+}
+
+async function operationAuthorizationFootprint(
   d1: D1Database,
   fleetId: string,
   operation: SyncOperation,
   current: RawRow | null,
   normalized: Normalized | undefined,
   projection: BatchProjection,
-): Promise<string | undefined> {
+): Promise<{ vehicleIds: string[]; parentTripIds: string[] }> {
   if (
     operation.type === "fleet_settings" ||
     operation.type === "category" ||
     operation.type === "vehicle"
   ) {
-    return undefined;
+    return { vehicleIds: [], parentTripIds: [] };
   }
   if (operation.type === "trip" || operation.type === "maintenance") {
-    const vehicleId = normalized?.vehicleId ?? current?.vehicle_id;
-    return vehicleId == null ? undefined : String(vehicleId);
+    return {
+      vehicleIds: authorizationVehicleFootprint(
+        operation,
+        current,
+        normalized,
+      ),
+      parentTripIds: [],
+    };
   }
   const tripId = String(normalized?.tripId ?? current?.trip_id ?? "");
-  if (!tripId) return undefined;
-  const trip = operation.op === "delete"
-    ? await requireTrip(d1, fleetId, tripId)
+  if (!tripId) return { vehicleIds: [], parentTripIds: [] };
+  const currentTrip = await findTrip(d1, fleetId, tripId);
+  const targetTrip = projection.deletes.has(`trip\u0000${tripId}`)
+    ? null
     : await projectedTrip(d1, fleetId, tripId, projection);
-  return String(trip.vehicle_id ?? trip.vehicleId);
+  return {
+    vehicleIds: authorizationVehicleFootprint(
+      operation,
+      current,
+      normalized,
+      currentTrip,
+      targetTrip,
+    ),
+    parentTripIds: projection.tripCreates.has(tripId) ? [] : [tripId],
+  };
 }
 
 async function validateRelationships(
@@ -1437,10 +1580,7 @@ async function requireTrip(
   fleetId: string,
   tripId: string,
 ): Promise<RawRow> {
-  const trip = await d1
-    .prepare("SELECT * FROM trips WHERE fleet_id = ? AND id = ? LIMIT 1")
-    .bind(fleetId, tripId)
-    .first<RawRow>();
+  const trip = await findTrip(d1, fleetId, tripId);
   if (!trip) {
     throw new RecordValidationError(
       "trip_not_found",
@@ -1448,6 +1588,17 @@ async function requireTrip(
     );
   }
   return trip;
+}
+
+async function findTrip(
+  d1: D1Database,
+  fleetId: string,
+  tripId: string,
+): Promise<RawRow | null> {
+  return d1
+    .prepare("SELECT * FROM trips WHERE fleet_id = ? AND id = ? LIMIT 1")
+    .bind(fleetId, tripId)
+    .first<RawRow>();
 }
 
 async function requireCategory(
@@ -1659,7 +1810,7 @@ function prepareInsertRecord(
     case "trip_expense":
       statement = d1
         .prepare(
-          "INSERT INTO trip_expenses (fleet_id, id, trip_id, category_id, amount_cents, date, note, sort_order, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+          "INSERT INTO trip_expenses (fleet_id, id, trip_id, category_id, amount_cents, fuel_unit_price_x10000, fuel_volume_ml, date, note, sort_order, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
         )
         .bind(
           fleetId,
@@ -1667,6 +1818,8 @@ function prepareInsertRecord(
           data.tripId,
           data.categoryId,
           data.amountCents,
+          data.fuelUnitPriceX10000,
+          data.fuelVolumeMl,
           data.date,
           data.note,
           data.sortOrder,
@@ -1819,11 +1972,13 @@ function prepareUpdateRecord(
     case "trip_expense":
       statement = d1
         .prepare(
-          "UPDATE trip_expenses SET category_id = ?, amount_cents = ?, date = ?, note = ?, sort_order = ?, updated_at = ?, version = ? WHERE fleet_id = ? AND trip_id = ? AND id = ? AND version = ?",
+          "UPDATE trip_expenses SET category_id = ?, amount_cents = ?, fuel_unit_price_x10000 = ?, fuel_volume_ml = ?, date = ?, note = ?, sort_order = ?, updated_at = ?, version = ? WHERE fleet_id = ? AND trip_id = ? AND id = ? AND version = ?",
         )
         .bind(
           data.categoryId,
           data.amountCents,
+          data.fuelUnitPriceX10000,
+          data.fuelVolumeMl,
           data.date,
           data.note,
           data.sortOrder,
@@ -1997,10 +2152,28 @@ function clientDataFromNormalized(
   ) {
     return { ...data };
   }
-  const { amountCents, ...clientData } = data;
+  const {
+    amountCents,
+    fuelUnitPriceX10000,
+    fuelVolumeMl,
+    ...clientData
+  } = data;
+  if (type === "trip_expense") {
+    const amount = centsToAmount(amountCents);
+    const fuel = fuelDataFromScaled(
+      fuelUnitPriceX10000,
+      fuelVolumeMl,
+    );
+    normalizeFuelData(String(data.categoryId), amount, fuel);
+    return {
+      ...clientData,
+      amount,
+      ...(fuel === undefined ? {} : { fuel }),
+    };
+  }
   return {
     ...clientData,
-    amount: Number(amountCents) / 100,
+    amount: centsToAmount(amountCents),
   };
 }
 

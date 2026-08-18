@@ -30,5 +30,8 @@ interface Fetcher {
 declare module "cloudflare:workers" {
   export const env: {
     DB: D1Database;
+    TTQ_AUTH_MODE?: string;
+    TTQ_INTERNAL_AUTH_SECRET?: string;
+    NODE_ENV?: string;
   };
 }

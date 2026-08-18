@@ -1,5 +1,9 @@
 import type { TrustedIdentity } from "./auth";
-import { centsToAmount } from "./sync-contract";
+import {
+  centsToAmount,
+  fuelDataFromScaled,
+  normalizeFuelData,
+} from "./sync-contract";
 
 export type Actor = {
   userId: string;
@@ -53,9 +57,11 @@ export async function resolveOrCreateActor(
       .bind(
         identityId,
         userId,
-        identity.provider,
-        identity.providerSubject,
-        identity.email,
+        identity.issuer,
+        identity.subject,
+        // Authentication contact claims are intentionally request-scoped;
+        // the business database stores only the provider-scoped subject.
+        null,
         now,
         now,
       ),
@@ -190,9 +196,13 @@ export async function loadBootstrap(d1: D1Database, actor: Actor) {
         theme: settings.theme,
         lastReportSeen: settings.last_report_seen,
         lastBackupAt: settings.last_backup_at,
-        activeVehicleId: settings.active_vehicle_id,
+        activeVehicleId:
+          actor.role === "driver" ? "all" : settings.active_vehicle_id,
         periodStartDate: settings.period_start_date,
         periodEndDate: settings.period_end_date,
+        ...(actor.role === "driver"
+          ? { _ownerRecordsWritable: false }
+          : {}),
       },
     },
     ...rows(categoriesResult).map((row) => ({
@@ -280,7 +290,7 @@ async function findActor(
        ORDER BY CASE fm.role WHEN 'owner' THEN 0 ELSE 1 END, fm.created_at
        LIMIT 1`,
     )
-    .bind(identity.provider, identity.providerSubject)
+    .bind(identity.issuer, identity.subject)
     .first<ActorRow>();
 }
 
@@ -326,15 +336,26 @@ export function tripData(row: RawRow): Record<string, unknown> {
 }
 
 export function expenseData(row: RawRow): Record<string, unknown> {
+  const categoryId = String(row.category_id);
+  const amount = centsToAmount(row.amount_cents);
+  const fuel = fuelDataFromScaled(
+    row.fuel_unit_price_x10000,
+    row.fuel_volume_ml,
+  );
+  // Re-validating the reconstructed payload is intentional: column shape
+  // alone cannot prove that the metadata belongs to an oil expense or that
+  // its price/volume still agrees with the stored total.
+  normalizeFuelData(categoryId, amount, fuel);
   return {
     id: row.id,
     tripId: row.trip_id,
-    categoryId: row.category_id,
-    amount: centsToAmount(row.amount_cents),
+    categoryId,
+    amount,
     date: row.date,
     note: row.note,
     sortOrder: Number(row.sort_order),
     createdAt: row.created_at,
+    ...(fuel === undefined ? {} : { fuel }),
   };
 }
 

@@ -1,18 +1,21 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { safeAuthReturnTo } from "../lib/auth/logout";
+import {
+  AuthenticationError,
+  getTrustedPrincipal,
+  type PrincipalIssuer,
+} from "../lib/server/auth";
+import { serverAuthOptions } from "../lib/server/auth-runtime";
 
 export type ChatGPTUser = {
   displayName: string;
-  email: string;
+  email: string | null;
   fullName: string | null;
+  issuer: PrincipalIssuer;
+  loginName: string | null;
 };
 
-const USER_EMAIL_HEADER = "oai-authenticated-user-email";
-const USER_FULL_NAME_HEADER = "oai-authenticated-user-full-name";
-const USER_FULL_NAME_ENCODING_HEADER =
-  "oai-authenticated-user-full-name-encoding";
-const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 
 /**
@@ -23,21 +26,27 @@ const SIGN_IN_PATH = "/signin-with-chatgpt";
  */
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
-  const email = requestHeaders.get(USER_EMAIL_HEADER)?.trim();
-  if (!email) return null;
-
-  const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get(USER_FULL_NAME_ENCODING_HEADER) === PERCENT_ENCODED_UTF8
-      ? safeDecodeURIComponent(encodedFullName)
-      : null;
-
-  return {
-    displayName: fullName || email,
-    email,
-    fullName,
-  };
+  const host = requestHeaders.get("host") ?? "app.local";
+  const protocol = requestHeaders.get("x-forwarded-proto") ??
+    (host.startsWith("localhost") || host.startsWith("127.0.0.1")
+      ? "http"
+      : "https");
+  try {
+    const principal = getTrustedPrincipal(
+      new Request(`${protocol}://${host}/`, { headers: requestHeaders }),
+      serverAuthOptions(),
+    );
+    return {
+      displayName: principal.displayName,
+      email: principal.email,
+      fullName: principal.displayName,
+      issuer: principal.issuer,
+      loginName: principal.loginName,
+    };
+  } catch (error) {
+    if (error instanceof AuthenticationError) return null;
+    throw error;
+  }
 }
 
 export async function requireChatGPTUser(
@@ -52,12 +61,4 @@ export async function requireChatGPTUser(
 export function chatGPTSignInPath(returnTo: string): string {
   const safeReturnTo = safeAuthReturnTo(returnTo);
   return `${SIGN_IN_PATH}?return_to=${encodeURIComponent(safeReturnTo)}`;
-}
-
-function safeDecodeURIComponent(value: string): string | null {
-  try {
-    return decodeURIComponent(value).trim() || null;
-  } catch {
-    return null;
-  }
 }

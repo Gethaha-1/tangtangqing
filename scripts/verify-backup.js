@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import '../src/domain.js';
+import '../src/cloud-sync.js';
 
 const D = globalThis.TTQDomain;
+const Cloud = globalThis.TTQCloudSync;
 
 const backupPath = process.argv[2];
 if (!backupPath) {
@@ -13,7 +15,7 @@ if (!backupPath) {
 const original = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
 const period = D.defaultPeriod();
 const base = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   settings: {
     theme: 'day',
     lastReportSeen: '',
@@ -28,6 +30,8 @@ const base = {
   maintenance: []
 };
 const migrated = D.migrate(original, base);
+const originalFuel = Cloud.summarizeState(original).fuel;
+const migratedFuel = Cloud.summarizeState(migrated).fuel;
 
 function sumEntries(trips, field) {
   return trips.reduce((sum, trip) =>
@@ -37,7 +41,7 @@ function sumMaintenance(items) {
   return items.reduce((sum, item) => sum + D.cleanAmount(item.amount), 0);
 }
 
-assert.equal(migrated.schemaVersion, 2);
+assert.equal(migrated.schemaVersion, 3);
 assert.equal(migrated.trips.length, original.trips.length);
 assert.equal(migrated.maintenance.length, original.maintenance.length);
 assert.equal(migrated.categories.expense.length, original.categories.expense.length);
@@ -45,6 +49,7 @@ assert.equal(migrated.categories.income.length, original.categories.income.lengt
 assert.equal(sumEntries(migrated.trips, 'expenses'), sumEntries(original.trips, 'expenses'));
 assert.equal(sumEntries(migrated.trips, 'incomes'), sumEntries(original.trips, 'incomes'));
 assert.equal(sumMaintenance(migrated.maintenance), sumMaintenance(original.maintenance));
+assert.deepEqual(migratedFuel, originalFuel, 'fuel 元数据、升数、结构化金额或记录归属不守恒');
 assert.ok(migrated.trips.every(trip => trip.vehicleId));
 assert.ok(migrated.maintenance.every(item => item.vehicleId));
 
@@ -58,6 +63,7 @@ console.log(JSON.stringify({
   expenseTotal: sumEntries(migrated.trips, 'expenses'),
   incomeTotal: sumEntries(migrated.trips, 'incomes'),
   maintenanceTotal: sumMaintenance(migrated.maintenance),
+  fuel: migratedFuel,
   periodStartDate: migrated.settings.periodStartDate,
   periodEndDate: migrated.settings.periodEndDate
 }, null, 2));

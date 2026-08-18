@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
   const SETTINGS_ID = 'settings';
   const ORDER_FIELD = 'sortOrder';
   const RECORD_TYPES = [
@@ -47,6 +47,67 @@
     return Object.assign({}, clone(data), { [ORDER_FIELD]: index });
   }
 
+  function scaledDecimal(value, scale, maximum, field, allowZero) {
+    let text;
+    if (typeof value === 'number' && Number.isFinite(value)) text = String(value);
+    else if (typeof value === 'string') text = value.trim();
+    else text = '';
+    if (/[eE]/.test(text))
+      throw new Error(field + ' 必须使用普通十进制，不能使用指数形式');
+    const match = /^\+?(?:(\d+)(?:\.(\d*))?|\.(\d+))$/.exec(text);
+    const fraction = match && ((match[2] !== undefined ? match[2] : match[3]) || '');
+    if (!match || fraction.length > scale)
+      throw new Error(field + ' 不是支持精度内的普通十进制数');
+    const factor = 10n ** BigInt(scale);
+    const units = BigInt(match[1] || '0') * factor +
+      BigInt((fraction + '0'.repeat(scale)).slice(0, scale) || '0');
+    if ((!allowZero && units === 0n) || units > maximum)
+      throw new Error(field + ' 超出支持范围');
+    return units;
+  }
+
+  function canonicalScaled(units, scale) {
+    const factor = 10n ** BigInt(scale);
+    const fixed = String(units / factor) + '.' +
+      String(units % factor).padStart(scale, '0');
+    return fixed.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  }
+
+  function normalizeExpenseFuel(data, label) {
+    const normalized = clone(data || {});
+    if (!Object.prototype.hasOwnProperty.call(normalized, 'fuel')) return normalized;
+    if (normalized.categoryId !== 'fuel')
+      throw new Error((label || '油费记录') + ' 的非油费科目不能携带 fuel 元数据');
+    const fuel = normalized.fuel;
+    if (!fuel || typeof fuel !== 'object' || Array.isArray(fuel) ||
+        !Object.prototype.hasOwnProperty.call(fuel, 'unitPrice') ||
+        !Object.prototype.hasOwnProperty.call(fuel, 'liters') ||
+        Object.keys(fuel).some(key => key !== 'unitPrice' && key !== 'liters'))
+      throw new Error((label || '油费记录') + ' 的 fuel 元数据必须完整');
+    const amountCents = scaledDecimal(
+      normalized.amount, 2, 99999999999n, 'fuel.totalAmount', true
+    );
+    const price = scaledDecimal(fuel.unitPrice, 4, 9999999n, 'fuel.unitPrice', false);
+    const volume = scaledDecimal(fuel.liters, 3, 100000000n, 'fuel.liters', false);
+    const expected = (price * volume + 50000n) / 100000n;
+    const difference = amountCents >= expected
+      ? amountCents - expected
+      : expected - amountCents;
+    if (amountCents === 0n || difference > 1n)
+      throw new Error((label || '油费记录') + ' 的总价与单价、升数不一致');
+    normalized.fuel = {
+      unitPrice: canonicalScaled(price, 4),
+      liters: canonicalScaled(volume, 3)
+    };
+    return normalized;
+  }
+
+  function normalizeRecordData(type, id, data) {
+    return type === 'trip_expense'
+      ? normalizeExpenseFuel(data, recordKey(type, id))
+      : clone(data);
+  }
+
   function readVersion(versions, type, id) {
     if (!versions) return undefined;
     const key = recordKey(type, id);
@@ -77,7 +138,7 @@
 
   function normalizeState(state, versions) {
     if (!state || typeof state !== 'object')
-      throw new TypeError('需要 schema v2 账本状态');
+      throw new TypeError('需要 schema v3 账本状态');
 
     const records = [];
     const settings = clone(state.settings || {});
@@ -116,11 +177,11 @@
 
       (Array.isArray(trip.expenses) ? trip.expenses : []).forEach((entry, index) => {
         const id = requireId(entry && entry.id, '趟次支出');
-        const data = Object.assign({}, entry, {
+        const data = normalizeExpenseFuel(Object.assign({}, entry, {
           id,
           tripId,
           categoryId: entry.catId
-        });
+        }), 'trip_expense:' + tripId + ':' + id);
         delete data.catId;
         records.push(makeRecord(
           'trip_expense',
@@ -189,7 +250,11 @@
       index.set(key, {
         type: String(item.type),
         id: String(item.id),
-        data: clone(item.data !== undefined ? item.data : item.record),
+        data: normalizeRecordData(
+          String(item.type),
+          String(item.id),
+          item.data !== undefined ? item.data : item.record
+        ),
         version: item.version
       });
     });
@@ -205,6 +270,10 @@
   function planSync(state, baseline, versions) {
     const current = indexRecords(normalizeState(state));
     const before = indexRecords(asRecords(baseline));
+    const ownerRecordsWritable = [current, before].every(index => {
+      const settings = index.get(recordKey('fleet_settings', SETTINGS_ID));
+      return !settings || !settings.data || settings.data._ownerRecordsWritable !== false;
+    });
     const keys = Array.from(new Set(
       Array.from(current.keys()).concat(Array.from(before.keys()))
     )).sort();
@@ -213,6 +282,9 @@
     keys.forEach(key => {
       const next = current.get(key);
       const previous = before.get(key);
+      const type = (next || previous) && (next || previous).type;
+      if (!ownerRecordsWritable &&
+          ['fleet_settings', 'category', 'vehicle'].includes(type)) return;
       if (next && !previous) {
         operations.push({
           op: 'put',
@@ -293,8 +365,7 @@
   }
 
   function recordsToState(source, fallback) {
-    const records = asRecords(source);
-    indexRecords(records);
+    const records = Array.from(indexRecords(asRecords(source)).values());
     const known = new Set(RECORD_TYPES);
     records.forEach(item => {
       if (!known.has(item.type)) throw new Error('不支持的云记录类型：' + item.type);
@@ -415,8 +486,19 @@
   }
 
   function amountInCents(value) {
-    const amount = typeof value === 'number' ? value : parseFloat(value);
-    return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+    const amount = typeof value === 'number'
+      ? value
+      : (typeof value === 'string' && value.trim() ? Number(value) : Number.NaN);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 999999999.99)
+      throw new Error('金额无效或超出支持范围');
+    return Math.round(amount * 100);
+  }
+
+  function exactAmountCents(value) {
+    const cents = amountInCents(value);
+    if (!Number.isSafeInteger(cents))
+      throw new Error('金额超出守恒校验支持范围');
+    return BigInt(cents);
   }
 
   function validCalendarDate(value) {
@@ -451,7 +533,9 @@
   }
 
   function summarizeState(source) {
-    const records = hasStateSnapshot(source) ? normalizeState(source) : asRecords(source);
+    const records = hasStateSnapshot(source)
+      ? normalizeState(source)
+      : Array.from(indexRecords(asRecords(source)).values());
     const summary = {
       counts: {
         vehicles: 0,
@@ -466,11 +550,29 @@
         tripExpenses: 0,
         tripIncomes: 0,
         maintenance: 0
+      },
+      exactAmounts: {
+        tripExpensesCents: '0',
+        tripIncomesCents: '0',
+        maintenanceCents: '0'
+      },
+      fuel: {
+        structuredRecords: 0,
+        legacyRecords: 0,
+        totalVolumeMl: 0,
+        structuredCostCents: 0,
+        fingerprint: ''
       }
     };
     let expenseCents = 0;
     let incomeCents = 0;
     let maintenanceCents = 0;
+    let exactExpenseCents = 0n;
+    let exactIncomeCents = 0n;
+    let exactMaintenanceCents = 0n;
+    let fuelVolumeMl = 0;
+    let structuredFuelCostCents = 0;
+    const fuelFingerprints = [];
 
     records.forEach(item => {
       if (item.type === 'vehicle') summary.counts.vehicles++;
@@ -480,18 +582,50 @@
       } else if (item.type === 'trip') summary.counts.trips++;
       else if (item.type === 'trip_expense') {
         summary.counts.tripExpenses++;
-        expenseCents += amountInCents(item.data && item.data.amount);
+        const amountCents = amountInCents(item.data && item.data.amount);
+        const amountCentsExact = exactAmountCents(item.data && item.data.amount);
+        expenseCents += amountCents;
+        exactExpenseCents += amountCentsExact;
+        if (item.data && item.data.categoryId === 'fuel') {
+          if (item.data.fuel === undefined) {
+            summary.fuel.legacyRecords++;
+          } else {
+            const normalized = normalizeExpenseFuel(item.data, recordKey(item.type, item.id));
+            const volumeMl = Number(scaledDecimal(
+              normalized.fuel.liters, 3, 100000000n, 'fuel.liters', false
+            ));
+            summary.fuel.structuredRecords++;
+            fuelVolumeMl += volumeMl;
+            structuredFuelCostCents += amountCents;
+            fuelFingerprints.push(
+              recordKey(item.type, item.id) + '|' +
+              String(normalized.tripId || '') + '|' +
+              amountCentsExact.toString() + '|' +
+              normalized.fuel.unitPrice + '|' + normalized.fuel.liters
+            );
+          }
+        }
       } else if (item.type === 'trip_income') {
         summary.counts.tripIncomes++;
-        incomeCents += amountInCents(item.data && item.data.amount);
+        const amountCents = amountInCents(item.data && item.data.amount);
+        incomeCents += amountCents;
+        exactIncomeCents += exactAmountCents(item.data && item.data.amount);
       } else if (item.type === 'maintenance') {
         summary.counts.maintenance++;
-        maintenanceCents += amountInCents(item.data && item.data.amount);
+        const amountCents = amountInCents(item.data && item.data.amount);
+        maintenanceCents += amountCents;
+        exactMaintenanceCents += exactAmountCents(item.data && item.data.amount);
       }
     });
     summary.amounts.tripExpenses = expenseCents / 100;
     summary.amounts.tripIncomes = incomeCents / 100;
     summary.amounts.maintenance = maintenanceCents / 100;
+    summary.exactAmounts.tripExpensesCents = exactExpenseCents.toString();
+    summary.exactAmounts.tripIncomesCents = exactIncomeCents.toString();
+    summary.exactAmounts.maintenanceCents = exactMaintenanceCents.toString();
+    summary.fuel.totalVolumeMl = fuelVolumeMl;
+    summary.fuel.structuredCostCents = structuredFuelCostCents;
+    summary.fuel.fingerprint = snapshotFingerprint(fuelFingerprints.sort());
     return summary;
   }
 
@@ -503,7 +637,7 @@
       ? clone(after)
       : summarizeState(after);
     const differences = [];
-    ['counts', 'amounts'].forEach(group => {
+    ['counts', 'amounts', 'exactAmounts', 'fuel'].forEach(group => {
       const fields = new Set(
         Object.keys(left[group] || {}).concat(Object.keys(right[group] || {}))
       );
@@ -543,6 +677,37 @@
     };
   }
 
+  function acknowledgementAmountCents(value, key) {
+    const amount = typeof value === 'number'
+      ? value
+      : (typeof value === 'string' && value.trim() ? Number(value) : Number.NaN);
+    const cents = Math.round(amount * 100);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 999999999.99 ||
+        !Number.isSafeInteger(cents))
+      throw new Error('云端回执金额无效：' + key);
+    return cents;
+  }
+
+  function assertAppliedPutData(operation, resultData, key) {
+    const expected = normalizeRecordData(operation.type, operation.id, operation.data);
+    const actual = normalizeRecordData(operation.type, operation.id, resultData);
+    if (operation.type === 'trip_expense' &&
+        Object.prototype.hasOwnProperty.call(expected, 'fuel') !==
+          Object.prototype.hasOwnProperty.call(actual, 'fuel'))
+      throw new Error('云端回执改变了 fuel 是否存在：' + key);
+    Object.keys(expected).forEach(field => {
+      if (!Object.prototype.hasOwnProperty.call(actual, field))
+        throw new Error('云端回执缺少已写入字段 ' + field + '：' + key);
+      const equal = field === 'amount' &&
+        ['trip_expense', 'trip_income', 'maintenance'].includes(operation.type)
+        ? acknowledgementAmountCents(expected[field], key) ===
+          acknowledgementAmountCents(actual[field], key)
+        : canonical(expected[field]) === canonical(actual[field]);
+      if (!equal)
+        throw new Error('云端回执篡改了已写入字段 ' + field + '：' + key);
+    });
+  }
+
   function applySyncResults(baseline, operations, results) {
     const sourceOperations = Array.isArray(operations) ? operations : [];
     const sourceResults = Array.isArray(results)
@@ -575,6 +740,8 @@
         if (operation.op === 'put' &&
             (!result.data || typeof result.data !== 'object' || Array.isArray(result.data)))
           throw new Error('云端没有回传已写入记录：' + key);
+        if (operation.op === 'put')
+          assertAppliedPutData(operation, result.data, key);
       }
     });
 
@@ -590,7 +757,7 @@
       next.set(key, {
         type: operation.type,
         id: String(operation.id),
-        data: clone(result.data),
+        data: normalizeRecordData(operation.type, operation.id, result.data),
         version: Number(result.version)
       });
     });

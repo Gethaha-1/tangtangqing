@@ -1,9 +1,11 @@
 import { headers } from "next/headers";
 import { authLogoutPath } from "../lib/auth/logout";
+import { INTERNAL_AUTH_HEADERS } from "../lib/server/auth";
 import {
   chatGPTSignInPath,
   getChatGPTUser,
 } from "./chatgpt-auth";
+import { AuthPostButton } from "./auth-post-button";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,15 @@ export default async function LoginPage() {
     getChatGPTUser(),
     headers(),
   ]);
-  const showLocalSignIn = !user && isLocalHost(requestHeaders.get("host"));
+  const authMode =
+    requestHeaders.get(INTERNAL_AUTH_HEADERS.mode) ??
+    process.env.TTQ_AUTH_MODE;
+  const showLocalSignIn =
+    !user &&
+    authMode === "local" &&
+    process.env.NODE_ENV !== "production" &&
+    isLocalHost(requestHeaders.get("host"));
+  const showSitesSignIn = !user && authMode === "sites";
 
   return (
     <main className="login-page">
@@ -81,12 +91,12 @@ export default async function LoginPage() {
                     继续到账本
                     <span aria-hidden="true">→</span>
                   </a>
-                  <a
+                  <AuthPostButton
                     className="action action-secondary"
-                    href={authLogoutPath("/")}
+                    action={authLogoutPath("/")}
                   >
                     退出这个账号
-                  </a>
+                  </AuthPostButton>
                 </div>
               </>
             ) : (
@@ -100,22 +110,31 @@ export default async function LoginPage() {
                 </p>
 
                 <div className="auth-actions">
-                  <a
-                    className="action action-primary"
-                    href={chatGPTSignInPath(LEDGER_PATH)}
-                  >
-                    使用 ChatGPT 登录
-                    <span aria-hidden="true">→</span>
-                  </a>
+                  {showSitesSignIn ? (
+                    <a
+                      className="action action-primary"
+                      href={chatGPTSignInPath(LEDGER_PATH)}
+                    >
+                      使用 ChatGPT 登录
+                      <span aria-hidden="true">→</span>
+                    </a>
+                  ) : null}
 
                   {showLocalSignIn ? (
                     <div className="local-access">
                       <span>仅本地测试</span>
-                      <a href="/api/local-auth/signin?return_to=/ledger">
-                        用本地测试账号进入
-                      </a>
+                      <AuthPostButton
+                        className="action action-primary"
+                        action="/api/local-auth/signin?return_to=/ledger"
+                      >
+                        用 13800000000 进入
+                      </AuthPostButton>
                     </div>
-                  ) : null}
+                  ) : showSitesSignIn ? null : (
+                    <p className="auth-error" role="alert">
+                      认证模式尚未配置，账本保持锁定。
+                    </p>
+                  )}
                 </div>
               </>
             )}

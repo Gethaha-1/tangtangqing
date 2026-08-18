@@ -135,6 +135,9 @@ nav button.on { color:var(--accent); font-weight:700; }
   background:var(--bg); overflow-y:auto;
   padding-bottom:calc(20px + env(safe-area-inset-bottom)); }
 .sheet.on { display:block; }
+.sheet.ttq-transitioning { overflow:hidden; }
+body.ttq-transitioning::after { content:""; position:fixed; inset:0; z-index:99;
+  background:transparent; touch-action:none; }
 .sheet .shead { position:sticky; top:0; z-index:2; background:var(--bg);
   display:flex; align-items:center; gap:10px;
   padding:calc(14px + env(safe-area-inset-top)) 14px 14px; border-bottom:1px solid var(--line); }
@@ -160,6 +163,18 @@ nav button.on { color:var(--accent); font-weight:700; }
 .migration-actions { display:grid; gap:10px; margin-top:18px; }
 .migration-actions .btn { margin:0; }
 .migration-note { margin-top:12px!important; font-size:12.5px!important; }
+.session-lock { position:fixed; inset:0; z-index:200; display:flex; align-items:center;
+  justify-content:center; padding:26px; padding-top:calc(26px + env(safe-area-inset-top));
+  padding-bottom:calc(26px + env(safe-area-inset-bottom)); background:var(--bg); }
+.session-lock[hidden] { display:none; }
+.session-lock .dialog { box-shadow:var(--shadow); text-align:center; }
+.session-lock h1 { font-size:24px; margin-bottom:10px; }
+.session-lock p { color:var(--sub); }
+.session-lock-actions { margin-top:18px; }
+.session-lock-actions[hidden] { display:none; }
+body.session-locked .view, body.session-locked nav, body.session-locked .sheet,
+body.session-locked .mask, body.session-locked .cloud-mode-banner, body.session-locked #toast {
+  visibility:hidden!important; pointer-events:none!important; }
 #toast { position:fixed; left:50%; bottom:100px; transform:translateX(-50%);
   z-index:60; background:var(--ink); color:var(--bg); border-radius:24px;
   padding:11px 20px; font-size:15px; opacity:0; pointer-events:none;
@@ -207,16 +222,15 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
 .bars i.neg { background:var(--cool); }
 .bars-x { display:flex; justify-content:space-between; font-size:11px; color:var(--sub); margin-top:5px; }
 
-/* 滑动收车 */
-.slide-close { margin-top:12px; position:relative; height:52px; user-select:none;
-  background:var(--panel); border:1px dashed var(--line); border-radius:26px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:14.5px; color:var(--sub); letter-spacing:.08em; overflow:hidden; touch-action:none; }
-.slide-thumb { position:absolute; left:5px; top:5px; width:42px; height:42px;
-  border-radius:50%; background:var(--accent); color:var(--accent-ink);
-  display:flex; align-items:center; justify-content:center;
-  font-size:20px; font-weight:700; touch-action:none; }
-.slide-close.done { border-style:solid; border-color:var(--accent); color:var(--accent); }
+/* 收车主操作：全宽按钮贴近拇指区，并给 iPhone 安全区留出空间 */
+.close-action { position:sticky; z-index:1; bottom:calc(8px + env(safe-area-inset-bottom));
+  margin-top:16px; padding:10px 0 calc(4px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,transparent,var(--bg) 20%); }
+.home-close-action { position:static; padding:0; background:none; }
+.close-summary .total-line { padding:10px 0; }
+.close-warning[hidden] { display:none; }
+.close-status { min-height:1.5em; margin:10px 2px 0; color:var(--sub);
+  font-size:13px; line-height:1.5; text-align:center; }
 
 /* —— 趟次卡片 —— */
 .trip-card { margin-bottom:12px; }
@@ -271,6 +285,27 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   font-size:18px; font-weight:800; letter-spacing:.15em; border:0; }
 .note-toggle { display:block; text-align:center; font-size:13.5px; color:var(--sub);
   background:none; border:0; padding:8px; margin:0 auto 6px; text-decoration:underline; }
+.fuel-form { margin:12px 0; padding:12px; border:1px dashed var(--line); border-radius:12px;
+  background:var(--panel2); }
+.fuel-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.fuel-field { min-width:0; }
+.fuel-field label { display:block; min-height:34px; margin-bottom:5px; color:var(--sub);
+  font-size:12px; line-height:1.4; }
+.fuel-input-wrap { position:relative; }
+.fuel-input-wrap input { padding-right:30px!important; font-variant-numeric:tabular-nums; }
+.fuel-unit { position:absolute; right:9px; top:50%; transform:translateY(-50%);
+  color:var(--sub); font-size:12px; pointer-events:none; }
+.fuel-help { margin-top:8px; color:var(--sub); font-size:12px; line-height:1.55; }
+.fuel-status { min-height:18px; margin-top:4px; color:var(--cool); font-size:12px; }
+.fuel-error { min-height:19px; margin-top:5px; color:var(--danger); font-size:12.5px; line-height:1.5; }
+.fuel-field input[data-calculated="true"] { border-color:var(--cool); background:var(--accent-soft); }
+.fuel-legacy { color:var(--cool); }
+.profit-breakdown { margin-top:10px; padding-top:8px; border-top:1px dashed var(--line); }
+.profit-breakdown .kv { padding:6px 2px; font-size:13px; }
+@media (max-width:360px) {
+  .fuel-grid { grid-template-columns:1fr; }
+  .fuel-field label { min-height:0; }
+}
 
 /* —— 详情 / 列表行 —— */
 .row { display:flex; align-items:center; gap:10px; padding:13px 2px;
@@ -326,7 +361,17 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
 body.is-saving [data-business-write], body.is-readonly [data-business-write] { opacity:.48; }
 </style>
 </head>
-<body class="theme-day">
+<body class="theme-day session-locked">
+<div class="session-lock" id="sessionLock" role="alertdialog" aria-modal="true" aria-labelledby="sessionLockTitle" aria-describedby="sessionLockText" tabindex="-1">
+  <div class="dialog">
+    <h1 class="display" id="sessionLockTitle">正在核对会话</h1>
+    <p id="sessionLockText" aria-live="assertive">确认账号和车队归属后再显示账本。</p>
+    <div class="session-lock-actions" id="sessionLockActions" hidden>
+      <button type="button" class="btn" id="sessionLockRetry">重试</button>
+      <button type="button" class="btn ghost" id="sessionLockLogin">返回登录</button>
+    </div>
+  </div>
+</div>
 
 <!-- ================= [HTML-1] 五个主视图 ================= -->
 
@@ -345,17 +390,22 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
         <div class="num" style="font-size:13px;color:var(--sub)" id="homeYear"></div>
       </div>
       <div class="profit-big num display" id="homeProfit">¥ 0</div>
+      <div class="profit-breakdown num" aria-label="净利润组成">
+        <div class="kv"><span>趟次利润</span><b id="homeTripProfit">¥0</b></div>
+        <div class="kv"><span>维修保养（另列）</span><b id="homeMaintenance">− ¥0</b></div>
+        <div class="kv"><span>净利润</span><b class="hi" id="homeNetProfit">¥0</b></div>
+      </div>
       <div class="stat-row num">
         <div class="stat"><b id="homeTrips">0 趟</b><span>已收车</span></div>
         <div class="stat"><b id="homeInc">¥0</b><span>总收入</span></div>
         <div class="stat"><b class="exp" id="homeExp">¥0</b><span>总支出</span></div>
       </div>
       <div class="gauge-wrap" id="homeGaugeWrap">
-        <div class="gauge-cap"><span>支出占收入</span><b class="num" id="gaugePct">—</b></div>
+        <div class="gauge-cap"><span>趟次支出占收入（维修另列）</span><b class="num" id="gaugePct">—</b></div>
         <div class="gauge"><div class="fill" id="gaugeFill"></div></div>
       </div>
       <div id="homeNow"></div>
-      <div class="bars-cap"><span>月度利润</span><span id="barsMax"></span></div>
+      <div class="bars-cap"><span>月度趟次利润（维修另列）</span><span id="barsMax"></span></div>
       <div class="bars" id="homeBars"></div>
       <div class="bars-x" id="homeBarsX"><span></span><span></span><span></span></div>
     </div>
@@ -383,12 +433,14 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
     <div class="scope-row" id="statVehicleScope"></div>
     <div class="scope-note" id="statPeriodNote"></div>
     <div class="panel" style="margin-top:10px">
-      <div class="bars-cap"><span id="statBarsTitle">月度利润</span><span id="statBarsMax"></span></div>
+      <div class="bars-cap"><span id="statBarsTitle">月度油费趋势</span><span id="statBarsMax"></span></div>
       <div class="bars" id="statBars"></div>
       <div class="bars-x" id="statBarsX"><span></span><span></span><span></span></div>
     </div>
     <div class="sec-label">账期汇总</div>
     <div class="panel" id="statSummary"></div>
+    <div class="sec-label">油费口径</div>
+    <div class="panel" id="statFuel"></div>
     <div class="sec-label">费用构成（每花 100 块，都花哪了）</div>
     <div class="panel" id="statCats"></div>
     <div class="sec-label">报告 · 生成后可复制 / 分享到微信、邮箱</div>
@@ -399,7 +451,14 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
           <button class="btn sm" style="width:110px" id="btnMonthRep">出月报</button>
         </div>
       </div>
-      <button class="btn ghost sm" id="btnYearRep" style="margin-top:12px">出本账期报告</button>
+      <button class="btn ghost sm" id="btnPeriodRep" style="margin-top:12px">出本账期报告</button>
+      <div class="field"><label>选自然年出年报</label>
+        <div class="frow">
+          <div class="field" style="margin:0;flex:1"><input type="text" inputmode="numeric" id="repYear" maxlength="4" placeholder="2026"></div>
+          <button class="btn sm" style="width:110px" id="btnYearRep">出年报</button>
+        </div>
+      </div>
+      <div class="fuel-error" id="reportScopeError" role="alert" aria-live="assertive"></div>
     </div>
   </div>
 </section>
@@ -412,7 +471,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
     </div>
     <div class="scope-row" id="maintVehicleScope"></div>
     <div class="scope-note" id="maintPeriodNote"></div>
-    <button class="btn" id="btnAddMaint">＋ 记一笔维修保养</button>
+    <button class="btn" id="btnAddMaint" data-business-write>＋ 记一笔维修保养</button>
     <div id="maintList"></div>
   </div>
 </section>
@@ -422,10 +481,10 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
   <div class="wrap">
     <div class="vhead"><h2>更多</h2></div>
     <div class="panel">
-      <div class="row" data-go="vehicles"><span class="ric">🚛</span><div class="rmain"><b>车辆管理</b><span>添加车辆、改名称和车牌、停用旧车</span></div><span class="rarrow">›</span></div>
-      <div class="row" data-go="period"><span class="ric">🗓️</span><div class="rmain"><b>账期设置</b><span id="periodStateTxt">设置趟号和统计的开始、结束日期</span></div><span class="rarrow">›</span></div>
-      <div class="row" data-go="cats"><span class="ric">🏷️</span><div class="rmain"><b>科目管理</b><span>随时添加新费用项目、改名、停用</span></div><span class="rarrow">›</span></div>
-      <div class="row" data-go="backfill"><span class="ric">📖</span><div class="rmain"><b>补录旧账</b><span>把以前本子上的整趟账搬进来</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="vehicles" role="button" tabindex="0"><span class="ric">🚛</span><div class="rmain"><b>车辆管理</b><span>添加车辆、改名称和车牌、停用旧车</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="period" role="button" tabindex="0"><span class="ric">🗓️</span><div class="rmain"><b>账期设置</b><span id="periodStateTxt">设置趟号和统计的开始、结束日期</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="cats" role="button" tabindex="0"><span class="ric">🏷️</span><div class="rmain"><b>科目管理</b><span>随时添加新费用项目、改名、停用</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="backfill" role="button" tabindex="0"><span class="ric">📖</span><div class="rmain"><b>补录旧账</b><span>把以前本子上的整趟账搬进来</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="export"><span class="ric">📤</span><div class="rmain"><b>备份数据</b><span>导出成文件，发到微信收藏保存</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="import"><span class="ric">📥</span><div class="rmain"><b>恢复数据</b><span>换手机后，用备份文件找回全部账</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="theme"><span class="ric">🌗</span><div class="rmain"><b>切换日 / 夜模式</b><span id="themeStateTxt">当前：宣纸账房（日）</span></div><span class="rarrow">›</span></div>
@@ -463,7 +522,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       <div class="field"><label>发车日期</label><input type="date" id="startDate"></div>
       <div class="now-sub" style="margin-top:10px" id="startSeqTip"></div>
     </div>
-    <button class="btn" id="btnStartGo" style="margin-top:14px">🚚 确认发车</button>
+    <button class="btn" id="btnStartGo" data-business-write style="margin-top:14px">🚚 确认发车</button>
   </div>
 </div>
 
@@ -474,8 +533,21 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
     <div class="chips" id="quickChips"></div>
     <div class="chips-hint">← 左右滑动选科目，最后可加新科目 →</div>
     <div class="panel" style="margin-top:10px">
-      <div class="amt-line"><span class="cny">¥</span><span class="amt num display empty" id="quickAmt">0</span></div>
-      <div class="amt-eq num" id="quickEq"></div>
+      <div id="quickMoneyDisplay">
+        <div class="amt-line"><span class="cny">¥</span><span class="amt num display empty" id="quickAmt">0</span></div>
+        <div class="amt-eq num" id="quickEq"></div>
+      </div>
+      <div class="fuel-form" id="quickFuelForm" data-fuel-form style="display:none">
+        <div class="fuel-grid">
+          <div class="fuel-field"><label for="quickFuelTotal">油费总价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="quickFuelTotal" data-fuel-field="totalAmount" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">元</span></div></div>
+          <div class="fuel-field"><label for="quickFuelPrice">油品单价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="quickFuelPrice" data-fuel-field="unitPrice" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">元/升</span></div></div>
+          <div class="fuel-field"><label for="quickFuelLiters">加油升数</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="done" id="quickFuelLiters" data-fuel-field="liters" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">升</span></div></div>
+        </div>
+        <div class="fuel-help" id="quickFuelHelp">填写任意两项，系统会联算第三项；三项不一致时不能保存。</div>
+        <div class="fuel-status" id="quickFuelStatus" role="status" aria-live="polite"></div>
+        <div class="fuel-error" id="quickFuelError" role="alert" aria-live="polite"></div>
+        <button type="button" class="btn sm" id="quickFuelSave" data-business-write>✓ 记 上</button>
+      </div>
       <div class="amt-cat" id="quickCat"></div>
       <div class="quick-amt num" id="quickCommon"></div>
       <button class="note-toggle" id="quickNoteBtn">＋ 加句备注（可不写）</button>
@@ -499,16 +571,29 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
     <div class="panel">
       <div class="field" id="amtDateWrap"><label>日期</label><input type="date" id="amtDate"></div>
       <div class="field" id="amtNoteWrap"><label>备注</label><input type="text" id="amtNote" maxlength="40" placeholder="比如：换机油、补胎"></div>
-      <div class="amt-line"><span class="cny">¥</span><span class="amt num display empty" id="amtVal">0</span></div>
-      <div class="amt-eq num" id="amtEq"></div>
-      <div class="pad" id="amtPad"></div>
-      <button class="btn danger sm" id="amtDelBtn" style="margin-top:12px">删除这一笔</button>
+      <div id="amtMoneyMode">
+        <div class="amt-line"><span class="cny">¥</span><span class="amt num display empty" id="amtVal">0</span></div>
+        <div class="amt-eq num" id="amtEq"></div>
+        <div class="pad" id="amtPad"></div>
+      </div>
+      <div class="fuel-form" id="amtFuelForm" data-fuel-form style="display:none">
+        <div class="fuel-grid">
+          <div class="fuel-field"><label for="amtFuelTotal">油费总价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="amtFuelTotal" data-fuel-field="totalAmount" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">元</span></div></div>
+          <div class="fuel-field"><label for="amtFuelPrice">油品单价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="amtFuelPrice" data-fuel-field="unitPrice" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">元/升</span></div></div>
+          <div class="fuel-field"><label for="amtFuelLiters">加油升数</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="done" id="amtFuelLiters" data-fuel-field="liters" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">升</span></div></div>
+        </div>
+        <div class="fuel-help" id="amtFuelHelp">填写任意两项，系统会联算第三项；三项不一致时不能保存。</div>
+        <div class="fuel-status" id="amtFuelStatus" role="status" aria-live="polite"></div>
+        <div class="fuel-error" id="amtFuelError" role="alert" aria-live="polite"></div>
+        <button type="button" class="btn sm" id="amtFuelSave" data-business-write>✓ 保 存</button>
+      </div>
+      <button class="btn danger sm" id="amtDelBtn" data-business-write style="margin-top:12px">删除这一笔</button>
     </div>
   </div>
 </div>
 
 <!-- 收车结算 -->
-<div class="sheet" id="sheet-close">
+<div class="sheet" id="sheet-close" role="dialog" aria-modal="true" aria-labelledby="closeTitle">
   <div class="shead"><button class="back" data-close>‹</button><h3 id="closeTitle">收车结算</h3></div>
   <div class="sbody">
     <div class="panel">
@@ -518,8 +603,28 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       <div class="field"><label>到家日期</label><input type="date" id="closeDate"></div>
       <div class="total-line" style="margin-top:8px"><span>这趟利润</span><b class="big num display" id="closeProfit">¥0</b></div>
     </div>
-    <div class="slide-close" id="closeSlide" style="margin-top:16px">
-      <div class="slide-thumb" id="closeThumb"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg></div><span id="closeSlideTxt">按住 向右滑动收车</span>
+    <div class="close-action">
+      <button type="button" class="btn" id="btnCloseReview" data-business-write aria-haspopup="dialog" aria-controls="sheet-close-confirm">确认收车</button>
+    </div>
+  </div>
+</div>
+
+<!-- 收车二次确认：真实嵌套 sheet，系统返回键和焦点恢复沿用统一弹层栈 -->
+<div class="sheet" id="sheet-close-confirm" role="dialog" aria-modal="true" aria-labelledby="closeConfirmTitle">
+  <div class="shead"><button type="button" class="back" data-close aria-label="返回检查">‹</button><h3 id="closeConfirmTitle">确认收车</h3></div>
+  <div class="sbody">
+    <div class="panel close-summary">
+      <div class="total-line"><span>车辆</span><b id="closeConfirmVehicle">—</b></div>
+      <div class="total-line"><span>到家日期</span><b class="num" id="closeConfirmDate">—</b></div>
+      <div class="total-line"><span>收入</span><b class="num" id="closeConfirmIncome">¥0</b></div>
+      <div class="total-line"><span>支出</span><b class="num" id="closeConfirmExpense">¥0</b></div>
+      <div class="total-line"><span>预计利润</span><b class="big num display" id="closeConfirmProfit">¥0</b></div>
+      <div class="banner close-warning" id="closeConfirmWarning" role="alert" hidden>这趟还没填收入。可以先收车，之后仍可在趟次详情里补填。</div>
+    </div>
+    <div class="close-action">
+      <button type="button" class="btn ghost" id="btnCloseBack" data-close>返回检查</button>
+      <button type="button" class="btn" id="btnCloseConfirm" data-business-write aria-describedby="closeConfirmStatus">确认收车</button>
+      <div class="close-status" id="closeConfirmStatus" role="status" aria-live="polite"></div>
     </div>
   </div>
 </div>
@@ -547,7 +652,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       <div id="bfIncRows"></div>
       <div class="total-line" style="margin-top:8px"><span>这趟利润</span><b class="big num display" id="bfProfit">¥0</b></div>
     </div>
-    <button class="btn" id="btnBfSave" style="margin-top:14px">✓ 存入账本</button>
+    <button class="btn" id="btnBfSave" data-business-write style="margin-top:14px">✓ 存入账本</button>
   </div>
 </div>
 
@@ -563,7 +668,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       </div>
       <div class="now-sub" id="periodDaysTip"></div>
     </div>
-    <button class="btn" id="btnPeriodSave" style="margin-top:14px">✓ 保存账期</button>
+    <button class="btn" id="btnPeriodSave" data-business-write style="margin-top:14px">✓ 保存账期</button>
   </div>
 </div>
 
@@ -584,7 +689,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       <div class="field"><label>车辆名称</label><input type="text" id="vehicleName" maxlength="12" placeholder="比如：一号车"></div>
       <div class="field"><label>车牌号（可不填）</label><input type="text" id="vehiclePlate" maxlength="12" placeholder="比如：鲁A12345"></div>
     </div>
-    <button class="btn" id="btnVehicleSave" style="margin-top:14px">✓ 保存车辆</button>
+    <button class="btn" id="btnVehicleSave" data-business-write style="margin-top:14px">✓ 保存车辆</button>
   </div>
 </div>
 
@@ -610,7 +715,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       <div class="field"><label>科目名称</label><input type="text" id="newcatName" maxlength="8" placeholder="比如：尿素 / 停车费"></div>
       <div class="field"><label>挑个图标</label><div class="chips" id="newcatIcons"></div></div>
     </div>
-    <button class="btn" id="btnNewcatSave" style="margin-top:14px">✓ 添加</button>
+    <button class="btn" id="btnNewcatSave" data-business-write style="margin-top:14px">✓ 添加</button>
   </div>
 </div>
 
@@ -618,6 +723,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
 <div class="sheet" id="sheet-report">
   <div class="shead"><button class="back" data-close>‹</button><h3 id="reportTitle">报告</h3></div>
   <div class="sbody">
+    <div id="reportCards"></div>
     <div id="reportText"></div>
     <button class="btn" id="btnCopyRep" style="margin-top:14px">📋 复制全文（粘到微信 / 邮件）</button>
     <button class="btn ghost" id="btnShareRep">↗️ 直接分享</button>
@@ -650,89 +756,64 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/ledger/auth-client.js"></script>
 <script src="/ledger/domain.js"></script>
 <script src="/ledger/cloud-sync.js"></script>
+<script src="/ledger/ui-transition.js"></script>
 <script>
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
 const APP_VER = '1.5.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
-const STORE_KEY = 'tangtangqing-data';
-const CACHE_KEY = 'tangtangqing-cloud-cache-v1';
-const CONFLICT_CACHE_KEY = 'tangtangqing-conflict-backup-v1';
-const LEGACY_MARKER_KEY = 'tangtangqing-cloud-migration-v2';
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 
 /*
- * D1 是唯一正式数据源。新版本不再把失败业务写入保存成可自动续传的
- * localStorage 快照；localStorage 仅保留旧版迁移来源、一次性迁移标记和设备偏好。
+ * D1 是唯一正式数据源。历史未归属 localStorage 永远不在登录会话中读取；
+ * 账号相关的设备状态只能在 bootstrap 返回 fleet.id + membership.id 后按 scope 访问。
  * 每个用户动作只发送一个带 expectedVersion + operationId 的原子批次。
  */
 const Store = (() => {
   let baselineRecords = [];
   let bootstrapInfo = null;
+  let storageScope = null;
   let connection = 'connecting';
   let inFlight = null;
   let pendingAction = null;
+  let sessionGeneration = 1;
 
   const clone = value => JSON.parse(JSON.stringify(value));
-  const localGet = key => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) { return null; }
-  };
-  const localSet = (key, value) => {
-    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
-    catch (e) { console.error('设备偏好保存失败', e); return false; }
-  };
-  const localRemove = key => {
-    try { localStorage.removeItem(key); return true; }
-    catch (e) { console.error('旧版缓存清理失败', e); return false; }
-  };
-  const legacy = () => localGet(STORE_KEY);
-  const cache = () => localGet(CACHE_KEY);
+  const http = TTQAuthClient.createHttpClient({
+    origin: location.origin,
+    onUnauthorized: () => invalidateSession('session-invalid', { broadcast: true, navigate: true })
+  });
 
-  async function requestJSON(path, options) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    let response;
-    try {
-      response = await fetch(path, Object.assign({
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { 'content-type': 'application/json' },
-        signal: controller.signal
-      }, options || {}));
-    } finally {
-      clearTimeout(timeout);
-    }
-    if (response.status === 401) {
-      connection = 'unauthenticated';
-      location.replace('/?reason=session-expired');
-      const error = new Error('登录已失效，请重新登录');
-      error.status = 401;
+  function assertActiveGeneration(expected) {
+    if (expected !== sessionGeneration || connection === 'locked') {
+      const error = new Error('会话已锁定，已丢弃迟到的云端回执');
+      error.sessionLocked = true;
       throw error;
     }
-    let body = {};
-    try { body = await response.json(); } catch (e) {}
-    if (!response.ok) {
-      const message = body && body.error && typeof body.error === 'object'
-        ? body.error.message
-        : body.error;
-      const error = new Error(message || (response.status === 409 ? '云端记录有新改动' : '云端请求失败'));
-      error.status = response.status;
-      error.details = body;
-      throw error;
-    }
-    return body;
+  }
+
+  function bindStorageScope(remote) {
+    if (!remote || !remote.fleet || !remote.membership)
+      throw new Error('云端没有返回完整的车队成员归属');
+    storageScope = TTQAuthClient.createStorageScope(
+      localStorage,
+      remote.fleet,
+      remote.membership
+    );
   }
 
   async function refreshBaseline() {
-    bootstrapInfo = await requestJSON('/api/bootstrap');
-    baselineRecords = Array.isArray(bootstrapInfo.records) ? bootstrapInfo.records : [];
+    const generation = sessionGeneration;
+    const remote = await http.bootstrap();
+    assertActiveGeneration(generation);
+    bootstrapInfo = remote;
+    bindStorageScope(remote);
+    baselineRecords = Array.isArray(remote.records) ? remote.records : [];
     connection = 'online';
-    return bootstrapInfo;
+    return remote;
   }
 
   function operationId(prefix) {
@@ -745,10 +826,8 @@ const Store = (() => {
   }
 
   async function postAction(action) {
-    const result = await requestJSON('/api/sync', {
-      method: 'POST',
-      body: JSON.stringify(action.request)
-    });
+    const result = await http.sync(action.request);
+    assertActiveGeneration(action.generation);
     if (result.operationId && result.operationId !== action.request.operationId)
       throw new Error('云端回执与本次操作不匹配');
     if (result.hasConflicts || result.hasRejected)
@@ -764,7 +843,8 @@ const Store = (() => {
       ok: true,
       state: stateFromBaseline(),
       operationId: action.request.operationId,
-      replayed: result.replayed === true
+      replayed: result.replayed === true,
+      generation: action.generation
     };
   }
 
@@ -784,7 +864,12 @@ const Store = (() => {
     const cloudProposal = TTQCloudSync.cloudBusinessState(proposal, baselineRecords);
     const operations = TTQCloudSync.planSync(cloudProposal, baselineRecords);
     if (!operations.length) {
-      return { ok: true, unchanged: true, state: stateFromBaseline() };
+      return {
+        ok: true,
+        unchanged: true,
+        state: stateFromBaseline(),
+        generation: sessionGeneration
+      };
     }
     if (operations.length > 500) {
       return {
@@ -800,7 +885,8 @@ const Store = (() => {
         operationId: options && options.operationId || operationId(options && options.kind),
         operations,
         finalize: true
-      }
+      },
+      generation: sessionGeneration
     };
     connection = 'saving';
     inFlight = postAction(action);
@@ -808,6 +894,8 @@ const Store = (() => {
       return await inFlight;
     } catch (error) {
       console.error('云端保存失败', error);
+      if (connection === 'locked' || error.status === 401 || error.sessionLocked)
+        return { ok: false, readonly: true, unauthenticated: true, error };
       if (error.status === 422 || error.status === 400) {
         connection = 'online';
         return { ok: false, validation: true, error };
@@ -833,56 +921,73 @@ const Store = (() => {
     get hasPending() { return Boolean(pendingAction); },
     get pendingState() { return pendingAction ? clone(pendingAction.proposal) : null; },
     get fleet() { return bootstrapInfo && bootstrapInfo.fleet || null; },
-    legacy,
-    cache,
-    legacyFingerprint: TTQCloudSync.snapshotFingerprint,
-    whenIdle() { return inFlight || Promise.resolve({ ok: true }); },
-    markLegacyHandled(data) {
-      const marker = localGet(LEGACY_MARKER_KEY) || {};
-      marker.legacyHandled = TTQCloudSync.snapshotFingerprint(data);
-      return localSet(LEGACY_MARKER_KEY, marker);
+    get membership() { return bootstrapInfo && bootstrapInfo.membership || null; },
+    get storageScope() { return storageScope; },
+    get generation() { return sessionGeneration; },
+    whenIdle() {
+      return inFlight
+        ? inFlight.then(
+            result => ({ ok: true, result }),
+            error => ({ ok: false, error })
+          )
+        : Promise.resolve({ ok: true });
     },
-    isLegacyHandled(data) {
-      const marker = localGet(LEGACY_MARKER_KEY);
-      return Boolean(marker && marker.legacyHandled === TTQCloudSync.snapshotFingerprint(data));
-    },
-    clearLegacyCache() {
-      return localRemove(CACHE_KEY);
+    assertGeneration(expected) {
+      assertActiveGeneration(expected);
+      return true;
     },
     noteOffline() {
       if (!inFlight) connection = 'offline';
     },
     preserveConflict(data) {
-      return localSet(CONFLICT_CACHE_KEY, {
+      return storageScope && storageScope.write('conflict', {
         state: clone(data),
-        fleetId: bootstrapInfo && bootstrapInfo.fleet && bootstrapInfo.fleet.id || '',
         savedAt: new Date().toISOString(),
         reason: 'device-and-cloud-both-changed'
       });
     },
+    clearScopedCache() {
+      return storageScope && storageScope.remove('cache');
+    },
+    noteExplicitImport(data) {
+      return storageScope && storageScope.write('migration', {
+        kind: 'explicit-json-import',
+        fingerprint: TTQCloudSync.snapshotFingerprint(data),
+        savedAt: new Date().toISOString()
+      });
+    },
     async open() {
       const remote = await refreshBaseline();
-      const cached = cache();
-      const scopedCache = cached && cached.fleetId === remote.fleet.id ? cached : null;
-      return { remote, legacy: legacy(), cache: scopedCache, offline: false };
+      return {
+        remote,
+        cache: storageScope && storageScope.read('cache'),
+        generation: sessionGeneration,
+        offline: false
+      };
     },
     commit(data, options) {
       return commitProposal(data, options);
     },
     async uploadInitial(data) {
+      const generation = sessionGeneration;
       const result = await commitProposal(data, {
         kind: 'initial',
         operationId: 'initial:' + TTQCloudSync.snapshotFingerprint(data).replace(/[^A-Za-z0-9._:-]/g, '-')
       });
       if (!result.ok) return result;
       await refreshBaseline();
+      assertActiveGeneration(generation);
       const uploaded = TTQCloudSync.hydrateState(baselineRecords, defaultData());
       const conservation = TTQCloudSync.compareMigrationTarget(data, baselineRecords);
       if (!conservation.equal)
         return { ok: false, validation: true, error: new Error('上传后守恒核对失败') };
-      return { ok: true, state: uploaded };
+      const stateConservation = TTQCloudSync.compareConservation(data, uploaded);
+      if (!stateConservation.equal)
+        return { ok: false, validation: true, error: new Error('上传确认后的金额或 fuel 守恒核对失败') };
+      return { ok: true, state: uploaded, conservation: stateConservation, generation };
     },
-    useRemote(remote) {
+    useRemote(remote, expectedGeneration) {
+      assertActiveGeneration(expectedGeneration);
       bootstrapInfo = remote;
       baselineRecords = Array.isArray(remote && remote.records) ? remote.records : [];
       const state = TTQCloudSync.hydrateState(baselineRecords, defaultData());
@@ -890,7 +995,8 @@ const Store = (() => {
       connection = 'online';
       return state;
     },
-    legacyPendingProposal(cached, remote) {
+    pendingProposal(cached, remote, expectedGeneration) {
+      assertActiveGeneration(expectedGeneration);
       bootstrapInfo = remote;
       return TTQCloudSync.mergeRemoteState(
         cached.state,
@@ -900,14 +1006,17 @@ const Store = (() => {
       );
     },
     async reconnect() {
+      const generation = sessionGeneration;
       try {
-        const remote = await requestJSON('/api/bootstrap');
+        const remote = await http.bootstrap();
+        assertActiveGeneration(generation);
         bootstrapInfo = remote;
+        bindStorageScope(remote);
         const remoteRecords = clone(remote.records || []);
         if (!pendingAction) {
           baselineRecords = remoteRecords;
           connection = 'online';
-          return { ok: true, state: stateFromBaseline(), reloaded: true };
+          return { ok: true, state: stateFromBaseline(), reloaded: true, generation };
         }
         const pendingCheck = TTQCloudSync.inspectPendingCache({
           state: pendingAction.proposal,
@@ -929,6 +1038,8 @@ const Store = (() => {
         const resumed = await inFlight;
         return Object.assign({}, resumed, { resumed: true });
       } catch (error) {
+        if (connection === 'locked' || error.status === 401 || error.sessionLocked)
+          return { ok: false, readonly: true, unauthenticated: true, error };
         if (error.status === 400 || error.status === 422) {
           pendingAction = null;
           connection = 'online';
@@ -945,7 +1056,23 @@ const Store = (() => {
         inFlight = null;
       }
     },
-    retry() { return this.reconnect(); }
+    retry() { return this.reconnect(); },
+    logout() { return http.logout(); },
+    lockSensitive(options) {
+      http.abortAll();
+      if (storageScope) {
+        storageScope.remove('cache');
+        storageScope.remove('conflict');
+        if (options && options.clearScope) storageScope.clearSensitive();
+      }
+      baselineRecords = [];
+      bootstrapInfo = null;
+      pendingAction = null;
+      inFlight = null;
+      storageScope = null;
+      connection = 'locked';
+      sessionGeneration++;
+    }
   };
 })();
 
@@ -989,35 +1116,139 @@ function migrate(d) {
 }
 
 const DevicePrefs = (() => {
-  let value = {};
-  try { value = JSON.parse(localStorage.getItem(DEVICE_PREFS_KEY) || '{}') || {}; }
-  catch (e) { value = {}; }
-  const persist = () => {
-    try { localStorage.setItem(DEVICE_PREFS_KEY, JSON.stringify(value)); }
+  let device = {};
+  let scoped = {};
+  let scope = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEVICE_PREFS_KEY) || '{}') || {};
+    device.theme = saved.theme === 'night' ? 'night' : 'day';
+  } catch (e) { device = { theme: 'day' }; }
+  const persistDevice = () => {
+    try { localStorage.setItem(DEVICE_PREFS_KEY, JSON.stringify({ theme: device.theme })); }
     catch (e) { console.error('设备偏好保存失败', e); }
   };
+  const persistScoped = () => {
+    if (scope) scope.write('prefs', {
+      activeVehicleId: scoped.activeVehicleId || 'all',
+      lastReportSeen: scoped.lastReportSeen || ''
+    });
+  };
   return {
-    init(state) {
-      if (value.theme !== 'day' && value.theme !== 'night')
-        value.theme = state && state.settings && state.settings.theme === 'night' ? 'night' : 'day';
-      if (typeof value.activeVehicleId !== 'string')
-        value.activeVehicleId = state && state.settings && state.settings.activeVehicleId || 'all';
-      if (typeof value.lastReportSeen !== 'string')
-        value.lastReportSeen = state && state.settings && state.settings.lastReportSeen || '';
-      persist();
+    init(state, nextScope) {
+      if (nextScope && (!scope || scope.id !== nextScope.id)) {
+        scope = nextScope;
+        const saved = scope.read('prefs');
+        scoped = saved && typeof saved === 'object' ? saved : {};
+      }
+      if (typeof scoped.activeVehicleId !== 'string')
+        scoped.activeVehicleId = state && state.settings && state.settings.activeVehicleId || 'all';
+      if (typeof scoped.lastReportSeen !== 'string')
+        scoped.lastReportSeen = state && state.settings && state.settings.lastReportSeen || '';
+      persistDevice();
+      persistScoped();
     },
-    get theme() { return value.theme === 'night' ? 'night' : 'day'; },
-    set theme(next) { value.theme = next === 'night' ? 'night' : 'day'; persist(); },
-    get activeVehicleId() { return value.activeVehicleId || 'all'; },
-    set activeVehicleId(next) { value.activeVehicleId = String(next || 'all'); persist(); },
-    get lastReportSeen() { return value.lastReportSeen || ''; },
-    set lastReportSeen(next) { value.lastReportSeen = String(next || ''); persist(); }
+    lock() { scoped = {}; scope = null; },
+    get theme() { return device.theme === 'night' ? 'night' : 'day'; },
+    set theme(next) { device.theme = next === 'night' ? 'night' : 'day'; persistDevice(); },
+    get activeVehicleId() { return scoped.activeVehicleId || 'all'; },
+    set activeVehicleId(next) { scoped.activeVehicleId = String(next || 'all'); persistScoped(); },
+    get lastReportSeen() { return scoped.lastReportSeen || ''; },
+    set lastReportSeen(next) { scoped.lastReportSeen = String(next || ''); persistScoped(); }
   };
 })();
 
 let S = null;               /* 只保存服务器已确认的正式状态 */
 let businessBusy = false;
+let sessionCoordinator = null;
+let sessionLockedPermanently = false;
 
+function showSessionLock(options) {
+  const config = options || {};
+  document.body.classList.add('session-locked');
+  const overlay = document.getElementById('sessionLock');
+  const actions = document.getElementById('sessionLockActions');
+  if (!overlay) return;
+  overlay.hidden = false;
+  document.getElementById('sessionLockTitle').textContent = config.title || '账本已锁定';
+  document.getElementById('sessionLockText').textContent = config.text || '请重新确认登录状态。';
+  actions.hidden = !config.retry && !config.login;
+  const retry = document.getElementById('sessionLockRetry');
+  const login = document.getElementById('sessionLockLogin');
+  retry.hidden = !config.retry;
+  login.hidden = !config.login;
+  retry.onclick = config.retry || null;
+  login.onclick = config.login || null;
+  (config.retry ? retry : (config.login ? login : overlay)).focus();
+}
+
+function unlockSession() {
+  if (sessionLockedPermanently || !S || !Store.online) return false;
+  document.body.classList.remove('session-locked');
+  const overlay = document.getElementById('sessionLock');
+  if (overlay) overlay.hidden = true;
+  return true;
+}
+
+function clearSensitiveClientState(options) {
+  const config = options || {};
+  sessionLockedPermanently = true;
+  try { closeAllSheets({ skipHistory: true }); } catch (error) {}
+  ['confirmMask', 'migrationMask'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) element.classList.remove('on');
+  });
+  Store.lockSensitive({ clearScope: Boolean(config.clearScope) });
+  DevicePrefs.lock();
+  S = null;
+  businessBusy = false;
+}
+
+function safeLoginLocation(reason) {
+  return '/?reason=' + encodeURIComponent(reason === 'logout' ? 'signed-out' : 'session-expired');
+}
+
+function invalidateSession(reason, options) {
+  const config = options || {};
+  clearSensitiveClientState({ clearScope: config.clearScope !== false });
+  showSessionLock({
+    title: reason === 'logout' ? '正在安全退出' : '会话已锁定',
+    text: config.text || (reason === 'bfcache'
+      ? '正在重新核对账号和车队归属。'
+      : '旧账本内容已隐藏，正在返回登录页。')
+  });
+  if (config.broadcast && sessionCoordinator)
+    sessionCoordinator.broadcast(reason === 'logout' ? 'logout' : 'session-invalid');
+  if (config.navigate) location.replace(safeLoginLocation(reason));
+}
+
+async function requestLogout() {
+  try {
+    const result = await Store.logout();
+    const target = new URL(result && result.location || '/', location.origin);
+    location.replace(target.origin === location.origin
+      ? target.pathname + target.search + target.hash
+      : '/');
+  } catch (error) {
+    console.error('退出请求失败', error);
+    showSessionLock({
+      title: '账本仍已锁定',
+      text: '退出请求暂时失败，会话尚未确认结束。请保持锁定并重试；确认成功后才会返回登录页。',
+      retry: requestLogout
+    });
+  }
+}
+
+function syncBusinessWriteControls(root) {
+  const blocked = !S || businessBusy || Store.saving || !Store.online;
+  const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+  const controls = Array.from(scope.querySelectorAll('[data-business-write]'));
+  if (root && root.matches && root.matches('[data-business-write]')) controls.unshift(root);
+  controls.forEach(control => {
+    const disabled = blocked || control.dataset.fixedDisabled === 'true';
+    control.disabled = disabled;
+    control.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+  });
+}
 function updateCloudModeUI(message) {
   const stateEl = $('#saveState');
   const banner = $('#cloudModeBanner');
@@ -1025,6 +1256,9 @@ function updateCloudModeUI(message) {
   const readonly = !Store.online && !saving;
   document.body.classList.toggle('is-saving', saving);
   document.body.classList.toggle('is-readonly', readonly);
+  document.body.setAttribute('aria-busy', saving ? 'true' : 'false');
+  $$('.sheet.on,.view.on').forEach(container => container.setAttribute('aria-busy', saving ? 'true' : 'false'));
+  syncBusinessWriteControls();
   if (banner) {
     banner.hidden = !readonly;
     banner.textContent = Store.state === 'conflict'
@@ -1043,6 +1277,7 @@ function updateCloudModeUI(message) {
 }
 
 function canStartBusinessWrite() {
+  if (!S) return false;
   if (businessBusy || Store.saving) {
     toast('上一笔正在保存，请等云端确认');
     return false;
@@ -1073,7 +1308,10 @@ async function submitBusinessMutation(mutator, options) {
     operationId: options && options.operationId
   });
   businessBusy = false;
+  if (result.ok && (result.generation !== Store.generation || !Store.online))
+    return { ok: false, readonly: true, unauthenticated: true };
   if (!result.ok) {
+    if (result.unauthenticated) return result;
     updateCloudModeUI(result.validation ? '云端未接受，本次没有保存' : undefined);
     toast(result.conflict
       ? '⚠️ 云端已有新改动，本次没有覆盖；请重新加载核对'
@@ -1084,7 +1322,7 @@ async function submitBusinessMutation(mutator, options) {
     return result;
   }
   S = migrate(result.state || proposal);
-  DevicePrefs.init(S);
+  DevicePrefs.init(S, Store.storageScope);
   updateCloudModeUI(options && options.savedText || '已保存到云端');
   if (options && options.onSuccess) options.onSuccess(S, context, result);
   return result;
@@ -1096,9 +1334,11 @@ async function reconnectCloud() {
   updateCloudModeUI('正在重新核对身份、车队和云端版本…');
   const result = await Store.reconnect();
   businessBusy = false;
+  if (result.unauthenticated || (result.ok && result.generation !== Store.generation))
+    return result;
   if (result.ok && result.state) {
     S = migrate(result.state);
-    DevicePrefs.init(S);
+    DevicePrefs.init(S, Store.storageScope);
     applyTheme();
     renderCurrent();
     if (result.resumed) closeAllSheets();
@@ -1116,6 +1356,13 @@ async function reconnectCloud() {
 /* ================= [JS-2] 工具函数 + 统计口径 ================= */
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+function dataResolver(selector, dataKey, value, closestSelector) {
+  const expected = String(value == null ? '' : value);
+  return () => {
+    const match = $$(selector).find(item => item.dataset[dataKey] === expected);
+    return match && closestSelector ? match.closest(closestSelector) : match;
+  };
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
@@ -1123,7 +1370,6 @@ const fmtMD = (ds) => ds ? ds.slice(5) : '—';
 /* 线性图标（描边 SVG 字符串，替代 emoji 提升质感） */
 const SVG_MOON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5A8 8 0 1 1 10.5 4 6.3 6.3 0 0 0 20 13.5z"/></svg>';
 const SVG_SUN = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.5M12 18.9v2.5M2.6 12h2.5M18.9 12h2.5M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19"/></svg>';
-const SVG_CHEV = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>';
 const yearOf = (ds) => ds ? ds.slice(0, 4) : '';
 const monthOf = (ds) => ds ? ds.slice(0, 7) : '';
 function esc(value) {
@@ -1152,6 +1398,235 @@ function evalExpr(expr) {
   let sum = 0;
   for (const p of parts) { if (isNaN(p) || p < 0) return NaN; sum += p; }
   return Math.round(sum * 100) / 100;
+}
+
+function parseLegacyFuelAmount(value) {
+  const text = typeof value === 'string' ? value.trim() : String(value == null ? '' : value);
+  if (/[eE]/.test(text)) return { ok: false, error: { code: 'exponent-not-allowed', field: 'totalAmount', message: '旧油费总价不接受指数形式' } };
+  const match = /^\+?(?:(\d+)(?:\.(\d{0,2}))?|\.(\d{1,2}))$/.exec(text);
+  if (!match) return { ok: false, error: { code: 'invalid-amount', field: 'totalAmount', message: '旧油费总价最多保留 2 位小数' } };
+  const cents = BigInt(match[1] || '0') * 100n + BigInt((match[2] !== undefined ? match[2] : match[3] || '').padEnd(2, '0'));
+  if (cents <= 0n) return { ok: false, error: { code: 'must-be-positive', field: 'totalAmount', message: '旧油费总价必须大于零' } };
+  if (cents > 99999999999n) return { ok: false, error: { code: 'out-of-range', field: 'totalAmount', message: '旧油费总价超出支持范围' } };
+  return {
+    ok: true,
+    amount: Number(cents) / 100,
+    canonical: String(cents / 100n) + (cents % 100n ? '.' + String(cents % 100n).padStart(2, '0').replace(/0$/, '') : '')
+  };
+}
+
+function fuelFormValues(root) {
+  const values = { totalAmount: '', unitPrice: '', liters: '' };
+  if (!root) return values;
+  root.querySelectorAll('[data-fuel-field]').forEach(input => {
+    values[input.dataset.fuelField] = input.value.trim();
+  });
+  return values;
+}
+function setFuelFormError(root, error) {
+  if (!root) return;
+  const box = root.querySelector('.fuel-error');
+  root.querySelectorAll('[data-fuel-field]').forEach(input => {
+    input.setAttribute('aria-invalid', error && (!error.field || error.field === input.dataset.fuelField) ? 'true' : 'false');
+  });
+  if (box) box.textContent = error ? error.message : '';
+  if (error) setFuelCalculatedStatus(root, null);
+}
+function reportFuelFormError(root, error) {
+  setFuelFormError(root, error);
+  const target = error && error.field
+    ? root.querySelector('[data-fuel-field="' + error.field + '"]')
+    : root.querySelector('[data-fuel-field]');
+  if (target && typeof target.focus === 'function') target.focus();
+}
+function setFuelCalculatedStatus(root, field) {
+  if (!root) return;
+  root.querySelectorAll('[data-fuel-field]').forEach(input => {
+    if (input.dataset.fuelField === field) input.dataset.calculated = 'true';
+    else delete input.dataset.calculated;
+  });
+  const status = root.querySelector('.fuel-status');
+  const labels = { totalAmount: '油费总价', unitPrice: '油品单价', liters: '加油升数' };
+  if (status) status.textContent = field ? '已联算' + labels[field] + '，可继续修改或保存。' : '';
+}
+function resetFuelForm(root, values, legacyAmountOnly) {
+  const next = values || {};
+  root.dataset.calculatedField = '';
+  root.dataset.allowLegacy = legacyAmountOnly ? 'true' : 'false';
+  root.querySelectorAll('[data-fuel-field]').forEach(input => {
+    input.value = next[input.dataset.fuelField] == null ? '' : String(next[input.dataset.fuelField]);
+    input.setAttribute('aria-invalid', 'false');
+  });
+  setFuelCalculatedStatus(root, null);
+  const help = root.querySelector('.fuel-help');
+  if (help) {
+    help.textContent = legacyAmountOnly
+      ? '旧油费只有总价，可仍按总价保存；一旦填写单价或升数，就必须补全并通过联算。'
+      : '填写任意两项，系统会联算第三项；三项不一致时不能保存。';
+    help.classList.toggle('fuel-legacy', Boolean(legacyAmountOnly));
+  }
+  setFuelFormError(root, null);
+}
+function resolveFuelForm(root, allowLegacyAmountOnly, reportErrors) {
+  const shouldReport = reportErrors !== false;
+  const values = fuelFormValues(root);
+  const present = Object.keys(values).filter(key => values[key] !== '');
+  if (!present.length) {
+    const failure = { code: 'empty', field: null, message: '请至少填写油费总价、油品单价、加油升数中的任意两项' };
+    if (shouldReport) reportFuelFormError(root, failure);
+    return { ok: false, empty: true, error: failure };
+  }
+  if (present.length === 1 && present[0] === 'totalAmount' && allowLegacyAmountOnly) {
+    const validated = parseLegacyFuelAmount(values.totalAmount);
+    if (!validated.ok) {
+      if (shouldReport) reportFuelFormError(root, validated.error);
+      return validated;
+    }
+    setFuelFormError(root, null);
+    return { ok: true, amount: validated.amount, fuel: null, legacyAmountOnly: true };
+  }
+  const result = TTQDomain.calculateFuelFields(values);
+  if (!result.ok) {
+    if (shouldReport) reportFuelFormError(root, result.error);
+    return result;
+  }
+  setFuelFormError(root, null);
+  return {
+    ok: true,
+    amount: Number(result.totalAmount),
+    fuel: { unitPrice: result.unitPrice, liters: result.liters },
+    resolved: result
+  };
+}
+function updateFuelForm(root, changedInput) {
+  if (!root) return;
+  const calculated = root.dataset.calculatedField;
+  if (calculated) {
+    if (!changedInput || changedInput.dataset.fuelField !== calculated) {
+      const prior = root.querySelector('[data-fuel-field="' + calculated + '"]');
+      if (prior) prior.value = '';
+    }
+    root.dataset.calculatedField = '';
+    setFuelCalculatedStatus(root, null);
+  }
+  const values = fuelFormValues(root);
+  const present = Object.keys(values).filter(key => values[key] !== '');
+  if (present.length < 2) {
+    setFuelFormError(root, null);
+    return;
+  }
+  const result = TTQDomain.calculateFuelFields(values);
+  if (!result.ok) {
+    setFuelFormError(root, result.error);
+    return;
+  }
+  Object.keys(result.formatted).forEach(key => {
+    const input = root.querySelector('[data-fuel-field="' + key + '"]');
+    if (input) input.value = result.formatted[key];
+  });
+  root.dataset.calculatedField = result.calculatedField || '';
+  setFuelCalculatedStatus(root, result.calculatedField || null);
+  setFuelFormError(root, null);
+}
+function fuelFormHTML(prefix, values, legacyAmountOnly) {
+  const v = values || {};
+  const help = prefix + 'FuelHelp', status = prefix + 'FuelStatus', error = prefix + 'FuelError';
+  const field = (key, label, unit) => '<div class="fuel-field"><label for="' + prefix + 'Fuel' + key + '">' + label + '</label>'
+    + '<div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="' + (key === 'liters' ? 'done' : 'next') + '" id="' + prefix + 'Fuel' + key + '" data-fuel-field="' + key + '" value="' + attrEsc(v[key] || '') + '" aria-describedby="' + help + ' ' + status + ' ' + error + '" aria-invalid="false"><span class="fuel-unit">' + unit + '</span></div></div>';
+  return '<div class="fuel-form" data-fuel-form data-allow-legacy="' + (legacyAmountOnly ? 'true' : 'false') + '"><div class="fuel-grid">'
+    + field('totalAmount', '油费总价', '元') + field('unitPrice', '油品单价', '元/升') + field('liters', '加油升数', '升')
+    + '</div><div class="fuel-help' + (legacyAmountOnly ? ' fuel-legacy' : '') + '" id="' + help + '">'
+    + (legacyAmountOnly ? '旧账可只录总价；补另一项后会联算并保存升数、单价。' : '填写任意两项，系统会联算第三项。')
+    + '</div><div class="fuel-status" id="' + status + '" role="status" aria-live="polite"></div>'
+    + '<div class="fuel-error" id="' + error + '" role="alert" aria-live="polite"></div></div>';
+}
+function initFuelKeyboard(root, saveButton) {
+  if (!root || root.dataset.keyboardReady === 'true') return;
+  root.dataset.keyboardReady = 'true';
+  root.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !event.target.matches('[data-fuel-field]')) return;
+    event.preventDefault();
+    const fields = Array.from(root.querySelectorAll('[data-fuel-field]'));
+    const index = fields.indexOf(event.target);
+    if (index >= 0 && index < fields.length - 1) fields[index + 1].focus();
+    else if (saveButton) saveButton.focus();
+  });
+}
+function formatScaledInteger(value, scale, maxFraction) {
+  let units = BigInt(value == null ? 0 : value);
+  const negative = units < 0n;
+  if (negative) units = -units;
+  const factor = 10n ** BigInt(scale);
+  const whole = (units / factor).toLocaleString('zh-CN');
+  const limit = maxFraction == null ? scale : Math.min(scale, maxFraction);
+  let fraction = String(units % factor).padStart(scale, '0').slice(0, limit).replace(/0+$/, '');
+  return (negative ? '−' : '') + whole + (fraction ? '.' + fraction : '');
+}
+const moneyCents = cents => formatScaledInteger(cents, 2, 2);
+const volumeMl = ml => formatScaledInteger(ml, 3, 3);
+const unitPriceX10000 = units => units == null ? '—' : formatScaledInteger(units, 4, 4);
+function monthKeysForScope(start, end) {
+  if (!start || !end || end < start) return [];
+  const keys = [];
+  const cursor = new Date(start.slice(0, 7) + '-01T00:00:00Z');
+  const last = end.slice(0, 7);
+  while (cursor.toISOString().slice(0, 7) <= last && keys.length < 24) {
+    keys.push(cursor.toISOString().slice(0, 7));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return keys;
+}
+function financialCardHTML(summary) {
+  const f = summary.financial;
+  return '<div class="panel">'
+    + '<div class="kv"><span>收车趟数</span><b class="num">' + f.tripCount + ' 趟</b></div>'
+    + '<div class="kv"><span>总收入</span><b class="num">¥' + moneyCents(f.incomeCents) + '</b></div>'
+    + '<div class="kv"><span>趟次支出</span><b class="num" style="color:var(--cool)">¥' + moneyCents(f.tripExpenseCents) + '</b></div>'
+    + '<div class="kv"><span>趟次利润</span><b class="num">¥' + moneyCents(f.tripProfitCents) + '</b></div>'
+    + '<div class="kv"><span>维修保养（另列）</span><b class="num" style="color:var(--cool)">− ¥' + moneyCents(f.maintenanceCents) + '</b></div>'
+    + '<div class="kv"><span>净利润</span><b class="num hi">¥' + moneyCents(f.netProfitCents) + '</b></div>'
+    + '</div>';
+}
+function fuelCardHTML(summary, showVehicles) {
+  const fuel = summary.fuel;
+  let html = '<div class="panel">'
+    + '<div class="kv"><span>总油费（含旧油费）</span><b class="num">¥' + moneyCents(fuel.totalCostCents) + '</b></div>'
+    + '<div class="kv"><span>结构化加油量</span><b class="num">' + volumeMl(fuel.volumeMl) + ' 升</b></div>'
+    + '<div class="kv"><span>加权均价</span><b class="num">¥' + unitPriceX10000(fuel.weightedUnitPriceX10000) + '/升</b></div>'
+    + '<div class="kv"><span>最低 / 最高油价</span><b class="num">¥' + unitPriceX10000(fuel.minUnitPriceX10000) + ' / ¥' + unitPriceX10000(fuel.maxUnitPriceX10000) + '</b></div>'
+    + '<div class="kv"><span>数据覆盖</span><b class="num">' + fuel.coverage.structuredRecords + ' 条结构化 / ' + fuel.coverage.totalRecords + ' 条总计</b></div>';
+  if (fuel.legacyCoverageWarning) html += '<div class="banner" role="status">⚠️ ' + esc(fuel.legacyCoverageWarning) + '</div>';
+  if (showVehicles && fuel.byVehicle.length) {
+    html += '<div class="sec-label" style="margin:14px 0 2px">按车辆</div>';
+    fuel.byVehicle.forEach(item => {
+      html += '<div class="kv"><span>' + esc(item.vehicleName || vehicleById(item.vehicleId).name) + '</span><b class="num">¥' + moneyCents(item.totalCostCents) + ' · ' + volumeMl(item.volumeMl) + ' 升</b></div>';
+    });
+  }
+  return html + '</div>';
+}
+function renderFuelTrend(summary) {
+  const keys = monthKeysForScope(summary.scope.start, summary.scope.end);
+  const indexed = new Map(summary.fuel.trend.map(item => [item.period, item]));
+  const rows = keys.map(key => indexed.get(key) || { period: key, totalCostCents: 0, volumeMl: 0 });
+  const bars = $('#statBars');
+  $('#statBarsTitle').textContent = '月度油费趋势（费用 / 升数）';
+  if (rows.length <= 1) {
+    bars.style.height = 'auto';
+    bars.innerHTML = '<div class="empty-tip" role="status" style="padding:12px;width:100%">本范围只有 ' + rows.length + ' 个月，不作趋势比较'
+      + (rows.length ? '<br><span class="num">油费 ¥' + moneyCents(rows[0].totalCostCents) + ' · ' + volumeMl(rows[0].volumeMl) + ' 升</span>' : '') + '</div>';
+    $('#statBarsMax').textContent = '';
+    setBarsLabels($('#statBarsX'), keys);
+    return;
+  }
+  bars.style.height = '';
+  const max = Math.max(1, ...rows.map(item => item.totalCostCents));
+  bars.innerHTML = rows.map(item => {
+    const height = Math.max(3, Math.round(item.totalCostCents / max * 100));
+    const label = item.period + ' 油费 ¥' + moneyCents(item.totalCostCents) + '，结构化加油量 ' + volumeMl(item.volumeMl) + ' 升';
+    return '<i role="img" aria-label="' + attrEsc(label) + '" title="' + attrEsc(label) + '" style="height:' + height + '%"></i>';
+  }).join('');
+  $('#statBarsMax').textContent = '最高 ¥' + moneyCents(max);
+  setBarsLabels($('#statBarsX'), keys);
 }
 
 function catById(id) {
@@ -1255,6 +1730,7 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 function renderCurrent() {
+  if (!S) return;
   ({ home: renderHome, trips: renderTrips, stats: renderStats, maint: renderMaint, more: renderMore }[curView] || renderHome)();
 }
 
@@ -1264,8 +1740,11 @@ function renderHome() {
   const scope = activeVehicleId();
   const st = periodStats(scope);
   $('#homeYear').textContent = periodStart().slice(2) + ' → ' + periodEnd().slice(2);
-  $('#homeProfitLabel').textContent = scope === 'all' ? '本 账 期 总 利 润' : '本 车 账 期 利 润';
-  $('#homeProfit').textContent = '¥ ' + fmt(st.profit);
+  $('#homeProfitLabel').textContent = scope === 'all' ? '本 账 期 净 利 润' : '本 车 账 期 净 利 润';
+  $('#homeProfit').textContent = '¥ ' + fmt(st.netProfit);
+  $('#homeTripProfit').textContent = '¥' + fmt(st.tripProfit);
+  $('#homeMaintenance').textContent = '− ¥' + fmt(st.maintenance);
+  $('#homeNetProfit').textContent = '¥' + fmt(st.netProfit);
   $('#homeTrips').textContent = st.count + ' 趟';
   $('#homeInc').textContent = '¥' + fmt(st.inc);
   $('#homeExp').textContent = '¥' + fmt(st.exp);
@@ -1286,10 +1765,10 @@ function renderHome() {
         + '<div class="now-head"><i class="dot"></i><b>' + (seq > 0 ? '预计第 ' + seq + ' 趟' : '当前趟') + ' · 在途中</b></div>'
         + '<div class="now-sub num">' + esc(fmtMD(t.startDate)) + ' 发车 · 第 ' + tripDays(t) + ' 天 · 已记支出 ¥' + fmt(tt.exp) + '（' + t.expenses.length + ' 笔）</div>'
         + '<button class="btn" style="margin-top:12px" data-act="quick" data-trip="' + attrEsc(t.id) + '">＋ 记一笔</button>'
-        + '<div class="slide-close" id="homeSlide-' + attrEsc(t.id) + '"><div class="slide-thumb">' + SVG_CHEV + '</div><span>到家后 按住向右滑动收车</span></div>'
+        + '<div class="close-action home-close-action"><button type="button" class="btn" data-act="openclose" data-trip="' + attrEsc(t.id) + '" data-business-write aria-haspopup="dialog" aria-controls="sheet-close">🏁 确认收车</button></div>'
         + '</div>';
     }).join('') + (canStartAnother ? '<button class="btn ghost" style="margin-top:12px" data-act="start">＋ 另一辆车发车</button>' : '');
-    openList.forEach(t => initSlide(document.getElementById('homeSlide-' + t.id), () => openCloseSheet(t.id)));
+    syncBusinessWriteControls(box);
   } else {
     box.innerHTML = '<div class="now-trip"><div class="now-head"><b>现在没有在途的趟</b></div>'
       + '<div class="now-sub">出车前点一下发车，路上花一笔记一笔</div>'
@@ -1340,7 +1819,7 @@ function renderTrips() {
 function tripCardHTML(t) {
   const tt = tripTotals(t); const open = t.status === 'open';
   const seq = tripSeq(t);
-  return '<div class="panel paper-grid trip-card" data-trip="' + attrEsc(t.id) + '">'
+  return '<div class="panel paper-grid trip-card" data-trip="' + attrEsc(t.id) + '" role="button" tabindex="0">'
     + (open ? '' : '<div class="stamp hand">收讫</div>')
     + (activeVehicleId() === 'all' ? '<div class="vehicle-badge">🚛 ' + esc(vehicleLabel(t.vehicleId)) + '</div>' : '')
     + '<div class="trip-head"><span class="trip-no display">' + (seq > 0 ? '第 ' + seq + ' 趟' : '账期外在途') + '</span>'
@@ -1359,17 +1838,17 @@ function renderTripDetail() {
   $('#tripTitle').textContent = (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · ' + (open ? '在途中' : '已收车');
   let h = '<div class="panel"><div class="field"><label>所属车辆</label><div class="scope-row">'
     + S.vehicles.filter(v => v.active || v.id === t.vehicleId).map(v =>
-      '<button class="pill' + (v.id === t.vehicleId ? ' on' : '') + '" data-trip-vehicle="' + attrEsc(v.id) + '">' + esc(v.name) + '</button>'
+      '<button class="pill' + (v.id === t.vehicleId ? ' on' : '') + '" data-trip-vehicle="' + attrEsc(v.id) + '" data-business-write>' + esc(v.name) + '</button>'
     ).join('') + '</div></div><div class="frow">'
-    + '<div class="field"><label>发车日期</label><input type="date" id="dStart" value="' + attrEsc(t.startDate) + '"></div>'
-    + '<div class="field"><label>到家日期</label><input type="date" id="dEnd" value="' + attrEsc(t.endDate || '') + '"' + (open ? ' disabled placeholder="收车时填"' : '') + '></div>'
+    + '<div class="field"><label>发车日期</label><input type="date" id="dStart" data-business-write value="' + attrEsc(t.startDate) + '"></div>'
+    + '<div class="field"><label>到家日期</label><input type="date" id="dEnd" data-business-write' + (open ? ' data-fixed-disabled="true"' : '') + ' value="' + attrEsc(t.endDate || '') + '"' + (open ? ' disabled placeholder="收车时填"' : '') + '></div>'
     + '</div></div>';
 
   /* 收入：每类一行，点了改 */
   h += '<div class="sec-label">收入</div><div class="panel">';
   S.categories.income.filter(c => c.active || t.incomes.some(e => e.catId === c.id)).forEach(c => {
     const sum = t.incomes.filter(e => e.catId === c.id).reduce((s, e) => s + e.amount, 0);
-    h += '<div class="row" data-inccat="' + attrEsc(c.id) + '"><span class="ric">' + safeIconText(c.icon) + '</span>'
+    h += '<div class="row" data-inccat="' + attrEsc(c.id) + '" role="button" tabindex="0"><span class="ric">' + safeIconText(c.icon) + '</span>'
       + '<div class="rmain"><b>' + esc(c.name) + '</b></div>'
       + '<span class="ramt num">¥' + fmt(sum) + '</span><span class="rarrow">›</span></div>';
   });
@@ -1386,7 +1865,14 @@ function renderTripDetail() {
     const sum = list.reduce((s, e) => s + e.amount, 0);
     h += '<div class="row" style="border-bottom:1px dashed var(--line)"><span class="ric">' + safeIconText(c.icon) + '</span><div class="rmain"><b>' + esc(c.name) + '（' + list.length + ' 笔）</b></div><span class="ramt out num">¥' + fmt(sum) + '</span></div>';
     list.forEach(e => {
-      h += '<div class="row" data-entry="' + attrEsc(e.id) + '" style="padding-left:14px"><div class="rmain"><b class="num" style="font-size:14.5px;color:var(--sub)">' + esc(fmtMD(e.date)) + '</b>' + (e.note ? '<span>' + esc(e.note) + '</span>' : '') + '</div><span class="ramt num">¥' + fmt(e.amount) + '</span><span class="rarrow">›</span></div>';
+      const fuelText = e.catId === 'fuel'
+        ? (e.fuel
+          ? e.fuel.liters + ' 升 · ¥' + e.fuel.unitPrice + '/升'
+          : '旧油费 · 仅有总价')
+        : '';
+      h += '<div class="row" data-entry="' + attrEsc(e.id) + '" role="button" tabindex="0" style="padding-left:14px"><div class="rmain"><b class="num" style="font-size:14.5px;color:var(--sub)">' + esc(fmtMD(e.date)) + '</b>'
+        + (fuelText ? '<span class="num">' + esc(fuelText) + '</span>' : '')
+        + (e.note ? '<span>' + esc(e.note) + '</span>' : '') + '</div><span class="ramt num">¥' + fmt(e.amount) + '</span><span class="rarrow">›</span></div>';
     });
   });
   h += '</div>';
@@ -1397,9 +1883,10 @@ function renderTripDetail() {
     + '<div class="total-line"><span>利润</span><b class="big num display">' + (tt.profit >= 0 ? '+' : '−') + fmt(Math.abs(tt.profit)) + '</b></div></div>';
 
   h += '<button class="btn ghost" style="margin-top:14px" data-act="addexp">＋ 给这趟补一笔支出</button>';
-  if (open) h += '<button class="btn" data-act="goclose">🏁 去收车结算</button>';
-  h += '<button class="btn danger" data-act="deltrip">删除这一趟</button>';
+  if (open) h += '<button class="btn" data-act="goclose" data-business-write>🏁 去收车结算</button>';
+  h += '<button class="btn danger" data-act="deltrip" data-business-write>删除这一趟</button>';
   $('#tripDetail').innerHTML = h;
+  syncBusinessWriteControls($('#tripDetail'));
 
   $('#dStart').addEventListener('change', async e => {
     if (!e.target.value) return;
@@ -1429,38 +1916,33 @@ function renderStats() {
   renderVehicleScopes();
   const scope = activeVehicleId();
   $('#statPeriodNote').textContent = '当前账期：' + periodLabel();
-  const monthData = periodMonthProfits(scope);
-  drawBars($('#statBars'), monthData.values, $('#statBarsMax'), monthData.keys);
-  setBarsLabels($('#statBarsX'), monthData.keys);
-  $('#statBarsTitle').textContent = '账期月度利润';
+  const summary = TTQDomain.buildReportSummary(S, {
+    start: periodStart(), end: periodEnd(), vehicleId: scope
+  });
+  renderFuelTrend(summary);
+  $('#statSummary').outerHTML = '<div class="panel" id="statSummary">' + financialCardHTML(summary).replace(/^<div class="panel">|<\/div>$/g, '') + '</div>';
+  $('#statFuel').outerHTML = '<div class="panel" id="statFuel">' + fuelCardHTML(summary, scope === 'all').replace(/^<div class="panel">|<\/div>$/g, '') + '</div>';
 
-  const st = periodStats(scope);
-  const net = st.profit - st.maint;
-  $('#statSummary').innerHTML =
-    '<div class="kv"><span>收车趟数</span><b class="num">' + st.count + ' 趟</b></div>'
-    + '<div class="kv"><span>总收入</span><b class="num">¥' + fmt(st.inc) + '</b></div>'
-    + '<div class="kv"><span>总支出</span><b class="num" style="color:var(--cool)">¥' + fmt(st.exp) + '</b></div>'
-    + '<div class="kv"><span>趟次利润</span><b class="num hi">¥' + fmt(st.profit) + '</b></div>'
-    + '<div class="kv"><span>平均每趟</span><b class="num">¥' + fmt(st.count ? st.profit / st.count : 0) + '</b></div>'
-    + '<div class="kv"><span>维修保养（单独立账）</span><b class="num" style="color:var(--cool)">¥' + fmt(st.maint) + '</b></div>'
-    + '<div class="kv"><span>扣除维修后净落袋</span><b class="num hi">¥' + fmt(net) + '</b></div>';
-
-  /* 费用构成 */
   const sums = Object.create(null);
-  TTQDomain.closedTripsInPeriod(S, periodStart(), periodEnd(), scope)
-    .forEach(t => t.expenses.forEach(e => sums[e.catId] = (sums[e.catId] || 0) + e.amount));
-  const total = Object.values(sums).reduce((s, v) => s + v, 0);
-  const box = $('#statCats');
-  if (!total) { box.innerHTML = '<div class="empty-tip" style="padding:16px">这个账期还没有支出记录</div>'; }
+  TTQDomain.closedTripsInPeriod(S, summary.scope.start, summary.scope.end, scope)
+    .forEach(trip => trip.expenses.forEach(entry => {
+      sums[entry.catId] = (sums[entry.catId] || 0) + entry.amount;
+    }));
+  const total = Object.values(sums).reduce((sum, value) => sum + value, 0);
+  const categories = $('#statCats');
+  if (!total) categories.innerHTML = '<div class="empty-tip" style="padding:16px">这个账期还没有支出记录</div>';
   else {
-    box.innerHTML = Object.keys(sums).sort((a, b) => sums[b] - sums[a]).map(cid => {
-      const c = catById(cid); const pct = Math.round(sums[cid] / total * 1000) / 10;
-      return '<div class="hbar"><div class="cap"><b>' + safeIconText(c.icon) + ' ' + esc(c.name) + '</b><span class="num">¥' + fmt(sums[cid]) + ' · ' + pct + '%</span></div>'
-        + '<div class="track"><i style="width:' + Math.max(2, pct) + '%"></i></div></div>';
+    categories.innerHTML = Object.keys(sums).sort((a, b) => sums[b] - sums[a]).map(categoryId => {
+      const category = catById(categoryId);
+      const percent = Math.round(sums[categoryId] / total * 1000) / 10;
+      return '<div class="hbar"><div class="cap"><b>' + safeIconText(category.icon) + ' ' + esc(category.name) + '</b><span class="num">¥' + fmt(sums[categoryId]) + ' · ' + percent + '%</span></div>'
+        + '<div class="track"><i style="width:' + Math.max(2, percent) + '%"></i></div></div>';
     }).join('');
   }
   const currentMonth = todayStr().slice(0, 7);
-  $('#repMonth').value = monthData.keys.includes(currentMonth) ? currentMonth : periodStart().slice(0, 7);
+  const monthKeys = monthKeysForScope(summary.scope.start, summary.scope.end);
+  $('#repMonth').value = monthKeys.includes(currentMonth) ? currentMonth : periodStart().slice(0, 7);
+  $('#repYear').value = todayStr().slice(0, 4);
 }
 
 /* ---- 维修保养 ---- */
@@ -1475,7 +1957,7 @@ function renderMaint() {
   const sum = list.reduce((s, m) => s + m.amount, 0);
   box.innerHTML = '<div class="year-h"><b class="display">' + (scope === 'all' ? '全部车辆' : esc(vehicleById(scope).name)) + '</b><span class="num">共 ¥' + fmt(sum) + '</span></div>'
     + '<div class="panel">' + list.map(m =>
-      '<div class="row" data-maint="' + attrEsc(m.id) + '"><span class="ric">🔧</span><div class="rmain"><b>' + esc(m.note || '维修保养') + '</b><span class="num">' + esc(m.date) + (scope === 'all' ? ' · ' + esc(vehicleById(m.vehicleId).name) : '') + '</span></div><span class="ramt out num">¥' + fmt(m.amount) + '</span><span class="rarrow">›</span></div>'
+      '<div class="row" data-maint="' + attrEsc(m.id) + '" role="button" tabindex="0"><span class="ric">🔧</span><div class="rmain"><b>' + esc(m.note || '维修保养') + '</b><span class="num">' + esc(m.date) + (scope === 'all' ? ' · ' + esc(vehicleById(m.vehicleId).name) : '') + '</span></div><span class="ramt out num">¥' + fmt(m.amount) + '</span><span class="rarrow">›</span></div>'
     ).join('') + '</div>';
 }
 
@@ -1492,10 +1974,10 @@ function renderMore() {
 /* —— 防连点 / 防穿透 —— */
 let _lockAt = 0;
 function guardOnce() { const n = Date.now(); if (n - _lockAt < 600) return false; _lockAt = n; return true; }
-function tapShield() {
+function tapShield(duration) {
   const d = document.createElement('div');
   d.style.cssText = 'position:fixed;inset:0;z-index:99;background:transparent';
-  document.body.appendChild(d); setTimeout(() => d.remove(), 350);
+  document.body.appendChild(d); setTimeout(() => d.remove(), duration == null ? 350 : duration);
 }
 
 /* —— 弹层栈 + 历史栈：手机系统返回键 = 关最上层弹层，而不是退出页面 ——
@@ -1503,39 +1985,202 @@ function tapShield() {
    popstate 里用 expectPop 计数区分"程序自己触发的 back"和"用户按的系统返回键"。 */
 let sheetZ = 0; const sheetStack = [];
 let historyOK = true, expectPop = 0;
-function openSheet(el) {
-  el.classList.add('on'); el.style.zIndex = 30 + (++sheetZ); sheetStack.push(el.id);
-  if (historyOK) { try { history.pushState({ ttq: sheetStack.length }, ''); } catch (e) { historyOK = false; } }
+const sheetTransitions = Object.create(null);
+const transitionTokens = new Map();
+let transitionSeq = 0;
+function beginSheetTransition(el) {
+  const token = ++transitionSeq;
+  transitionTokens.set(token, el);
+  document.body.classList.add('ttq-transitioning');
+  el.classList.add('ttq-transitioning');
+  return token;
 }
-function closeSheetVisual(el) {
+function endSheetTransition(el, token) {
+  if (!transitionTokens.delete(token)) return;
+  const sameSheetRunning = Array.from(transitionTokens.values()).some(item => item === el);
+  if (!sameSheetRunning) el.classList.remove('ttq-transitioning');
+  if (!transitionTokens.size) document.body.classList.remove('ttq-transitioning');
+}
+function setLayerInert(el, blocked) {
+  if (!el) return;
+  el.inert = blocked;
+  if (blocked) el.setAttribute('inert', '');
+  else el.removeAttribute('inert');
+}
+function ensureSheetDialog(el) {
+  if (!el) return;
+  el.setAttribute('role', 'dialog');
+  const title = el.querySelector('.shead h3');
+  if (title) {
+    if (!title.id) title.id = el.id + '-title';
+    el.setAttribute('aria-labelledby', title.id);
+  } else if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', '弹层');
+}
+function syncSheetModality() {
+  const topId = sheetStack[sheetStack.length - 1] || '';
+  $$('.view,#nav').forEach(el => {
+    setLayerInert(el, Boolean(topId));
+    if (topId) el.setAttribute('aria-hidden', 'true');
+    else el.removeAttribute('aria-hidden');
+  });
+  $$('.sheet').forEach(el => {
+    ensureSheetDialog(el);
+    const isOpen = el.classList.contains('on');
+    const isTop = isOpen && el.id === topId;
+    /* 隐藏 sheet 不保留 inert，避免以后打开时继承旧的不可交互状态。 */
+    setLayerInert(el, isOpen && !isTop);
+    if (isTop) {
+      el.removeAttribute('aria-hidden');
+      el.setAttribute('aria-modal', 'true');
+    } else {
+      el.setAttribute('aria-hidden', 'true');
+      el.removeAttribute('aria-modal');
+    }
+  });
+}
+function focusCurrentTopSheet() {
+  const top = document.getElementById(sheetStack[sheetStack.length - 1]);
+  if (top) TTQUITransition.focusElement(top);
+  return top || null;
+}
+function sheetFocusableElements(el) {
+  if (!el) return [];
+  return Array.from(el.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+    .filter(item => !item.hidden && !item.closest('[hidden]') && item.getAttribute('aria-hidden') !== 'true');
+}
+function handleSheetKeydown(event) {
+  if (!sheetStack.length || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+  /* 既有 confirmMask / migrationMask 自己处于更高层时，不抢它的键盘事件。 */
+  if ($('.mask.on')) return;
+  const top = document.getElementById(sheetStack[sheetStack.length - 1]);
+  if (!top) return;
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation(); closeSheet(top); return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = sheetFocusableElements(top);
+  if (!focusable.length) {
+    event.preventDefault(); TTQUITransition.focusElement(top); return;
+  }
+  const active = document.activeElement;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (!top.contains(active) || (!event.shiftKey && active === last) || (event.shiftKey && active === first)) {
+    event.preventDefault(); TTQUITransition.focusElement(event.shiftKey ? last : first);
+  }
+}
+function openSheet(el, options) {
+  if (!el || sheetStack.includes(el.id) || sheetTransitions[el.id]) return false;
+  const opts = options || {};
+  const source = opts.resolveSource || opts.source || null;
+  const focus = opts.resolveFocus || opts.focusSource || source || document.activeElement;
+  const record = {
+    controller: TTQUITransition.createTransitionController(),
+    source,
+    focus,
+    closing: false
+  };
+  sheetTransitions[el.id] = record;
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+  el.classList.add('on'); el.style.zIndex = 30 + (++sheetZ); sheetStack.push(el.id);
+  syncSheetModality();
+  if (historyOK) { try { history.pushState({ ttq: sheetStack.length }, ''); } catch (e) { historyOK = false; } }
+  const transitionToken = beginSheetTransition(el);
+  record.controller.open({
+    source,
+    target: el,
+    content: el.querySelector('.sbody'),
+    onFinish: () => {
+      if (!record.closing) TTQUITransition.focusElement(el);
+    }
+  }).finally(() => endSheetTransition(el, transitionToken));
+  return true;
+}
+function clearSheetVisualStyles(el) {
+  el.classList.remove('ttq-transitioning');
+  el.style.transition = ''; el.style.transform = ''; el.style.opacity = '';
+  el.style.borderRadius = ''; el.style.transformOrigin = '';
+}
+function finishSheetClose(el, record, animated) {
   el.classList.remove('on');
-  const i = sheetStack.lastIndexOf(el.id); if (i > -1) sheetStack.splice(i, 1);
-  tapShield();
+  clearSheetVisualStyles(el);
+  if (sheetTransitions[el.id] === record) delete sheetTransitions[el.id];
+  syncSheetModality();
+  tapShield(animated ? 120 : 350);
   const top = sheetStack[sheetStack.length - 1];
   const re = { 'sheet-trip': renderTripDetail, 'sheet-close': renderCloseRows, 'sheet-cats': renderCats, 'sheet-quick': renderQuickChips, 'sheet-vehicles': renderVehicles };
   (re[top] || renderCurrent)();
 }
-function closeSheet(el) {
-  const tracked = sheetStack.includes(el.id);
-  closeSheetVisual(el);
-  if (historyOK && tracked) { expectPop++; try { history.back(); } catch (e) {} }
+function closeSheetVisual(el, options) {
+  if (!el) return false;
+  const opts = options || {};
+  const record = sheetTransitions[el.id] || {
+    controller: TTQUITransition.createTransitionController(),
+    source: null,
+    focus: null,
+    closing: false
+  };
+  if (record.closing) return false;
+  record.closing = true;
+  const i = sheetStack.lastIndexOf(el.id); if (i > -1) sheetStack.splice(i, 1);
+  if (el.id === 'sheet-trip' && curView === 'trips') renderTrips();
+  if (el.id === 'sheet-vehicle-edit') renderVehicles();
+  if (opts.animate === false) {
+    record.controller.cancel('visual-close');
+    finishSheetClose(el, record, false);
+    TTQUITransition.focusElement(record.focus);
+    return true;
+  }
+  const transitionToken = beginSheetTransition(el);
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    finishSheetClose(el, record, true);
+  };
+  record.controller.close({
+    source: record.source,
+    target: el,
+    content: el.querySelector('.sbody'),
+    restoreFocus: record.focus,
+    onFinish: finish
+  }).then(result => {
+    if (!result.completed) finish();
+  }).finally(() => endSheetTransition(el, transitionToken));
+  return true;
 }
-function closeAllSheets() {
-  const n = sheetStack.length; if (!n) return;
-  $$('.sheet').forEach(s => s.classList.remove('on')); sheetStack.length = 0; tapShield();
-  if (historyOK) { expectPop++; try { history.go(-n); } catch (e) {} }
+function closeSheet(el, options) {
+  const tracked = sheetStack.includes(el.id);
+  const started = closeSheetVisual(el, options);
+  if (historyOK && tracked && started) { expectPop++; try { history.back(); } catch (e) {} }
+}
+function closeAllSheets(options) {
+  const n = sheetStack.length; if (!n) { syncSheetModality(); return; }
+  Object.keys(sheetTransitions).forEach(id => {
+    sheetTransitions[id].controller.cancel('close-all');
+    delete sheetTransitions[id];
+  });
+  $$('.sheet').forEach(s => { s.classList.remove('on'); clearSheetVisualStyles(s); });
+  sheetStack.length = 0; tapShield();
+  transitionTokens.clear(); document.body.classList.remove('ttq-transitioning');
+  syncSheetModality();
+  if (historyOK && !(options && options.skipHistory)) {
+    expectPop++;
+    try { history.go(-n); } catch (e) {}
+  }
 }
 window.addEventListener('popstate', () => {
   if (expectPop > 0) { expectPop--; return; }
   closeTopSheet();
 });
+document.addEventListener('keydown', handleSheetKeydown);
 
 /* —— 数字键盘：支持 300+250 连加 —— */
 function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
   let expr = '';
   padEl.innerHTML = ['1', '2', '3', '⌫', '4', '5', '6', '＋', '7', '8', '9', '.']
     .map(k => '<button data-k="' + k + '"' + ('⌫＋.'.includes(k) ? ' class="fn"' : '') + '>' + k + '</button>').join('')
-    + '<button class="zero" data-k="0">0</button><button class="ok" data-k="ok">' + okLabel + '</button>';
+    + '<button class="zero" data-k="0">0</button><button class="ok" data-k="ok" data-business-write>' + okLabel + '</button>';
+  syncBusinessWriteControls(padEl);
   function term() { const p = expr.split('+'); return p[p.length - 1]; }
   function paint() {
     dispEl.textContent = expr || '0';
@@ -1561,23 +2206,9 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
   };
 }
 
-/* —— 滑动收车 —— */
-function initSlide(el, onDone) {
-  const th = el.querySelector('.slide-thumb');
-  let startX = 0, x = 0, max = 0, active = false;
-  const setX = v => { x = Math.max(0, Math.min(max, v)); th.style.transform = 'translateX(' + x + 'px)'; };
-  const reset = () => { th.style.transition = 'transform .25s'; x = 0; th.style.transform = ''; el.classList.remove('done'); setTimeout(() => th.style.transition = '', 300); };
-  th.addEventListener('pointerdown', e => { active = true; max = el.clientWidth - th.offsetWidth - 10; startX = e.clientX - x; th.style.transition = ''; try { th.setPointerCapture(e.pointerId); } catch (err) {} });
-  th.addEventListener('pointermove', e => { if (active) setX(e.clientX - startX); });
-  const up = () => { if (!active) return; active = false; if (max > 0 && x >= max * 0.88) { setX(max); el.classList.add('done'); onDone(); } else reset(); };
-  th.addEventListener('pointerup', up); th.addEventListener('pointercancel', up);
-  el.ttqReset = reset;
-  return { reset };
-}
-
 /* —— 记一笔（快记） —— */
 let quickTripId = null, quickCatId = 'fuel', quickPadCtl = null;
-function openQuick(tripId) {
+function openQuick(tripId, origin) {
   if (!canStartBusinessWrite()) return;
   const t = S.trips.find(x => x.id === tripId); if (!t) { toast('先发车，才能记账'); return; }
   quickTripId = tripId;
@@ -1590,19 +2221,24 @@ function openQuick(tripId) {
   $('#quickDateWrap').style.display = 'none';
   updateQuickDateBtn();
   quickPadCtl.reset('');
+  resetFuelForm($('#quickFuelForm'), {}, false);
   renderQuickChips();
-  openSheet($('#sheet-quick'));
+  openSheet($('#sheet-quick'), origin);
 }
 function renderQuickChips() {
   const t = S.trips.find(x => x.id === quickTripId);
   $('#quickChips').innerHTML = S.categories.expense.filter(c => c.active)
-    .map(c => '<div class="chip' + (c.id === quickCatId ? ' on' : '') + '" data-cat="' + attrEsc(c.id) + '"><em>' + safeIconText(c.icon) + '</em>' + esc(c.name) + '</div>').join('')
-    + '<div class="chip" data-newexp><em>＋</em>新科目</div>';
+    .map(c => '<button type="button" class="chip' + (c.id === quickCatId ? ' on' : '') + '" data-cat="' + attrEsc(c.id) + '" aria-pressed="' + (c.id === quickCatId ? 'true' : 'false') + '"><em>' + safeIconText(c.icon) + '</em>' + esc(c.name) + '</button>').join('')
+    + '<button type="button" class="chip" data-newexp><em>＋</em>新科目</button>';
   const c = catById(quickCatId);
   const seq = t ? tripSeq(t) : 0;
   $('#quickCat').textContent = t ? ('记到「' + vehicleById(t.vehicleId).name + ' · ' + (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · ' + c.name + '」') : '';
   const com = commonAmounts(quickCatId, t && t.vehicleId);
-  $('#quickCommon').innerHTML = com.length ? '<span class="lbl">常用</span>' + com.map(v => '<button data-amt="' + v + '">' + fmt(v) + '</button>').join('') : '';
+  $('#quickCommon').innerHTML = com.length ? '<span class="lbl">常用</span>' + com.map(v => '<button data-amt="' + attrEsc(v) + '">' + fmt(v) + '</button>').join('') : '';
+  const fuelMode = quickCatId === 'fuel';
+  $('#quickMoneyDisplay').style.display = fuelMode ? 'none' : '';
+  $('#quickPad').style.display = fuelMode ? 'none' : '';
+  $('#quickFuelForm').style.display = fuelMode ? '' : 'none';
 }
 function updateQuickDateBtn() {
   const d = $('#quickDate').value;
@@ -1626,10 +2262,31 @@ async function quickSave(v) {
     }
   });
 }
+async function quickFuelSave() {
+  const resolved = resolveFuelForm($('#quickFuelForm'), false);
+  if (!resolved.ok) {
+    toast(resolved.error && resolved.error.message || '请把油费填完整');
+    return;
+  }
+  if (!guardOnce()) return;
+  const t = S.trips.find(x => x.id === quickTripId); if (!t) return;
+  const date = $('#quickDate').value || (t.status === 'open' ? todayStr() : (t.endDate || todayStr()));
+  const note = $('#quickNote').value.trim();
+  const entryId = uid();
+  const result = await submitBusinessMutation(draft => {
+    const nextTrip = draft.trips.find(item => item.id === quickTripId);
+    if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
+    nextTrip.expenses.push({ id: entryId, catId: 'fuel', amount: resolved.amount, date, note, fuel: resolved.fuel });
+  }, { kind: 'trip-expense' });
+  if (!result.ok) return;
+  toast('已记上 · 油费 ¥' + resolved.resolved.formatted.totalAmount);
+  closeSheet($('#sheet-quick'));
+  renderCurrent();
+}
 
 /* —— 通用金额盘（收入 / 改一笔 / 维修） —— */
 let amtCfg = null, amtPadCtl = null;
-function openAmtPad(cfg) {
+function openAmtPad(cfg, origin) {
   if (!canStartBusinessWrite()) return;
   amtCfg = cfg;
   $('#amtTitle').textContent = cfg.title || '输入金额';
@@ -1641,7 +2298,14 @@ function openAmtPad(cfg) {
   amtPadCtl.setOk(cfg.okLabel);
   renderAmtChips();
   amtPadCtl.reset(cfg.expr || '');
-  openSheet($('#sheet-amt'));
+  const legacyFuel = cfg.catId === 'fuel' && !cfg.fuel && cfg.originalCatId === 'fuel';
+  resetFuelForm($('#amtFuelForm'), cfg.catId === 'fuel' ? {
+    totalAmount: cfg.expr || '',
+    unitPrice: cfg.fuel && cfg.fuel.unitPrice || '',
+    liters: cfg.fuel && cfg.fuel.liters || ''
+  } : {}, legacyFuel);
+  updateAmtMode();
+  openSheet($('#sheet-amt'), origin);
 }
 /* 改一笔支出时可顺手改科目（记错科目不用删了重记）；cfg.catId 存在才显示 */
 function renderAmtChips() {
@@ -1649,12 +2313,39 @@ function renderAmtChips() {
   if (!amtCfg || !amtCfg.catId) { box.style.display = 'none'; box.innerHTML = ''; return; }
   const list = S.categories.expense.filter(c => c.active || c.id === amtCfg.catId);
   box.style.display = '';
-  box.innerHTML = list.map(c => '<div class="chip' + (c.id === amtCfg.catId ? ' on' : '') + '" data-amtcat="' + attrEsc(c.id) + '"><em>' + safeIconText(c.icon) + '</em>' + esc(c.name) + '</div>').join('');
+  box.innerHTML = list.map(c => '<button type="button" class="chip' + (c.id === amtCfg.catId ? ' on' : '') + '" data-amtcat="' + attrEsc(c.id) + '" aria-pressed="' + (c.id === amtCfg.catId ? 'true' : 'false') + '"><em>' + safeIconText(c.icon) + '</em>' + esc(c.name) + '</button>').join('');
+}
+function updateAmtMode() {
+  const fuelMode = Boolean(amtCfg && amtCfg.catId === 'fuel');
+  $('#amtMoneyMode').style.display = fuelMode ? 'none' : '';
+  $('#amtFuelForm').style.display = fuelMode ? '' : 'none';
+  if (!fuelMode || !amtCfg) return;
+  const values = fuelFormValues($('#amtFuelForm'));
+  if (!values.totalAmount && amtCfg.expr) {
+    resetFuelForm($('#amtFuelForm'), { totalAmount: amtCfg.expr }, amtCfg.originalCatId === 'fuel' && !amtCfg.fuel);
+  }
+}
+async function saveAmtFuel() {
+  if (!amtCfg) return;
+  const allowLegacy = amtCfg.originalCatId === 'fuel' && !amtCfg.fuel && amtCfg.catId === 'fuel';
+  const resolved = resolveFuelForm($('#amtFuelForm'), allowLegacy);
+  if (!resolved.ok) {
+    toast(resolved.error && resolved.error.message || '请把油费填完整');
+    return;
+  }
+  if (!guardOnce()) return;
+  const result = await amtCfg.onSave(
+    resolved.amount,
+    $('#amtDate').value,
+    $('#amtNote').value.trim(),
+    resolved.fuel
+  );
+  if (!result || result.ok) closeSheet($('#sheet-amt'));
 }
 
 /* —— 发车 —— */
 let startVehicleId = null;
-function openStart() {
+function openStart(origin) {
   if (!canStartBusinessWrite()) return;
   const active = S.vehicles.filter(v => v.active);
   if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
@@ -1662,7 +2353,7 @@ function openStart() {
   startVehicleId = (scoped || active.find(v => !openTrip(v.id)) || active[0]).id;
   renderStartVehicleChips();
   $('#startDate').value = todayStr(); updateStartTip();
-  openSheet($('#sheet-start'));
+  openSheet($('#sheet-start'), origin);
 }
 function renderStartVehicleChips() {
   $('#startVehicleChips').innerHTML = S.vehicles.filter(v => v.active).map(v =>
@@ -1687,7 +2378,15 @@ function updateStartTip() {
 
 /* —— 收车结算 —— */
 let closeCtx = null;
-function openCloseSheet(tripId) {
+function closeFlowActive() {
+  return ['sheet-close', 'sheet-close-confirm'].some(id => sheetStack.includes(id) || Boolean(sheetTransitions[id]));
+}
+function openCloseSheet(tripId, origin) {
+  /* 必须先拒绝重复打开；否则底层伪点击可能在 openSheet 拒绝前串改 closeCtx。 */
+  if (closeFlowActive()) {
+    focusCurrentTopSheet();
+    return false;
+  }
   if (!canStartBusinessWrite()) return;
   const t = S.trips.find(x => x.id === tripId); if (!t) return;
   closeCtx = { tripId, inc: Object.create(null) };
@@ -1698,9 +2397,9 @@ function openCloseSheet(tripId) {
   const seq = tripSeq(t);
   $('#closeTitle').textContent = vehicleById(t.vehicleId).name + ' · ' + (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · 收车';
   $('#closeDate').value = t.endDate || todayStr();
+  $('#closeDate').setAttribute('aria-invalid', 'false');
   renderCloseRows();
-  if ($('#closeSlide').ttqReset) $('#closeSlide').ttqReset();
-  openSheet($('#sheet-close'));
+  return openSheet($('#sheet-close'), origin);
 }
 function renderCloseRows() {
   if (!closeCtx) return;
@@ -1709,7 +2408,7 @@ function renderCloseRows() {
   $('#closeExp').textContent = '¥' + fmt(exp);
   $('#closeIncomeRows').innerHTML = S.categories.income.filter(c => c.active || (closeCtx.inc[c.id] || 0) > 0).map(c => {
     const v = closeCtx.inc[c.id] || 0;
-    return '<div class="row" data-closeinc="' + attrEsc(c.id) + '"><span class="ric">' + safeIconText(c.icon) + '</span>'
+    return '<div class="row" data-closeinc="' + attrEsc(c.id) + '" role="button" tabindex="0"><span class="ric">' + safeIconText(c.icon) + '</span>'
       + '<div class="rmain"><b>' + esc(c.name) + '</b></div>'
       + '<span class="ramt num"' + (v ? '' : ' style="color:var(--sub)"') + '>' + (v ? '¥' + fmt(v) : '点了填') + '</span><span class="rarrow">›</span></div>';
   }).join('');
@@ -1717,84 +2416,198 @@ function renderCloseRows() {
   const p = inc - exp;
   $('#closeProfit').textContent = (p >= 0 ? '+' : '−') + fmt(Math.abs(p));
 }
-async function doCloseTrip() {
-  const t = S.trips.find(x => x.id === closeCtx.tripId); if (!t) return;
-  const d = $('#closeDate').value;
-  if (!d) { toast('先选到家日期'); $('#closeSlide').ttqReset(); return; }
-  if (t.startDate && d < t.startDate) { toast('到家日期不能早于发车日期'); $('#closeSlide').ttqReset(); return; }
-  /* 零收入确认：司机常有账期，允许先收车、详情里补收入，但要防"忘了填" */
-  const incSum = Object.values(closeCtx.inc).reduce((s, v) => s + (v || 0), 0);
-  if (incSum <= 0) {
-    const goOn = await ask('这趟还没填收入，确定先收车吗？回头可在趟次详情里补填');
-    if (!goOn) { $('#closeSlide').ttqReset(); return; }
+function buildCloseTripPreview(state, context, endDate) {
+  const trips = state && Array.isArray(state.trips) ? state.trips : [];
+  const tripId = context && context.tripId;
+  const trip = trips.find(item => item.id === tripId);
+  if (!trip) return { ok: false, code: 'missing' };
+  const date = String(endDate || '');
+  if (!date) return { ok: false, code: 'missing-date', tripId };
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const stamp = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+  if (!match || stamp.getUTCFullYear() !== Number(match[1]) || stamp.getUTCMonth() !== Number(match[2]) - 1 || stamp.getUTCDate() !== Number(match[3])) {
+    return { ok: false, code: 'invalid-date', tripId };
   }
-  const incomeEntries = Object.keys(closeCtx.inc).filter(cid => closeCtx.inc[cid] > 0)
-    .map(cid => ({ id: uid(), catId: cid, amount: closeCtx.inc[cid], date: d }));
+  if (trip.startDate && date < trip.startDate) return { ok: false, code: 'date-before', tripId };
+  const inc = context && context.inc || {};
+  const incomeEntries = Object.keys(inc).filter(catId => Number(inc[catId]) > 0)
+    .map(catId => ({ catId, amount: Number(inc[catId]), date }));
+  const income = incomeEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  const expense = (Array.isArray(trip.expenses) ? trip.expenses : [])
+    .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  return {
+    ok: true,
+    code: income > 0 ? 'ready' : 'noincome',
+    tripId,
+    vehicleId: trip.vehicleId,
+    endDate: date,
+    incomeEntries,
+    income,
+    expense,
+    profit: income - expense
+  };
+}
+function closePreviewError(preview) {
+  if (preview.code === 'missing-date') return '先选到家日期';
+  if (preview.code === 'invalid-date') return '到家日期格式不正确';
+  if (preview.code === 'date-before') return '到家日期不能早于发车日期';
+  return '趟次已不存在，请重新加载';
+}
+function renderCloseConfirmation(preview) {
+  const vehicle = vehicleById(preview.vehicleId);
+  $('#closeConfirmVehicle').textContent = vehicle ? vehicle.name : vehicleLabel(preview.vehicleId);
+  $('#closeConfirmDate').textContent = preview.endDate;
+  $('#closeConfirmIncome').textContent = '¥' + fmt(preview.income);
+  $('#closeConfirmExpense').textContent = '¥' + fmt(preview.expense);
+  $('#closeConfirmProfit').textContent = (preview.profit >= 0 ? '+' : '−') + '¥' + fmt(Math.abs(preview.profit));
+  $('#closeConfirmWarning').hidden = preview.code !== 'noincome';
+  $('#closeConfirmStatus').textContent = preview.code === 'noincome' ? '请核对：当前收入为 0，确认后仍可补录。' : '请核对以上信息后再确认。';
+  $('#btnCloseConfirm').textContent = '确认收车';
+  $('#sheet-close-confirm').setAttribute('aria-busy', 'false');
+  syncBusinessWriteControls($('#sheet-close-confirm'));
+}
+function openCloseConfirmation() {
+  const preview = buildCloseTripPreview(S, closeCtx, $('#closeDate').value);
+  if (!preview.ok) {
+    const message = closePreviewError(preview);
+    toast(message);
+    if (preview.code !== 'missing') {
+      $('#closeDate').setAttribute('aria-invalid', 'true');
+      $('#closeDate').focus();
+    }
+    return { ok: false, preview };
+  }
+  $('#closeDate').setAttribute('aria-invalid', 'false');
+  renderCloseConfirmation(preview);
+  openSheet($('#sheet-close-confirm'), {
+    source: $('#btnCloseReview'),
+    resolveSource: () => $('#btnCloseReview')
+  });
+  return { ok: true, preview };
+}
+function closeCommitFailureMessage(result) {
+  if (result && result.conflict) return '云端已有新改动，本次没有收车。请返回检查或重新加载后再试。';
+  if (result && result.validation) return '服务器没有接受这次收车，请返回检查数据后再试。';
+  if (result && result.readonly) return '当前是只读模式，本次没有收车。恢复连接后可重试。';
+  return '未收到服务器确认，本次没有收车。确认内容仍保留，可稍后重试。';
+}
+async function confirmCloseTrip() {
+  if (!guardOnce()) return { ok: false, duplicate: true };
+  const preview = buildCloseTripPreview(S, closeCtx, $('#closeDate').value);
+  if (!preview.ok) {
+    const message = closePreviewError(preview);
+    $('#closeConfirmStatus').textContent = message;
+    toast(message);
+    return { ok: false, preview };
+  }
+  renderCloseConfirmation(preview);
+  const confirmSheet = $('#sheet-close-confirm');
+  const confirmButton = $('#btnCloseConfirm');
+  confirmSheet.setAttribute('aria-busy', 'true');
+  confirmButton.textContent = '正在保存…';
+  $('#closeConfirmStatus').textContent = '正在保存收车和全部收入，等待服务器确认…';
+  const incomeEntries = preview.incomeEntries.map(entry => Object.assign({ id: uid() }, entry));
   const result = await submitBusinessMutation(draft => {
-    const nextTrip = draft.trips.find(item => item.id === closeCtx.tripId);
+    const nextTrip = draft.trips.find(item => item.id === preview.tripId);
     if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
     nextTrip.incomes = incomeEntries;
-    nextTrip.endDate = d;
+    nextTrip.endDate = preview.endDate;
     nextTrip.status = 'closed';
     nextTrip.closedAt = new Date().toISOString();
   }, {
     kind: 'close-trip',
-    savingText: '正在保存收车和全部收入…'
+    savingText: '正在保存收车和全部收入…',
+    onFailure: failure => { $('#closeConfirmStatus').textContent = closeCommitFailureMessage(failure); }
   });
-  if (!result.ok) { $('#closeSlide').ttqReset(); return; }
-  const savedTrip = S.trips.find(item => item.id === closeCtx.tripId);
+  confirmSheet.setAttribute('aria-busy', 'false');
+  confirmButton.textContent = '确认收车';
+  if (!result.ok) {
+    $('#closeConfirmStatus').textContent = closeCommitFailureMessage(result);
+    syncBusinessWriteControls(confirmSheet);
+    return result;
+  }
+  const savedTrip = S.trips.find(item => item.id === preview.tripId);
+  if (!savedTrip || savedTrip.status !== 'closed') {
+    $('#closeConfirmStatus').textContent = '服务器回执中没有已收车记录，请保留本页并重新核对。';
+    syncBusinessWriteControls(confirmSheet);
+    return { ok: false, invalidAck: true };
+  }
   const p = tripTotals(savedTrip).profit;
+  const seq = tripSeq(savedTrip);
+  closeCtx = null;
   closeAllSheets();
   showView('home');
-  const seq = tripSeq(savedTrip);
   toast('已收车 🎉 ' + (seq > 0 ? '第 ' + seq + ' 趟' : '记录在当前账期外') + ' · 利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
+  return result;
 }
 
 /* —— 补录旧账 —— */
 let backfillVehicleId = null;
-function openBackfill() {
+function openBackfill(origin) {
   if (!canStartBusinessWrite()) return;
   const active = S.vehicles.filter(v => v.active);
   if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
   backfillVehicleId = activeVehicleId() !== 'all' && active.some(v => v.id === activeVehicleId()) ? activeVehicleId() : active[0].id;
   renderBackfillVehicleChips();
   $('#bfStart').value = ''; $('#bfEnd').value = '';
-  $('#bfExpRows').innerHTML = S.categories.expense.filter(c => c.active).map(c =>
-    '<div class="field"><label>' + safeIconText(c.icon) + ' ' + esc(c.name) + '</label><input type="number" inputmode="decimal" min="0" step="0.01" placeholder="0" data-bf-kind="exp" data-bf-cat="' + attrEsc(c.id) + '"></div>').join('');
+  $('#bfExpRows').innerHTML = S.categories.expense.filter(c => c.active).map(c => c.id === 'fuel'
+    ? '<div data-bf-fuel><label style="display:block;margin-top:12px;color:var(--sub);font-size:13px">' + safeIconText(c.icon) + ' ' + esc(c.name) + '</label>' + fuelFormHTML('bf', {}, true) + '</div>'
+    : '<div class="field"><label>' + safeIconText(c.icon) + ' ' + esc(c.name) + '</label><input type="text" inputmode="decimal" placeholder="0" data-bf-kind="exp" data-bf-cat="' + attrEsc(c.id) + '" aria-invalid="false"></div>').join('');
   $('#bfIncRows').innerHTML = S.categories.income.filter(c => c.active).map(c =>
-    '<div class="field"><label>' + safeIconText(c.icon) + ' ' + esc(c.name) + '</label><input type="number" inputmode="decimal" min="0" step="0.01" placeholder="0" data-bf-kind="inc" data-bf-cat="' + attrEsc(c.id) + '"></div>').join('');
+    '<div class="field"><label>' + safeIconText(c.icon) + ' ' + esc(c.name) + '</label><input type="text" inputmode="decimal" placeholder="0" data-bf-kind="inc" data-bf-cat="' + attrEsc(c.id) + '" aria-invalid="false"></div>').join('');
+  initFuelKeyboard($('#sheet-backfill [data-fuel-form]'), $('#btnBfSave'));
   $('#bfProfit').textContent = '¥0';
-  openSheet($('#sheet-backfill'));
+  openSheet($('#sheet-backfill'), origin);
 }
 function renderBackfillVehicleChips() {
   $('#bfVehicleChips').innerHTML = S.vehicles.filter(v => v.active).map(v =>
     '<button class="pill' + (v.id === backfillVehicleId ? ' on' : '') + '" data-bf-vehicle="' + attrEsc(v.id) + '">' + esc(v.name) + '</button>'
   ).join('');
 }
-function bfCollect() {
-  const exp = [], inc = [];
+function bfCollect(showErrors) {
+  const exp = [], inc = []; let error = null;
   $$('#sheet-backfill [data-bf-kind][data-bf-cat]').forEach(el => {
-    const v = parseFloat(el.value); if (isNaN(v) || v <= 0) return;
+    const raw = el.value.trim();
+    el.setAttribute('aria-invalid', 'false');
+    if (!raw) return;
+    let v;
+    try {
+      v = TTQDomain.cleanAmount(raw, '金额');
+      if (v <= 0) throw new Error('金额必须大于零');
+    } catch (cause) {
+      if (!error) error = cause.message || '金额无效';
+      if (showErrors) el.setAttribute('aria-invalid', 'true');
+      return;
+    }
     const kind = el.dataset.bfKind, cid = el.dataset.bfCat;
-    (kind === 'exp' ? exp : inc).push({ catId: cid, amount: Math.round(v * 100) / 100 });
+    (kind === 'exp' ? exp : inc).push({ catId: cid, amount: v });
   });
-  return { exp, inc };
+  const fuelRoot = $('#sheet-backfill [data-bf-fuel] [data-fuel-form]');
+  if (fuelRoot && Object.values(fuelFormValues(fuelRoot)).some(Boolean)) {
+    const fuel = resolveFuelForm(fuelRoot, true, showErrors);
+    if (!fuel.ok) error = error || (fuel.error && fuel.error.message) || '油费无效';
+    else exp.push(Object.assign({ catId: 'fuel', amount: fuel.amount }, fuel.fuel ? { fuel: fuel.fuel } : {}));
+  }
+  return { exp, inc, error };
 }
-function bfUpdateProfit() {
-  const { exp, inc } = bfCollect();
+function bfUpdateProfit(event) {
+  const fuelInput = event && event.target && event.target.closest('[data-fuel-form]') ? event.target : null;
+  if (fuelInput) updateFuelForm(fuelInput.closest('[data-fuel-form]'), fuelInput);
+  const { exp, inc } = bfCollect(false);
   const p = inc.reduce((s, e) => s + e.amount, 0) - exp.reduce((s, e) => s + e.amount, 0);
   $('#bfProfit').textContent = (p >= 0 ? '+' : '−') + fmt(Math.abs(p));
 }
 async function bfSave() {
-  if (!guardOnce()) return;
   const s = $('#bfStart').value, e = $('#bfEnd').value;
   if (!s || !e) { toast('发车、到家日期都要填'); return; }
   if (e < s) { toast('到家日期不能早于发车日期'); return; }
-  const { exp, inc } = bfCollect();
+  const { exp, inc, error } = bfCollect(true);
+  if (error) { toast(error); return; }
   if (!exp.length && !inc.length) { toast('至少填一项金额'); return; }
   if (!backfillVehicleId) { toast('先选一辆车'); return; }
+  if (!guardOnce()) return;
   const t = { id: uid(), vehicleId: backfillVehicleId, startDate: s, endDate: e, status: 'closed', createdAt: new Date().toISOString(), closedAt: '',
-    expenses: exp.map(x => ({ id: uid(), catId: x.catId, amount: x.amount, date: e, note: '' })),
+    expenses: exp.map(x => Object.assign({ id: uid(), catId: x.catId, amount: x.amount, date: e, note: '' }, x.fuel ? { fuel: x.fuel } : {})),
     incomes: inc.map(x => ({ id: uid(), catId: x.catId, amount: x.amount, date: e })) };
   const result = await submitBusinessMutation(draft => {
     draft.trips.push(t);
@@ -1808,12 +2621,12 @@ async function bfSave() {
 }
 
 /* —— 账期设置 —— */
-function openPeriod() {
+function openPeriod(origin) {
   if (!canStartBusinessWrite()) return;
   $('#periodStart').value = periodStart();
   $('#periodEnd').value = periodEnd();
   updatePeriodTip();
-  openSheet($('#sheet-period'));
+  openSheet($('#sheet-period'), origin);
 }
 function updatePeriodTip() {
   const start = $('#periodStart').value, end = $('#periodEnd').value;
@@ -1842,20 +2655,21 @@ function renderVehicles() {
   $('#vehicleList').innerHTML = S.vehicles.map(v => {
     const trips = S.trips.filter(t => t.vehicleId === v.id).length;
     const open = !!openTrip(v.id);
-    return '<div class="row"><span class="ric">🚛</span><div class="rmain"><b style="' + (v.active ? '' : 'color:var(--sub);text-decoration:line-through') + '">' + esc(v.name) + '</b>'
+    return '<div class="row" data-vehicle-row="' + attrEsc(v.id) + '"><span class="ric">🚛</span><div class="rmain"><b style="' + (v.active ? '' : 'color:var(--sub);text-decoration:line-through') + '">' + esc(v.name) + '</b>'
       + '<span>' + (v.plateNo ? esc(v.plateNo) + ' · ' : '') + trips + ' 趟' + (open ? ' · 在途中' : '') + (v.active ? '' : ' · 已停用') + '</span></div>'
       + '<button class="pill" data-vehicle-edit="' + attrEsc(v.id) + '">改</button>'
-      + '<button class="pill" data-vehicle-toggle="' + attrEsc(v.id) + '">' + (v.active ? '停用' : '启用') + '</button></div>';
+      + '<button class="pill" data-vehicle-toggle="' + attrEsc(v.id) + '" data-business-write>' + (v.active ? '停用' : '启用') + '</button></div>';
   }).join('');
+  syncBusinessWriteControls($('#vehicleList'));
 }
-function openVehicleEdit(id) {
+function openVehicleEdit(id, origin) {
   if (!canStartBusinessWrite()) return;
   vehicleEditCtx = id ? { mode: 'edit', id } : { mode: 'new' };
   const v = id ? vehicleById(id) : null;
   $('#vehicleEditTitle').textContent = v ? '修改车辆' : '添加车辆';
   $('#vehicleName').value = v ? v.name : '';
   $('#vehiclePlate').value = v ? v.plateNo : '';
-  openSheet($('#sheet-vehicle-edit'));
+  openSheet($('#sheet-vehicle-edit'), origin);
 }
 async function saveVehicle() {
   if (!guardOnce()) return;
@@ -1910,9 +2724,11 @@ function renderCats() {
     '<div class="row"><span class="ric">' + safeIconText(c.icon) + '</span>'
     + '<div class="rmain"><b style="' + (c.active ? '' : 'color:var(--sub);text-decoration:line-through') + '">' + esc(c.name) + '</b><span>' + (c.builtin ? '自带科目' : '自己加的') + (c.active ? '' : ' · 已停用') + '</span></div>'
     + '<button class="pill" data-catact="rename" data-cattype="' + attrEsc(type) + '" data-catid="' + attrEsc(c.id) + '">改</button>'
-    + '<button class="pill" data-catact="toggle" data-cattype="' + attrEsc(type) + '" data-catid="' + attrEsc(c.id) + '">' + (c.active ? '停用' : '启用') + '</button></div>').join('');
+    + '<button class="pill" data-catact="toggle" data-cattype="' + attrEsc(type) + '" data-catid="' + attrEsc(c.id) + '" data-business-write>' + (c.active ? '停用' : '启用') + '</button></div>').join('');
   $('#catExpList').innerHTML = mk(S.categories.expense, 'expense');
   $('#catIncList').innerHTML = mk(S.categories.income, 'income');
+  syncBusinessWriteControls($('#catExpList'));
+  syncBusinessWriteControls($('#catIncList'));
 }
 function openNewcat(ctx) {
   if (!canStartBusinessWrite()) return;
@@ -1963,68 +2779,84 @@ async function saveNewcat() {
 
 /* ================= [JS-5] 报告生成 / 备份恢复 / 初始化 ================= */
 let lastReport = { title: '', text: '' };
-function genReport(prefix) {
-  const isPeriod = prefix === 'period';
-  const isMonth = !isPeriod && prefix.length === 7;
-  const scopeName = activeVehicleId() === 'all' ? '全部车辆' : vehicleById(activeVehicleId()).name;
-  const label = isPeriod
-    ? (scopeName + ' · 账期报告（' + periodLabel() + '）')
-    : (scopeName + ' · ' + prefix.slice(0, 4) + ' 年 ' + parseInt(prefix.slice(5), 10) + ' 月月报');
-  const trips = (isPeriod
-    ? TTQDomain.closedTripsInPeriod(S, periodStart(), periodEnd(), activeVehicleId())
-    : closedTripsIn(prefix)).slice().sort(TTQDomain.compareTripsAsc);
-  const maint = (isPeriod
-    ? TTQDomain.maintenanceInPeriod(S, periodStart(), periodEnd(), activeVehicleId())
-    : maintIn(prefix)).slice().sort((a, b) => a.date.localeCompare(b.date));
-  const L = [];
-  L.push('【趟趟清 · ' + label + '】');
-  L.push('━━━━━━━━━━━━');
-  if (!trips.length && !maint.length) {
-    L.push('这段时间没有记录。');
+function reportScopeFailure(message, selector) {
+  const box = $('#reportScopeError');
+  if (box) box.textContent = message;
+  const input = selector && $(selector);
+  if (input) {
+    input.setAttribute('aria-invalid', 'true');
+    if (typeof input.focus === 'function') input.focus();
+  }
+  toast(message);
+  return { ok: false, error: message };
+}
+function clearReportScopeFailure() {
+  const box = $('#reportScopeError');
+  if (box) box.textContent = '';
+  ['#repMonth', '#repYear'].forEach(selector => {
+    const input = $(selector);
+    if (input) input.setAttribute('aria-invalid', 'false');
+  });
+}
+function genReport(request) {
+  const vehicleId = activeVehicleId();
+  const scopeName = vehicleId === 'all' ? '全部车辆' : vehicleById(vehicleId).name;
+  let input, scopeLabel;
+  if (request === 'period') {
+    input = { start: periodStart(), end: periodEnd(), vehicleId };
+    scopeLabel = '本账期 ' + periodLabel();
+  } else if (typeof request === 'string') {
+    input = { month: request, vehicleId };
+    scopeLabel = request.slice(0, 4) + ' 年 ' + parseInt(request.slice(5), 10) + ' 月（与当前账期取交集）';
   } else {
-    let inc = 0, exp = 0;
-    trips.forEach(t => { const tt = tripTotals(t); inc += tt.inc; exp += tt.exp; });
-    const profit = inc - exp;
-    const msum = maint.reduce((s, m) => s + m.amount, 0);
-    L.push('收车趟数：' + trips.length + ' 趟');
-    L.push('总收入：¥' + fmt(inc));
-    L.push('总支出：¥' + fmt(exp));
-    L.push('趟次利润：¥' + fmt(profit) + (trips.length ? '（平均每趟 ¥' + fmt(profit / trips.length) + '）' : ''));
-    L.push('维修保养：¥' + fmt(msum) + (maint.length ? '（' + maint.length + ' 笔）' : ''));
-    L.push('净落袋：¥' + fmt(profit - msum));
-    /* 费用构成 */
-    const sums = Object.create(null);
-    trips.forEach(t => t.expenses.forEach(e => sums[e.catId] = (sums[e.catId] || 0) + e.amount));
-    const total = Object.values(sums).reduce((s, v) => s + v, 0);
-    if (total > 0) {
-      L.push('━━━━━━━━━━━━');
-      L.push('钱都花哪了：');
-      Object.keys(sums).sort((a, b) => sums[b] - sums[a]).forEach(cid => {
-        const pct = Math.round(sums[cid] / total * 1000) / 10;
-        L.push('· ' + catById(cid).name + ' ¥' + fmt(sums[cid]) + '（' + pct + '%）');
-      });
-    }
-    if (trips.length) {
-      L.push('━━━━━━━━━━━━');
-      L.push('每趟明细：');
-      trips.forEach(t => {
-        const p = tripTotals(t).profit;
-        L.push('· ' + (activeVehicleId() === 'all' ? vehicleById(t.vehicleId).name + ' ' : '') + '第' + tripSeq(t) + '趟 ' + fmtMD(t.startDate) + '→' + fmtMD(t.endDate) + ' 利润 ' + (p >= 0 ? '+' : '−') + fmt(Math.abs(p)));
-      });
-    }
-    if (maint.length) {
-      L.push('━━━━━━━━━━━━');
-      L.push('维修保养明细：');
-      if (maint.length <= 20) maint.forEach(m => L.push('· ' + fmtMD(m.date) + ' ' + (activeVehicleId() === 'all' ? vehicleById(m.vehicleId).name + ' ' : '') + (m.note || '维修保养') + ' ¥' + fmt(m.amount)));
-      else L.push('· 共 ' + maint.length + ' 笔，合计 ¥' + fmt(maint.reduce((s, m) => s + m.amount, 0)));
-    }
+    const year = request && String(request.year == null ? '' : request.year);
+    if (!/^[1-9]\d{3}$/.test(year)) return reportScopeFailure('自然年必须在 1000 至 9999 之间', '#repYear');
+    input = { year, vehicleId };
+    scopeLabel = year + ' 自然年';
+  }
+  let summary;
+  try {
+    summary = TTQDomain.buildReportSummary(S, input);
+  } catch (error) {
+    return reportScopeFailure('报告范围无效：' + (error.message || '请重新选择'), typeof request === 'string' ? '#repMonth' : '#repYear');
+  }
+  if (summary.scope.empty)
+    return reportScopeFailure('所选月份与当前账期没有交集，未生成报告', '#repMonth');
+  clearReportScopeFailure();
+  const label = scopeName + ' · ' + scopeLabel + '报告';
+  const f = summary.financial, fuel = summary.fuel;
+  const L = [
+    '【趟趟清 · ' + label + '】',
+    '统计范围：' + summary.scope.start + ' 至 ' + summary.scope.end,
+    '━━━━━━━━━━━━',
+    '收车趟数：' + f.tripCount + ' 趟',
+    '总收入：¥' + moneyCents(f.incomeCents),
+    '趟次支出：¥' + moneyCents(f.tripExpenseCents),
+    '趟次利润：¥' + moneyCents(f.tripProfitCents),
+    '维修保养（另列）：− ¥' + moneyCents(f.maintenanceCents),
+    '净利润：¥' + moneyCents(f.netProfitCents),
+    '━━━━━━━━━━━━',
+    '总油费（含旧油费）：¥' + moneyCents(fuel.totalCostCents),
+    '结构化加油量：' + volumeMl(fuel.volumeMl) + ' 升',
+    '加权均价：¥' + unitPriceX10000(fuel.weightedUnitPriceX10000) + '/升',
+    '最低 / 最高油价：¥' + unitPriceX10000(fuel.minUnitPriceX10000) + ' / ¥' + unitPriceX10000(fuel.maxUnitPriceX10000),
+    '油费覆盖：' + fuel.coverage.structuredRecords + ' 条结构化 / ' + fuel.coverage.totalRecords + ' 条总计'
+  ];
+  if (fuel.legacyCoverageWarning) L.push('⚠️ ' + fuel.legacyCoverageWarning);
+  if (vehicleId === 'all' && fuel.byVehicle.length) {
+    L.push('━━━━━━━━━━━━');
+    L.push('按车辆油费：');
+    fuel.byVehicle.forEach(item => L.push('· ' + (item.vehicleName || vehicleById(item.vehicleId).name) + ' ¥' + moneyCents(item.totalCostCents) + ' · ' + volumeMl(item.volumeMl) + ' 升'));
   }
   L.push('━━━━━━━━━━━━');
   L.push('—— 趟趟清 生成于 ' + todayStr());
   lastReport = { title: '趟趟清 · ' + label, text: L.join('\n') };
   $('#reportTitle').textContent = label;
+  $('#reportCards').innerHTML = '<div class="sec-label" style="margin-top:0">财务口径</div>' + financialCardHTML(summary)
+    + '<div class="sec-label">油费口径</div>' + fuelCardHTML(summary, vehicleId === 'all');
   $('#reportText').textContent = lastReport.text;
   openSheet($('#sheet-report'));
+  return { ok: true, summary };
 }
 function copyReport() {
   const done = () => toast('已复制，去微信 / 邮件里粘贴');
@@ -2044,22 +2876,40 @@ function shareReport() {
 }
 
 /* —— 备份 / 恢复 —— */
+function isPartialDriverSnapshot(snapshot) {
+  return Boolean(snapshot && snapshot.settings &&
+    snapshot.settings._ownerRecordsWritable === false);
+}
 function exportData() {
+  if (!Store.membership || Store.membership.role !== 'owner' || isPartialDriverSnapshot(S)) {
+    toast('只有车主可以导出可完整恢复的车队备份');
+    return false;
+  }
   exportSnapshot(S);
   toast('JSON 已导出；这不会修改云端账本');
+  return true;
 }
 function exportSnapshot(snapshot, suffix) {
   const payload = JSON.parse(JSON.stringify(snapshot));
+  const partial = isPartialDriverSnapshot(payload) ||
+    Boolean(Store.membership && Store.membership.role !== 'owner');
   payload._backupMeta = {
-    format: 'tangtangqing-schema-v2',
+    format: 'tangtangqing-schema-v3',
+    schemaVersion: TTQDomain.SCHEMA_VERSION,
     appVersion: APP_VER,
     exportedAt: new Date().toISOString(),
-    sourceFleetId: Store.fleet && Store.fleet.id || ''
+    sourceFleetId: Store.fleet && Store.fleet.id || '',
+    backupScope: partial ? 'driver-visible-partial' : 'full-fleet',
+    restorable: !partial,
+    conservation: TTQCloudSync.summarizeState(payload)
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = '趟趟清' + (suffix || '备份') + '-' + todayStr().replace(/-/g, '') + '.json';
+  const label = suffix || '备份';
+  a.download = '趟趟清' + label +
+    (partial ? '-司机可见范围-不可完整恢复' : '') +
+    '-' + todayStr().replace(/-/g, '') + '.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
@@ -2078,6 +2928,50 @@ function preserveSoftDeletedDirectories(next, current) {
   });
   return next;
 }
+function inspectBackupEnvelope(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj))
+    return { ok: false, error: '备份文件格式无效' };
+  const topVersion = Number(obj.schemaVersion || 0);
+  const meta = obj._backupMeta && typeof obj._backupMeta === 'object' && !Array.isArray(obj._backupMeta)
+    ? obj._backupMeta
+    : null;
+  const partial = isPartialDriverSnapshot(obj) || Boolean(meta && (
+    meta.backupScope === 'driver-visible-partial' || meta.restorable === false
+  ));
+  if (partial)
+    return { ok: false, error: '这是司机可见范围的部分数据，不能作为完整车队备份恢复' };
+  const claimsV3 = topVersion >= 3 || Boolean(meta && (
+    meta.format === 'tangtangqing-schema-v3' || Number(meta.schemaVersion) >= 3
+  ));
+  if (!claimsV3) return { ok: true, legacy: true, meta: meta || {} };
+  if (topVersion !== 3 || !meta || meta.format !== 'tangtangqing-schema-v3' || Number(meta.schemaVersion) !== 3)
+    return { ok: false, error: 'schema v3 备份必须带有匹配的完整 _backupMeta' };
+  if (typeof meta.appVersion !== 'string' || !meta.appVersion.trim() ||
+      typeof meta.exportedAt !== 'string' || Number.isNaN(Date.parse(meta.exportedAt)) ||
+      typeof meta.sourceFleetId !== 'string')
+    return { ok: false, error: 'schema v3 备份的版本、导出时间或车队来源信息不完整' };
+  const conservation = meta.conservation;
+  if (!conservation || typeof conservation !== 'object' ||
+      ['counts', 'amounts', 'exactAmounts', 'fuel'].some(group =>
+        !conservation[group] || typeof conservation[group] !== 'object' || Array.isArray(conservation[group])
+      ))
+    return { ok: false, error: 'schema v3 备份缺少完整的内嵌守恒摘要' };
+  const requiredFields = {
+    counts: ['vehicles', 'expenseCategories', 'incomeCategories', 'trips', 'tripExpenses', 'tripIncomes', 'maintenance'],
+    amounts: ['tripExpenses', 'tripIncomes', 'maintenance'],
+    exactAmounts: ['tripExpensesCents', 'tripIncomesCents', 'maintenanceCents'],
+    fuel: ['structuredRecords', 'legacyRecords', 'totalVolumeMl', 'structuredCostCents', 'fingerprint']
+  };
+  if (Object.keys(requiredFields).some(group =>
+    requiredFields[group].some(field => !Object.prototype.hasOwnProperty.call(conservation[group], field))
+  )) return { ok: false, error: 'schema v3 备份的内嵌守恒摘要字段不完整' };
+  return { ok: true, legacy: false, meta };
+}
+function createImportOperationId(candidate) {
+  const fingerprint = TTQCloudSync.snapshotFingerprint(candidate)
+    .replace(/[^A-Za-z0-9._:-]/g, '-');
+  return 'json-import:' + fingerprint + ':' + TTQCloudSync.createOperationId();
+}
 function importData(file) {
   if (!canStartBusinessWrite()) return;
   const r = new FileReader();
@@ -2085,11 +2979,26 @@ function importData(file) {
     try {
       const obj = JSON.parse(r.result);
       if (!obj || !Array.isArray(obj.trips)) { toast('这不是趟趟清的备份文件'); return; }
+      const envelope = inspectBackupEnvelope(obj);
+      if (!envelope.ok) { toast(envelope.error + '，已拒绝恢复'); return; }
+      const meta = envelope.meta;
+      const isV3Backup = !envelope.legacy;
       const periodPlan = TTQCloudSync.inspectImportPeriod(obj, S);
       const rawStart = periodPlan.periodStartDate;
       const rawEnd = periodPlan.periodEndDate;
       const validBackupPeriod = periodPlan.backupPeriodValid;
-      const candidate = preserveSoftDeletedDirectories(migrate(obj), S);
+      const migrated = migrate(obj);
+      if (isV3Backup) {
+        const embeddedCheck = TTQCloudSync.compareConservation(
+          meta.conservation,
+          TTQCloudSync.summarizeState(migrated)
+        );
+        if (!embeddedCheck.equal) {
+          toast('备份内嵌守恒摘要不一致，已拒绝恢复');
+          return;
+        }
+      }
+      const candidate = preserveSoftDeletedDirectories(migrated, S);
       candidate.settings.periodStartDate = periodPlan.periodStartDate;
       candidate.settings.periodEndDate = periodPlan.periodEndDate;
       ['theme', 'lastReportSeen', 'lastBackupAt', 'activeVehicleId'].forEach(field => {
@@ -2097,7 +3006,6 @@ function importData(file) {
       });
       const before = TTQCloudSync.summarizeState(S);
       const after = TTQCloudSync.summarizeState(candidate);
-      const meta = obj._backupMeta && typeof obj._backupMeta === 'object' ? obj._backupMeta : {};
       const differentFleet = meta.sourceFleetId && Store.fleet && meta.sourceFleetId !== Store.fleet.id;
       const sourceText = differentFleet
         ? '⚠️ 文件来自另一个车队；登录身份不会改变，但内容会写入当前车队。'
@@ -2105,34 +3013,50 @@ function importData(file) {
       const periodText = validBackupPeriod
         ? '账期也将完整恢复为 ' + rawStart + ' 至 ' + rawEnd + '。'
         : '⚠️ 文件缺少合法账期；为安全起见会保留当前账期 ' + periodLabel() + '。';
+      const versionText = isV3Backup
+        ? 'schema v3 内嵌金额与 fuel 守恒预检：通过。'
+        : '⚠️ 旧版备份没有内嵌 fuel 守恒摘要；允许兼容导入，但只能按迁移后的记录预览核对。';
       const ok = await ask(
         '这是“完整替换当前账本”。\n' +
-        sourceText + '\n' + periodText + '\n\n' +
+        sourceText + '\n' + periodText + '\n' + versionText + '\n\n' +
         '当前：车辆 ' + before.counts.vehicles + '、趟次 ' + before.counts.trips +
         '、收入 ' + before.counts.tripIncomes + ' 笔 ¥' + fmt(before.amounts.tripIncomes) +
         '、支出 ' + before.counts.tripExpenses + ' 笔 ¥' + fmt(before.amounts.tripExpenses) +
-        '、维修 ' + before.counts.maintenance + ' 笔 ¥' + fmt(before.amounts.maintenance) + '。\n' +
+        '、维修 ' + before.counts.maintenance + ' 笔 ¥' + fmt(before.amounts.maintenance) +
+        '、结构化/旧油费 ' + before.fuel.structuredRecords + '/' + before.fuel.legacyRecords +
+        '、结构化油费 ¥' + moneyCents(before.fuel.structuredCostCents) +
+        '、升数 ' + volumeMl(before.fuel.totalVolumeMl) + '。\n' +
         '导入后：车辆 ' + after.counts.vehicles + '、趟次 ' + after.counts.trips +
         '、收入 ' + after.counts.tripIncomes + ' 笔 ¥' + fmt(after.amounts.tripIncomes) +
         '、支出 ' + after.counts.tripExpenses + ' 笔 ¥' + fmt(after.amounts.tripExpenses) +
-        '、维修 ' + after.counts.maintenance + ' 笔 ¥' + fmt(after.amounts.maintenance) + '。\n\n' +
+        '、维修 ' + after.counts.maintenance + ' 笔 ¥' + fmt(after.amounts.maintenance) +
+        '、结构化/旧油费 ' + after.fuel.structuredRecords + '/' + after.fuel.legacyRecords +
+        '、结构化油费 ¥' + moneyCents(after.fuel.structuredCostCents) +
+        '、升数 ' + volumeMl(after.fuel.totalVolumeMl) + '。\n\n' +
         '只有服务器原子确认全部变更后，页面才会切换。确定继续吗？'
       );
       if (!ok) return;
-      const fingerprint = TTQCloudSync.snapshotFingerprint(candidate)
-        .replace(/[^A-Za-z0-9._:-]/g, '-');
+      /* 每次用户确认都是新的恢复动作；该 id 随 pendingAction 保留，网络重试仍复用。 */
+      const importOperationId = createImportOperationId(candidate);
       const result = await submitBusinessMutation(draft => {
         Object.keys(draft).forEach(key => { delete draft[key]; });
         Object.assign(draft, JSON.parse(JSON.stringify(candidate)));
       }, {
         kind: 'json-import',
-        operationId: 'json-import:' + fingerprint,
+        operationId: importOperationId,
         savingText: '正在原子恢复完整账本…'
       });
       if (result.ok) {
+        const confirmed = TTQCloudSync.compareConservation(candidate, S);
+        if (!confirmed.equal) {
+          updateCloudModeUI('云端已响应，但恢复后的守恒复核失败');
+          toast('⚠️ 云端确认后的金额或 fuel 守恒复核失败，请停止继续记账并联系管理员');
+          return;
+        }
+        Store.noteExplicitImport(S);
         applyTheme();
         renderCurrent();
-        toast('恢复完成，全部内容已由云端确认');
+        toast('恢复完成 · 云端确认后守恒通过');
       }
     } catch (e) { toast('文件读取或预检失败：' + (e.message || '未知错误')); }
   };
@@ -2158,13 +3082,36 @@ document.addEventListener('click', async e => {
   if ((el = q('[data-close]'))) { closeSheet(el.closest('.sheet')); return; }
   if ((el = q('[data-act]'))) {
     const act = el.dataset.act;
-    if (act === 'quick') { const t = S.trips.find(item => item.id === el.dataset.trip) || openTripsInScope(activeVehicleId())[0]; if (t) openQuick(t.id); }
-    else if (act === 'start') openStart();
+    if (act === 'quick') {
+      const t = S.trips.find(item => item.id === el.dataset.trip) || openTripsInScope(activeVehicleId())[0];
+      if (t) openQuick(t.id, {
+        source: el,
+        resolveSource: dataResolver('[data-act="quick"][data-trip]', 'trip', t.id)
+      });
+    }
+    else if (act === 'start') openStart({
+      source: el,
+      resolveSource: dataResolver('[data-act="start"]', 'act', 'start')
+    });
+    else if (act === 'openclose') {
+      const tripId = el.dataset.trip;
+      const trip = S.trips.find(item => item.id === tripId);
+      if (trip) openCloseSheet(trip.id, {
+        source: el,
+        resolveSource: dataResolver('[data-act="openclose"][data-trip]', 'trip', trip.id)
+      });
+    }
     else if (act === 'prevrep') { genReport(el.dataset.m); DevicePrefs.lastReportSeen = el.dataset.m; renderHome(); }
     else if (act === 'backup') exportData();
     else if (act === 'retry-sync') await reconnectCloud();
-    else if (act === 'addexp') openQuick(detailTripId);
-    else if (act === 'goclose') openCloseSheet(detailTripId);
+    else if (act === 'addexp') openQuick(detailTripId, {
+      source: el,
+      resolveSource: dataResolver('#sheet-trip [data-act="addexp"]', 'act', 'addexp')
+    });
+    else if (act === 'goclose') openCloseSheet(detailTripId, {
+      source: el,
+      resolveSource: dataResolver('#sheet-trip [data-act="goclose"]', 'act', 'goclose')
+    });
     else if (act === 'deltrip') {
       const t = S.trips.find(x => x.id === detailTripId);
       if (t) ask('删除' + (tripSeq(t) > 0 ? '第 ' + tripSeq(t) + ' 趟' : '这一趟') + '？这趟的所有记录都会没了').then(async ok => {
@@ -2192,7 +3139,16 @@ document.addEventListener('click', async e => {
     backfillVehicleId = el.dataset.bfVehicle;
     renderBackfillVehicleChips(); return;
   }
-  if ((el = q('[data-vehicle-edit]'))) { openVehicleEdit(el.dataset.vehicleEdit); return; }
+  if ((el = q('[data-vehicle-edit]'))) {
+    const vehicleId = el.dataset.vehicleEdit;
+    openVehicleEdit(vehicleId, {
+      source: el.closest('.row'),
+      resolveSource: dataResolver('[data-vehicle-row]', 'vehicleRow', vehicleId),
+      focusSource: el,
+      resolveFocus: dataResolver('[data-vehicle-edit]', 'vehicleEdit', vehicleId)
+    });
+    return;
+  }
   if ((el = q('[data-vehicle-toggle]'))) { toggleVehicle(el.dataset.vehicleToggle); return; }
   if ((el = q('[data-trip-vehicle]'))) {
     const t = S.trips.find(item => item.id === detailTripId); if (!t) return;
@@ -2208,11 +3164,24 @@ document.addEventListener('click', async e => {
     if (result.ok) renderTripDetail();
     return;
   }
-  if ((el = q('.trip-card[data-trip]'))) { detailTripId = el.dataset.trip; renderTripDetail(); openSheet($('#sheet-trip')); return; }
+  if ((el = q('.trip-card[data-trip]'))) {
+    detailTripId = el.dataset.trip;
+    const tripSource = dataResolver('.trip-card[data-trip]', 'trip', detailTripId);
+    renderTripDetail();
+    openSheet($('#sheet-trip'), { source: el, resolveSource: tripSource });
+    return;
+  }
   if ((el = q('[data-cat]'))) { quickCatId = el.dataset.cat; renderQuickChips(); return; }
-  if ((el = q('[data-amtcat]'))) { if (amtCfg) { amtCfg.catId = el.dataset.amtcat; renderAmtChips(); } return; }
+  if ((el = q('[data-amtcat]'))) { if (amtCfg) { amtCfg.catId = el.dataset.amtcat; renderAmtChips(); updateAmtMode(); } return; }
   if ((el = q('[data-newexp]'))) { openNewcat({ type: 'expense', mode: 'new', from: 'quick' }); return; }
-  if ((el = q('[data-amt]'))) { quickPadCtl.reset(el.dataset.amt); return; }
+  if ((el = q('[data-amt]'))) {
+    if (quickCatId === 'fuel') {
+      const input = $('#quickFuelForm [data-fuel-field="totalAmount"]');
+      input.value = el.dataset.amt;
+      updateFuelForm($('#quickFuelForm'), input);
+    } else quickPadCtl.reset(el.dataset.amt);
+    return;
+  }
   if ((el = q('[data-ic]'))) { newcatCtx.icon = el.dataset.ic; $$('#newcatIcons .chip').forEach(c => c.classList.toggle('on', c.dataset.ic === el.dataset.ic)); return; }
   if ((el = q('[data-catact]'))) {
     const act = el.dataset.catact, type = el.dataset.cattype, id = el.dataset.catid;
@@ -2235,7 +3204,10 @@ document.addEventListener('click', async e => {
     openAmtPad({ title: '填「' + c.name + '」', expr: cur ? String(cur) : '', okLabel: '✓ 填 好',
       canDelete: cur > 0,
       onSave: v => { closeCtx.inc[cid] = v; },
-      onDelete: () => { delete closeCtx.inc[cid]; } });
+      onDelete: () => { delete closeCtx.inc[cid]; } }, {
+      source: el,
+      resolveSource: dataResolver('#sheet-close [data-closeinc]', 'closeinc', cid)
+    });
     return;
   }
   if ((el = q('[data-inccat]'))) {
@@ -2254,7 +3226,10 @@ document.addEventListener('click', async e => {
         const nextTrip = draft.trips.find(item => item.id === detailTripId);
         if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
         nextTrip.incomes = nextTrip.incomes.filter(item => item.catId !== cid);
-      }, { kind: 'trip-income-delete', onSuccess: () => renderTripDetail() }) });
+      }, { kind: 'trip-income-delete', onSuccess: () => renderTripDetail() }) }, {
+      source: el,
+      resolveSource: dataResolver('#sheet-trip [data-inccat]', 'inccat', cid)
+    });
     return;
   }
   if ((el = q('[data-entry]'))) {
@@ -2262,8 +3237,8 @@ document.addEventListener('click', async e => {
     const en = t.expenses.find(x => x.id === el.dataset.entry); if (!en) return;
     openAmtPad({ title: '改「' + catById(en.catId).name + '」的一笔', expr: String(en.amount),
       showDate: true, date: en.date, showNote: true, note: en.note || '', okLabel: '✓ 保 存', canDelete: true,
-      catId: en.catId,
-      onSave: (v, d, n) => submitBusinessMutation(draft => {
+      catId: en.catId, originalCatId: en.catId, fuel: en.fuel || null,
+      onSave: (v, d, n, fuel) => submitBusinessMutation(draft => {
         const nextTrip = draft.trips.find(item => item.id === detailTripId);
         const nextEntry = nextTrip && nextTrip.expenses.find(item => item.id === en.id);
         if (!nextEntry) throw new Error('记录已不存在，请重新加载');
@@ -2271,12 +3246,17 @@ document.addEventListener('click', async e => {
         if (d) nextEntry.date = d;
         nextEntry.note = n;
         if (amtCfg.catId) nextEntry.catId = amtCfg.catId;
+        if (nextEntry.catId === 'fuel' && fuel) nextEntry.fuel = fuel;
+        else delete nextEntry.fuel;
       }, { kind: 'trip-expense-edit', onSuccess: () => renderTripDetail() }),
       onDelete: () => submitBusinessMutation(draft => {
         const nextTrip = draft.trips.find(item => item.id === detailTripId);
         if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
         nextTrip.expenses = nextTrip.expenses.filter(item => item.id !== en.id);
-      }, { kind: 'trip-expense-delete', onSuccess: () => renderTripDetail() }) });
+      }, { kind: 'trip-expense-delete', onSuccess: () => renderTripDetail() }) }, {
+      source: el,
+      resolveSource: dataResolver('#sheet-trip [data-entry]', 'entry', en.id)
+    });
     return;
   }
   if ((el = q('[data-maint]'))) {
@@ -2292,21 +3272,36 @@ document.addEventListener('click', async e => {
       }, { kind: 'maintenance-edit', onSuccess: () => renderMaint() }),
       onDelete: () => submitBusinessMutation(draft => {
         draft.maintenance = draft.maintenance.filter(item => item.id !== m.id);
-      }, { kind: 'maintenance-delete', onSuccess: () => renderMaint() }) });
+      }, { kind: 'maintenance-delete', onSuccess: () => renderMaint() }) }, {
+      source: el,
+      resolveSource: dataResolver('[data-maint]', 'maint', m.id)
+    });
     return;
   }
   if ((el = q('[data-go]'))) {
     const go = el.dataset.go;
-    if (go === 'vehicles') { renderVehicles(); openSheet($('#sheet-vehicles')); }
-    else if (go === 'period') openPeriod();
-    else if (go === 'cats') { renderCats(); openSheet($('#sheet-cats')); }
-    else if (go === 'backfill') openBackfill();
+    const origin = {
+      source: el,
+      resolveSource: dataResolver('[data-go]', 'go', go)
+    };
+    if (go === 'vehicles') { renderVehicles(); openSheet($('#sheet-vehicles'), origin); }
+    else if (go === 'period') openPeriod(origin);
+    else if (go === 'cats') { renderCats(); openSheet($('#sheet-cats'), origin); }
+    else if (go === 'backfill') openBackfill(origin);
     else if (go === 'export') exportData();
     else if (go === 'import') $('#importFile').click();
     else if (go === 'theme') toggleTheme();
     return;
   }
   if ((el = q('#nav button'))) { showView(el.dataset.v); return; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const target = e.target.closest('.trip-card[data-trip],[data-go][role="button"],[data-inccat],[data-entry],[data-maint],[data-closeinc]');
+  if (!target) return;
+  e.preventDefault();
+  target.click();
 });
 
 /* —— 手势：关闭当前最上层弹层（供左缘右滑 / 下拉复用） —— */
@@ -2330,7 +3325,7 @@ function initEdgeSwipe() {
     const t = e.touches[0];
     if (t.clientX > EDGE) return;                    /* 不是从左缘起滑 */
     /* 若起点落在可横向滚动的科目条/金额速选上，放行，避免与其滑动冲突 */
-    if (e.target.closest('.chips,.quick-amt,.pill-row,.pad,.slide-close')) return;
+    if (e.target.closest('.chips,.quick-amt,.pill-row,.pad,.close-action')) return;
     tracking = true; cancelled = false; sx = t.clientX; sy = t.clientY;
     const topId = sheetStack[sheetStack.length - 1];
     target = document.getElementById(topId);
@@ -2366,7 +3361,7 @@ function initEdgeSwipe() {
       done.style.transform = 'translateX(110%)'; done.style.opacity = '0';
       setTimeout(() => {
         done.style.transition = ''; done.style.transform = ''; done.style.opacity = '';
-        if (sheetStack[sheetStack.length - 1] === done.id) closeSheet(done);
+        if (sheetStack[sheetStack.length - 1] === done.id) closeSheet(done, { animate: false });
       }, 180);
     } else { resetDrag(); }
     target = null;
@@ -2397,7 +3392,7 @@ function initPullDown() {
     if (dy >= NEED) {
       el.style.transform = 'translateY(100%)'; el.style.opacity = '0';
       setTimeout(() => { el.style.transition = ''; el.style.transform = ''; el.style.opacity = '';
-        if (sheetStack[sheetStack.length - 1] === el.id) closeSheet(el); }, 200);
+        if (sheetStack[sheetStack.length - 1] === el.id) closeSheet(el, { animate: false }); }, 200);
     } else { el.style.transform = ''; setTimeout(() => el.style.transition = '', 220); }
   }, { passive: true });
 }
@@ -2432,14 +3427,14 @@ function runSelfTests() {
   eq(Array.isArray(md.maintenance), true, 'migrate 补齐缺失的 maintenance');
   eq(migrate(null).trips.length, 0, 'migrate 空数据回默认');
   eq(typeof migrate(null).settings.lastBackupAt, 'string', 'migrate 合并新增 settings 字段');
-  eq(md.schemaVersion, 2, 'v1 备份迁移到 schema v2');
+  eq(md.schemaVersion, 3, '旧备份迁移到 schema v3');
   eq(md.vehicles[0].name, '原有车辆', 'v1 备份自动建立原有车辆');
   eq(md.trips[0].vehicleId, md.vehicles[0].id, 'v1 趟次自动归入原有车辆');
 
   /* —— 统计口径（换夹具数据，测完还原）—— */
   const real = S;
   S = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     settings: Object.assign(defaultData().settings, { activeVehicleId: 'all', periodStartDate: '2026-01-01', periodEndDate: '2026-12-31' }),
     categories: defaultData().categories,
     vehicles: [
@@ -2452,7 +3447,7 @@ function runSelfTests() {
         incomes: [{ id: 'i1', catId: 'cargo', amount: 3000, date: '2026-01-03' }] },
       { id: 'b', vehicleId: 'v1', startDate: '2026-01-05', endDate: '2026-01-09', status: 'closed', createdAt: '2',
         expenses: [{ id: 'e2', catId: 'toll', amount: 500, date: '2026-01-06', note: '' },
-                   { id: 'e3', catId: 'fuel', amount: 800, date: '2026-01-07', note: '' }],
+                   { id: 'e3', catId: 'fuel', amount: 800, date: '2026-01-07', note: '', fuel: { unitPrice: '8', liters: '100' } }],
         incomes: [{ id: 'i2', catId: 'cargo', amount: 2000, date: '2026-01-09' }] },
       { id: 'old', vehicleId: 'v1', startDate: '2026-01-01', endDate: '2026-01-04', status: 'closed', createdAt: '9',
         expenses: [], incomes: [{ id: 'i3', catId: 'cargo', amount: 100, date: '2026-01-04' }] },
@@ -2476,6 +3471,11 @@ function runSelfTests() {
     eq(periodStats('all').profit, 3300, 'periodStats 汇总全部车辆利润');
     eq(periodStats('v1').profit, 2800, 'periodStats 单车利润互相隔离');
     eq(periodStats('all').maint, 800, '维修费按车辆汇总且不进趟次利润');
+    eq(periodStats('all').netProfit, 2500, '净利润 = 趟次利润 - 维修保养');
+    const reportSmoke = TTQDomain.buildReportSummary(S, { start: periodStart(), end: periodEnd(), vehicleId: 'all' });
+    eq(reportSmoke.financial.netProfitCents, 250000, '报告使用整数净利润口径');
+    eq(reportSmoke.fuel.volumeMl, 100000, '报告结构化油量保持 3 位精度');
+    eq(reportSmoke.fuel.coverage.legacyRecords, 1, '报告提示旧油费覆盖缺口');
     eq(periodMonthProfits('all').values[0], 3300, '账期月度利润按到家月份合计');
     eq(commonAmounts('fuel'), [800, 1000], 'commonAmounts 按出现次数排序');
     eq(tripDays(S.trips[1]), 5, 'tripDays 天数含首尾');
@@ -2490,6 +3490,8 @@ function runSelfTests() {
   try { lastReport = { title: '自检报告', text: text }; } catch (e) {}
   const rt = $('#reportTitle'), rx = $('#reportText'), sh = $('#sheet-report');
   if (rt) rt.textContent = '自检报告';
+  const cards = $('#reportCards');
+  if (cards) cards.replaceChildren();
   if (rx) rx.textContent = text;
   if (sh) openSheet(sh);
   return fails.length === 0;
@@ -2498,11 +3500,15 @@ window.runSelfTests = runSelfTests;
 
 function migrationSummaryText(state) {
   const summary = TTQCloudSync.summarizeState(state);
+  const preflight = TTQCloudSync.compareConservation(summary, TTQCloudSync.summarizeState(migrate(state)));
   return [
     '车辆 ' + summary.counts.vehicles + ' 辆 · 趟次 ' + summary.counts.trips + ' 趟',
     '收入 ' + summary.counts.tripIncomes + ' 笔，共 ¥' + fmt(summary.amounts.tripIncomes),
     '支出 ' + summary.counts.tripExpenses + ' 笔，共 ¥' + fmt(summary.amounts.tripExpenses),
-    '维修 ' + summary.counts.maintenance + ' 笔，共 ¥' + fmt(summary.amounts.maintenance)
+    '维修 ' + summary.counts.maintenance + ' 笔，共 ¥' + fmt(summary.amounts.maintenance),
+    'fuel：结构化 ' + summary.fuel.structuredRecords + ' 条 · 旧油费 ' + summary.fuel.legacyRecords + ' 条',
+    '结构化油费 ¥' + moneyCents(summary.fuel.structuredCostCents) + ' · ' + volumeMl(summary.fuel.totalVolumeMl) + ' 升',
+    '迁移前守恒预检：' + (preflight.equal ? '通过' : '失败')
   ];
 }
 
@@ -2550,38 +3556,44 @@ function migrationChoice(options) {
 }
 
 async function chooseInitialState(opened) {
+  const generation = opened.generation;
+  Store.assertGeneration(generation);
   const stateEl = $('#saveState');
   const pendingCache = TTQCloudSync.inspectPendingCache(opened.cache, opened.remote);
   if (pendingCache.status === 'safe') {
     const cachedState = migrate(opened.cache.state);
-    const proposal = migrate(Store.legacyPendingProposal(opened.cache, opened.remote));
+    const proposal = migrate(Store.pendingProposal(opened.cache, opened.remote, generation));
     const choice = await migrationChoice({
-      title: '发现旧版留下的待上传内容',
-      text: '云端相关记录尚未变化，但新版本不会自动上传。请明确选择是否现在联网核对并提交。',
+      title: '发现当前账号的待确认内容',
+      text: '这份内容只属于刚刚核对的车队成员；是否现在联网核对并提交？',
       summary: migrationSummaryText(cachedState),
       primaryLabel: '在线核对并上传',
       secondaryLabel: '只进入云端账本',
       localState: cachedState,
-      note: '上传会使用旧基线的版本保护；也可先导出 JSON。选择只进入云端时，旧内容不会覆盖云端。'
+      note: '上传会使用原基线的版本保护；选择只进入云端时，待确认内容不会覆盖云端。'
     });
-    Store.useRemote(opened.remote);
+    Store.assertGeneration(generation);
+    Store.useRemote(opened.remote, generation);
     if (choice === 'primary') {
       if (stateEl) stateEl.textContent = '正在核对并提交旧版待上传内容…';
       const fingerprint = TTQCloudSync.snapshotFingerprint(proposal)
         .replace(/[^A-Za-z0-9._:-]/g, '-');
       const uploaded = await Store.commit(proposal, {
-        kind: 'legacy-cache',
-        operationId: 'legacy-cache:' + fingerprint
+        kind: 'scoped-cache',
+        operationId: 'scoped-cache:' + fingerprint
       });
+      Store.assertGeneration(generation);
       if (!uploaded.ok) throw uploaded.error || new Error('旧版待上传内容未能安全提交');
-      Store.clearLegacyCache();
-      if (stateEl) stateEl.textContent = '旧版待上传内容已由云端确认';
+      const confirmed = TTQCloudSync.compareConservation(proposal, uploaded.state);
+      if (!confirmed.equal) throw new Error('旧版待上传内容云端确认后守恒失败');
+      Store.clearScopedCache();
+      if (stateEl) stateEl.textContent = '待确认内容已由云端确认 · 守恒通过';
       return migrate(uploaded.state);
     }
     Store.preserveConflict(cachedState);
-    Store.clearLegacyCache();
-    if (stateEl) stateEl.textContent = '已进入云端账本 · 旧版内容未上传';
-    return migrate(Store.useRemote(opened.remote));
+    Store.clearScopedCache();
+    if (stateEl) stateEl.textContent = '已进入云端账本 · 待确认内容未上传';
+    return migrate(Store.useRemote(opened.remote, generation));
   }
   if (pendingCache.status === 'conflict') {
     const cachedState = migrate(opened.cache.state);
@@ -2594,104 +3606,70 @@ async function chooseInitialState(opened) {
       localState: cachedState,
       note: '进入云端时仍会另存一份设备冲突缓存；也建议先导出 JSON，再人工核对。'
     });
+    Store.assertGeneration(generation);
     if (choice === 'secondary') {
       location.href = '/';
       throw new Error('设备待上传改动与云端冲突');
     }
     if (stateEl) stateEl.textContent = '已进入云端账本 · 设备冲突改动未上传';
     Store.preserveConflict(cachedState);
-    Store.clearLegacyCache();
-    return migrate(Store.useRemote(opened.remote));
+    Store.clearScopedCache();
+    return migrate(Store.useRemote(opened.remote, generation));
   }
-  if (opened.cache) Store.clearLegacyCache();
+  if (opened.cache) Store.clearScopedCache();
 
-  const localRaw = opened.legacy && !Store.isLegacyHandled(opened.legacy)
-    ? opened.legacy
-    : null;
-  const localState = localRaw ? migrate(localRaw) : null;
-  const decision = TTQCloudSync.decideInitialMigration(localState, opened.remote);
-
-  if (decision.status === 'use-cloud') {
-    if (stateEl) stateEl.textContent = '已连接云端账本';
-    return migrate(Store.useRemote(opened.remote));
-  }
-
-  if (decision.status === 'empty') {
+  if (opened.remote.cloudEmpty) {
     const fresh = defaultData();
     const seeded = await Store.uploadInitial(fresh);
+    Store.assertGeneration(generation);
     if (!seeded.ok) throw seeded.error || new Error('新账本暂时无法保存');
-    if (stateEl) stateEl.textContent = '新账本已保存到云端';
+    if (stateEl) stateEl.textContent = '新账本已保存到云端 · 守恒通过';
     return migrate(seeded.state);
   }
-
-  if (decision.status === 'offer-upload') {
-    const choice = await migrationChoice({
-      title: '发现这台设备上的旧账',
-      text: '云端账本还是空的。要不要把旧账上传？上传前会逐项核对，旧的 localStorage 也会继续保留。',
-      summary: migrationSummaryText(localState),
-      primaryLabel: '核对并上传到云端',
-      secondaryLabel: '先建一个新的云端账本',
-      localState,
-      note: '两边都有数据时不会自动覆盖；这次上传也可以重复执行，已成功的记录不会重复记账。'
-    });
-    if (choice === 'primary') {
-      if (stateEl) stateEl.textContent = '正在核对并上传旧账…';
-      const uploaded = await Store.uploadInitial(localState);
-      if (!uploaded.ok) throw uploaded.error || new Error('旧账上传失败');
-      if (stateEl) stateEl.textContent = '旧账已保存到云端';
-      Store.markLegacyHandled(opened.legacy);
-      return migrate(uploaded.state);
-    }
-    const fresh = defaultData();
-    const seeded = await Store.uploadInitial(fresh);
-    if (!seeded.ok) throw seeded.error || new Error('新账本暂时无法保存');
-    if (stateEl) stateEl.textContent = '已新建云端账本 · 本机旧账未改动';
-    Store.markLegacyHandled(opened.legacy);
-    return migrate(seeded.state);
-  }
-
-  const choice = await migrationChoice({
-    title: '本机和云端都有账',
-    text: '为防止覆盖，这里不会自动合并或上传。建议先导出本机备份，再明确进入云端账本。',
-    summary: migrationSummaryText(localState),
-    primaryLabel: '进入云端账本（不覆盖本机）',
-    secondaryLabel: '返回登录页',
-    localState,
-    note: '本机旧账仍保留在这个浏览器里；需要合并时请先导出备份，之后用“恢复数据”明确导入。'
-  });
-  if (choice === 'secondary') {
-    location.href = '/';
-    throw new Error('用户暂不进入云端账本');
-  }
-  if (stateEl) stateEl.textContent = '已进入云端账本 · 本机旧账未上传';
-  const remoteState = migrate(Store.useRemote(opened.remote));
-  Store.markLegacyHandled(opened.legacy);
-  return remoteState;
+  if (stateEl) stateEl.textContent = '已连接云端账本';
+  return migrate(Store.useRemote(opened.remote, generation));
 }
 
 /* —— 静态控件绑定 + 启动 —— */
+sessionCoordinator = TTQAuthClient.createSessionCoordinator({
+  window,
+  storage: localStorage,
+  onLock: () => invalidateSession('bfcache', {
+    clearScope: false,
+    text: '正在重新核对账号和车队归属。'
+  }),
+  onRestore: () => location.reload(),
+  onPeerSignal: action => {
+    if (action === 'logout') {
+      invalidateSession('logout', { clearScope: true, navigate: false });
+      requestLogout();
+      return;
+    }
+    invalidateSession('session-invalid', { clearScope: true, navigate: true });
+  }
+});
+
 (async function init() {
   let opened;
   try {
     opened = await Store.open();
-    S = await chooseInitialState(opened);
+    const initialState = await chooseInitialState(opened);
+    if (opened.generation !== Store.generation || !Store.online) return;
+    S = initialState;
   } catch (error) {
     console.error('账本启动失败', error);
-    S = defaultData();
+    if (error && error.status === 401) return;
     applyTheme();
-    await migrationChoice({
+    clearSensitiveClientState({ clearScope: false });
+    showSessionLock({
       title: '暂时连不上云端账本',
-      text: '现在没有可安全使用的设备缓存。请检查网络后重新加载；在连上之前不会把空白账本当成你的云端数据。',
-      summary: '这次没有上传，也没有覆盖任何账目。',
-      primaryLabel: '重新加载',
-      secondaryLabel: '返回登录页',
-      note: '若旧浏览器里有账，原 localStorage 仍保留；重新确认身份前不会展示或导出。'
-    }).then(choice => {
-      location.href = choice === 'primary' ? '/ledger' : '/';
+      text: '没有经过身份核对的设备账本不会显示。请检查网络后重试。',
+      retry: () => location.reload(),
+      login: () => location.replace('/')
     });
     return;
   }
-  DevicePrefs.init(S);
+  DevicePrefs.init(S, Store.storageScope);
   applyTheme();
   updateCloudModeUI('已连接云端账本');
   $$('.js-ver').forEach(el => el.textContent = 'v' + APP_VER);
@@ -2713,14 +3691,29 @@ async function chooseInitialState(opened) {
       }
     }
   });
+  $('#quickFuelForm').addEventListener('input', event => updateFuelForm($('#quickFuelForm'), event.target));
+  $('#amtFuelForm').addEventListener('input', event => updateFuelForm($('#amtFuelForm'), event.target));
+  initFuelKeyboard($('#quickFuelForm'), $('#quickFuelSave'));
+  initFuelKeyboard($('#amtFuelForm'), $('#amtFuelSave'));
+  $('#quickFuelSave').addEventListener('click', quickFuelSave);
+  $('#amtFuelSave').addEventListener('click', saveAmtFuel);
 
   $('#themeBtn').addEventListener('click', toggleTheme);
-  $('#btnBackfill').addEventListener('click', openBackfill);
-  $('#btnPeriod').addEventListener('click', openPeriod);
+  $('#btnBackfill').addEventListener('click', e => openBackfill({
+    source: e.currentTarget,
+    resolveSource: () => $('#btnBackfill')
+  }));
+  $('#btnPeriod').addEventListener('click', e => openPeriod({
+    source: e.currentTarget,
+    resolveSource: () => $('#btnPeriod')
+  }));
   $('#btnPeriodSave').addEventListener('click', savePeriod);
   $('#periodStart').addEventListener('input', updatePeriodTip);
   $('#periodEnd').addEventListener('input', updatePeriodTip);
-  $('#btnAddVehicle').addEventListener('click', () => openVehicleEdit());
+  $('#btnAddVehicle').addEventListener('click', e => openVehicleEdit(null, {
+    source: e.currentTarget,
+    resolveSource: () => $('#btnAddVehicle')
+  }));
   $('#btnVehicleSave').addEventListener('click', saveVehicle);
   $('#btnStartGo').addEventListener('click', async () => {
     if (!guardOnce()) return;
@@ -2759,10 +3752,11 @@ async function chooseInitialState(opened) {
   });
   $('#quickDate').addEventListener('change', updateQuickDateBtn);
   $('#closeDate').addEventListener('change', renderCloseRows);
-  initSlide($('#closeSlide'), doCloseTrip);
+  $('#btnCloseReview').addEventListener('click', openCloseConfirmation);
+  $('#btnCloseConfirm').addEventListener('click', confirmCloseTrip);
   $('#sheet-backfill').addEventListener('input', bfUpdateProfit);
   $('#btnBfSave').addEventListener('click', bfSave);
-  $('#btnAddMaint').addEventListener('click', () => {
+  $('#btnAddMaint').addEventListener('click', e => {
     if (!canStartBusinessWrite()) return;
     const vehicleId = activeVehicleId();
     if (vehicleId === 'all') { toast('先在上方选一辆车，再记维修保养'); return; }
@@ -2783,13 +3777,17 @@ async function chooseInitialState(opened) {
           toast('已记上');
         }
       })
+    }, {
+      source: e.currentTarget,
+      resolveSource: () => $('#btnAddMaint')
     });
   });
   $('#btnAddExpCat').addEventListener('click', () => openNewcat({ type: 'expense', mode: 'new' }));
   $('#btnAddIncCat').addEventListener('click', () => openNewcat({ type: 'income', mode: 'new' }));
   $('#btnNewcatSave').addEventListener('click', saveNewcat);
-  $('#btnMonthRep').addEventListener('click', () => { const m = $('#repMonth').value; if (m) genReport(m); else toast('先选月份'); });
-  $('#btnYearRep').addEventListener('click', () => genReport('period'));
+  $('#btnMonthRep').addEventListener('click', () => genReport($('#repMonth').value));
+  $('#btnPeriodRep').addEventListener('click', () => genReport('period'));
+  $('#btnYearRep').addEventListener('click', () => genReport({ year: $('#repYear').value.trim() }));
   $('#btnCopyRep').addEventListener('click', copyReport);
   $('#btnShareRep').addEventListener('click', shareReport);
   $('#importFile').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; });
@@ -2816,16 +3814,22 @@ async function chooseInitialState(opened) {
       updateCloudModeUI('正在等待本次保存确认，确认前不会退出…');
       await Store.whenIdle();
     }
+    if (!S) return;
     if (Store.hasPending) {
-      const shouldExport = await ask('还有一笔没有收到云端确认，不能直接退出。是否先导出这份未确认内容供核对？');
-      if (shouldExport && Store.pendingState)
-        exportSnapshot(Store.pendingState, '未确认内容');
-      updateCloudModeUI();
-      return;
+      const pending = Store.pendingState;
+      const shouldExit = await ask('还有一笔没有收到云端确认。是否先导出这份内容供核对，然后继续退出？');
+      if (!shouldExit) { updateCloudModeUI(); return; }
+      if (pending) exportSnapshot(pending, '未确认内容');
     }
-    location.assign('/auth/logout?return_to=%2F');
+    invalidateSession('logout', {
+      broadcast: true,
+      clearScope: true,
+      text: '账本已锁定，正在结束服务器会话。'
+    });
+    await requestLogout();
   });
   showView('home');
+  unlockSession();
   if (location.hash === '#test') setTimeout(runSelfTests, 60);
 })();
 </script>

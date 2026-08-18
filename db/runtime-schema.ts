@@ -148,12 +148,20 @@ export const RUNTIME_SCHEMA_STATEMENTS = [
     trip_id TEXT NOT NULL,
     category_id TEXT NOT NULL,
     amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+    fuel_unit_price_x10000 INTEGER,
+    fuel_volume_ml INTEGER,
     date TEXT NOT NULL,
     note TEXT NOT NULL DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+    CONSTRAINT trip_expenses_fuel_metadata_check CHECK (
+      (fuel_unit_price_x10000 IS NULL AND fuel_volume_ml IS NULL) OR
+      (category_id = 'fuel' AND
+       fuel_unit_price_x10000 IS NOT NULL AND fuel_volume_ml IS NOT NULL AND
+       fuel_unit_price_x10000 BETWEEN 1 AND 9999999 AND fuel_volume_ml BETWEEN 1 AND 100000000)
+    ),
     PRIMARY KEY (fleet_id, id),
     CONSTRAINT trip_expenses_trip_fk
       FOREIGN KEY (fleet_id, trip_id)
@@ -225,6 +233,75 @@ export const RUNTIME_SCHEMA_STATEMENTS = [
   ...INVARIANT_SCHEMA_STATEMENTS,
 ] as const;
 
+export const RUNTIME_FUEL_COLUMN_STATEMENTS = {
+  fuel_unit_price_x10000:
+    "ALTER TABLE trip_expenses ADD COLUMN fuel_unit_price_x10000 INTEGER CHECK (fuel_unit_price_x10000 IS NULL OR fuel_unit_price_x10000 BETWEEN 1 AND 9999999)",
+  fuel_volume_ml:
+    "ALTER TABLE trip_expenses ADD COLUMN fuel_volume_ml INTEGER CHECK (fuel_volume_ml IS NULL OR fuel_volume_ml BETWEEN 1 AND 100000000)",
+} as const;
+
+export const RUNTIME_FUEL_INVARIANT_STATEMENTS = [
+  `CREATE TRIGGER IF NOT EXISTS trip_expenses_fuel_metadata_insert_check
+    BEFORE INSERT ON trip_expenses
+    FOR EACH ROW
+    WHEN NOT (
+      (NEW.fuel_unit_price_x10000 IS NULL AND NEW.fuel_volume_ml IS NULL) OR
+      (NEW.category_id = 'fuel' AND
+       NEW.fuel_unit_price_x10000 IS NOT NULL AND NEW.fuel_volume_ml IS NOT NULL AND
+       NEW.fuel_unit_price_x10000 BETWEEN 1 AND 9999999 AND NEW.fuel_volume_ml BETWEEN 1 AND 100000000)
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'trip_expenses_fuel_metadata_check');
+    END`,
+  `CREATE TRIGGER IF NOT EXISTS trip_expenses_fuel_metadata_update_check
+    BEFORE UPDATE OF category_id, fuel_unit_price_x10000, fuel_volume_ml ON trip_expenses
+    FOR EACH ROW
+    WHEN NOT (
+      (NEW.fuel_unit_price_x10000 IS NULL AND NEW.fuel_volume_ml IS NULL) OR
+      (NEW.category_id = 'fuel' AND
+       NEW.fuel_unit_price_x10000 IS NOT NULL AND NEW.fuel_volume_ml IS NOT NULL AND
+       NEW.fuel_unit_price_x10000 BETWEEN 1 AND 9999999 AND NEW.fuel_volume_ml BETWEEN 1 AND 100000000)
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'trip_expenses_fuel_metadata_check');
+    END`,
+] as const;
+
+type FuelColumnName = keyof typeof RUNTIME_FUEL_COLUMN_STATEMENTS;
+
+async function fuelColumnNames(d1: D1Database): Promise<Set<string>> {
+  const result = await d1
+    .prepare("PRAGMA table_info('trip_expenses')")
+    .all<{ name: string }>();
+  return new Set(
+    (result.results || []).map((column) => String(column.name)),
+  );
+}
+
+async function ensureFuelColumns(d1: D1Database): Promise<void> {
+  let existing = await fuelColumnNames(d1);
+  for (const [column, statement] of Object.entries(
+    RUNTIME_FUEL_COLUMN_STATEMENTS,
+  ) as [FuelColumnName, string][]) {
+    if (existing.has(column)) continue;
+    try {
+      await d1.prepare(statement).run();
+      existing.add(column);
+    } catch (error: unknown) {
+      // Another isolate may have added this exact column after our PRAGMA.
+      // Re-check the resulting schema; never treat an unrelated ALTER failure
+      // as success merely because it resembles a duplicate-column error.
+      existing = await fuelColumnNames(d1);
+      if (!existing.has(column)) throw error;
+    }
+  }
+  await d1.batch(
+    RUNTIME_FUEL_INVARIANT_STATEMENTS.map((statement) =>
+      d1.prepare(statement),
+    ),
+  );
+}
+
 let schemaPromise: Promise<void> | null = null;
 
 export function ensureSchema(): Promise<void> {
@@ -234,7 +311,7 @@ export function ensureSchema(): Promise<void> {
       .batch(
         RUNTIME_SCHEMA_STATEMENTS.map((statement) => d1.prepare(statement)),
       )
-      .then(() => undefined)
+      .then(() => ensureFuelColumns(d1))
       .catch((error: unknown) => {
         schemaPromise = null;
         throw error;

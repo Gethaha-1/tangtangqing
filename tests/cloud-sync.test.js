@@ -6,7 +6,7 @@ const Cloud = globalThis.TTQCloudSync;
 
 function stateFixture() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     settings: {
       theme: 'night',
       lastReportSeen: '2026-06',
@@ -66,7 +66,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test('schema v2 拆成独立记录并能无损重组现有状态', () => {
+test('schema v3 拆成独立记录并能无损重组现有状态', () => {
   const state = stateFixture();
   const records = Cloud.normalizeState(state);
   assert.deepEqual(
@@ -110,6 +110,50 @@ test('不同车辆和不同子账目只产生自己的 put，不覆盖整趟或�
   assert.equal(operations.some(item => item.id === 'v1'), false);
 });
 
+test('司机裁剪视图只同步业务记录，不生成 owner-only 或本地兜底写入', () => {
+  const driver = stateFixture();
+  driver.settings._ownerRecordsWritable = false;
+  driver.settings.activeVehicleId = 'all';
+  driver.vehicles = [driver.vehicles[0]];
+  driver.trips = [driver.trips[0]];
+  driver.maintenance = driver.maintenance.filter(item => item.vehicleId === 'v1');
+  const baseline = Cloud.normalizeState(driver, Object.fromEntries(
+    Cloud.normalizeState(driver).map(item => [Cloud.recordKey(item.type, item.id), 2])
+  ));
+  const proposal = clone(driver);
+  proposal.settings.activeVehicleId = 'hidden-owner-vehicle';
+  proposal.settings.periodStartDate = '2026-04-01';
+  proposal.categories.expense[0].name = '司机不应改科目';
+  proposal.vehicles.push({
+    id: 'vehicle_legacy', name: '不应上传的本地兜底', plateNo: '', active: true
+  });
+  proposal.trips[0].expenses[1].amount = 16;
+  const operations = Cloud.planSync(proposal, baseline);
+  assert.deepEqual(
+    operations.map(item => [item.op, item.type, item.id]),
+    [['put', 'trip_expense', 't1:e2']]
+  );
+
+  const zeroAssignment = clone(driver);
+  zeroAssignment.vehicles = [];
+  zeroAssignment.trips = [];
+  zeroAssignment.maintenance = [];
+  const emptyBaseline = Cloud.normalizeState(zeroAssignment);
+  const hydrated = Cloud.hydrateState(emptyBaseline, stateFixture());
+  assert.deepEqual(hydrated.vehicles, []);
+  assert.deepEqual(Cloud.planSync(hydrated, emptyBaseline), []);
+
+  const owner = stateFixture();
+  const ownerBaseline = Cloud.normalizeState(owner);
+  const ownerProposal = clone(owner);
+  ownerProposal.settings.periodStartDate = '2026-04-01';
+  ownerProposal.vehicles[0].name = '车主改名';
+  assert.deepEqual(
+    Cloud.planSync(ownerProposal, ownerBaseline).map(item => item.type).sort(),
+    ['fleet_settings', 'vehicle']
+  );
+});
+
 test('删除生成显式 delete 操作且版本原样透传', () => {
   const before = stateFixture();
   const baseline = Cloud.normalizeState(before, {
@@ -146,6 +190,7 @@ test('独立 versions 参数优先于 baseline 版本', () => {
 
 test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
   const before = stateFixture();
+  before.schemaVersion = 2;
   before.trips[0].expenses[0].amount = '800.25';
   before.maintenance[0].amount = '300.10';
   const records = Cloud.normalizeState(before);
@@ -168,11 +213,218 @@ test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
       tripExpenses: 815.25,
       tripIncomes: 2200.5,
       maintenance: 300.1
+    },
+    exactAmounts: {
+      tripExpensesCents: '81525',
+      tripIncomesCents: '220050',
+      maintenanceCents: '30010'
+    },
+    fuel: {
+      structuredRecords: 0,
+      legacyRecords: 1,
+      totalVolumeMl: 0,
+      structuredCostCents: 0,
+      fingerprint: Cloud.snapshotFingerprint([])
     }
   });
   assert.equal(restored.trips[0].expenses[0].amount, '800.25');
   assert.equal(restored.maintenance[0].amount, '300.10');
   assert.deepEqual(Cloud.planSync(restored, records), []);
+});
+
+test('v2 hydrate 升 v3 不回填 fuel，也不产生全量 put', () => {
+  const v2 = stateFixture();
+  v2.schemaVersion = 2;
+  const records = Cloud.normalizeState(v2);
+  const hydrated = Cloud.hydrateState(records);
+  assert.equal(hydrated.schemaVersion, 3);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(hydrated.trips[0].expenses[0], 'fuel'),
+    false
+  );
+  assert.deepEqual(Cloud.planSync(hydrated, records), []);
+});
+
+test('结构化 fuel 在 state/record/ack 往返中 canonical，且仅元数据变化会 put', () => {
+  const before = stateFixture();
+  before.trips[0].expenses[0].amount = 300;
+  before.trips[0].expenses[0].fuel = { unitPrice: '7.5000', liters: '40.000' };
+  const baseline = Cloud.normalizeState(before, { 'trip_expense:t1:e1': 4 });
+  const fuelRecord = baseline.find(item => item.id === 't1:e1');
+  assert.deepEqual(fuelRecord.data.fuel, { unitPrice: '7.5', liters: '40' });
+  assert.deepEqual(Cloud.hydrateState(baseline).trips[0].expenses[0].fuel, {
+    unitPrice: '7.5',
+    liters: '40'
+  });
+
+  const changed = clone(before);
+  changed.trips[0].expenses[0].fuel = { unitPrice: '6.0000', liters: '50.000' };
+  const operations = Cloud.planSync(changed, baseline);
+  assert.deepEqual(operations.map(item => [item.op, item.type, item.id]), [
+    ['put', 'trip_expense', 't1:e1']
+  ]);
+  assert.deepEqual(operations[0].data.fuel, { unitPrice: '6', liters: '50' });
+
+  const acknowledged = Cloud.applySyncResults(baseline, operations, [{
+    op: 'put',
+    type: 'trip_expense',
+    id: 't1:e1',
+    status: 'applied',
+    version: 5,
+    data: Object.assign({}, operations[0].data, {
+      fuel: { unitPrice: 6, liters: 50 }
+    })
+  }]);
+  assert.deepEqual(
+    acknowledged.find(item => item.id === 't1:e1').data.fuel,
+    { unitPrice: '6', liters: '50' }
+  );
+  assert.deepEqual(Cloud.planSync(changed, acknowledged), []);
+});
+
+test('conflict、远端合并和成功回执都不会丢失 fuel', () => {
+  const before = stateFixture();
+  before.trips[0].expenses[0].amount = 300;
+  before.trips[0].expenses[0].fuel = { unitPrice: '7.5', liters: '40' };
+  const baseline = Cloud.normalizeState(before, { 'trip_expense:t1:e1': 2 });
+  const changed = clone(before);
+  changed.trips[0].expenses[0].fuel = { unitPrice: '6', liters: '50' };
+  const conflictRemote = clone(baseline);
+  conflictRemote.find(item => item.id === 't1:e1').version = 3;
+  const inspection = Cloud.inspectPendingCache(
+    { state: changed, baselineRecords: baseline },
+    { records: conflictRemote }
+  );
+  assert.equal(inspection.status, 'conflict');
+  assert.deepEqual(inspection.operations[0].data.fuel, { unitPrice: '6', liters: '50' });
+
+  const remoteState = clone(before);
+  remoteState.maintenance.push({
+    id: 'remote-fuel-peer', vehicleId: 'v2', date: '2026-07-09', amount: 1, note: ''
+  });
+  const merged = Cloud.mergeRemoteState(
+    changed,
+    baseline,
+    { records: Cloud.normalizeState(remoteState) }
+  );
+  assert.deepEqual(merged.trips[0].expenses[0].fuel, { unitPrice: '6', liters: '50' });
+  assert.equal(merged.maintenance.some(item => item.id === 'remote-fuel-peer'), true);
+});
+
+test('fuel 守恒 fingerprint 对顺序稳定，并检测丢失与逐记录互换', () => {
+  const before = stateFixture();
+  before.trips[0].expenses = [
+    { id: 'fuel-a', catId: 'fuel', amount: 300, date: '2026-07-01', note: '', fuel: { unitPrice: '7.5', liters: '40' } },
+    { id: 'fuel-b', catId: 'fuel', amount: 300, date: '2026-07-02', note: '', fuel: { unitPrice: '6', liters: '50' } }
+  ];
+  const reordered = clone(before);
+  reordered.trips[0].expenses.reverse();
+  assert.equal(Cloud.compareSummaries(before, reordered).equal, true);
+
+  const lost = clone(before);
+  delete lost.trips[0].expenses[0].fuel;
+  const lossComparison = Cloud.compareSummaries(before, lost);
+  assert.equal(lossComparison.equal, false);
+  assert.ok(lossComparison.differences.some(item => item.field === 'fuel.fingerprint'));
+
+  const swapped = clone(before);
+  const firstFuel = swapped.trips[0].expenses[0].fuel;
+  swapped.trips[0].expenses[0].fuel = swapped.trips[0].expenses[1].fuel;
+  swapped.trips[0].expenses[1].fuel = firstFuel;
+  const swapComparison = Cloud.compareMigrationTarget(
+    before,
+    { records: Cloud.normalizeState(swapped) }
+  );
+  assert.equal(swapComparison.equal, false);
+  assert.ok(swapComparison.differences.some(item => item.field === 'fuel.fingerprint'));
+
+  const malformed = clone(before);
+  delete malformed.trips[0].expenses[0].fuel.unitPrice;
+  assert.throws(() => Cloud.normalizeState(malformed), /fuel 元数据必须完整/);
+
+  const toleranceSwap = clone(before);
+  toleranceSwap.trips[0].expenses[1].amount = 300.01;
+  const swappedAmounts = clone(toleranceSwap);
+  swappedAmounts.trips[0].expenses[0].amount = 300.01;
+  swappedAmounts.trips[0].expenses[1].amount = 300;
+  const toleranceComparison = Cloud.compareSummaries(toleranceSwap, swappedAmounts);
+  assert.equal(toleranceComparison.equal, false);
+  assert.ok(toleranceComparison.differences.some(item => item.field === 'fuel.fingerprint'));
+
+  const reassigned = Cloud.normalizeState(before);
+  reassigned.find(item => item.id === 't1:fuel-a').data.tripId = 't2';
+  const ownershipComparison = Cloud.compareMigrationTarget(before, { records: reassigned });
+  assert.equal(ownershipComparison.equal, false);
+  assert.ok(ownershipComparison.differences.some(item => item.field === 'fuel.fingerprint'));
+});
+
+test('成功 put 回执必须保留 operation 数据，允许 canonical fuel 与等价金额类型', () => {
+  const before = stateFixture();
+  before.trips[0].expenses[0].amount = 300;
+  before.trips[0].expenses[0].fuel = { unitPrice: '7.5', liters: '40' };
+  const baseline = Cloud.normalizeState(before, { 'trip_expense:t1:e1': 4 });
+  const changed = clone(before);
+  changed.trips[0].expenses[0].fuel = { unitPrice: '6', liters: '50' };
+  const operation = Cloud.planSync(changed, baseline)[0];
+  const baselineSnapshot = clone(baseline);
+  const resultFor = data => [{
+    op: 'put',
+    type: operation.type,
+    id: operation.id,
+    status: 'applied',
+    version: 5,
+    data
+  }];
+
+  const mutations = [
+    data => { delete data.fuel; },
+    data => { data.fuel = { unitPrice: '7.5', liters: '40' }; },
+    data => { data.amount = 300.01; },
+    data => { data.categoryId = 'other'; delete data.fuel; },
+    data => { data.tripId = 't2'; }
+  ];
+  mutations.forEach(mutate => {
+    const data = clone(operation.data);
+    mutate(data);
+    assert.throws(
+      () => Cloud.applySyncResults(baseline, [operation], resultFor(data)),
+      /云端回执|非油费科目/
+    );
+    assert.deepEqual(baseline, baselineSnapshot);
+  });
+
+  const compatibleOperation = clone(operation);
+  compatibleOperation.data.amount = '300.00';
+  compatibleOperation.data.fuel = { unitPrice: '6.0000', liters: '50.000' };
+  const compatibleData = Object.assign({}, clone(operation.data), {
+    amount: 300,
+    fuel: { unitPrice: 6, liters: 50 }
+  });
+  const accepted = Cloud.applySyncResults(
+    baseline,
+    [compatibleOperation],
+    resultFor(compatibleData)
+  );
+  assert.deepEqual(accepted.find(item => item.id === operation.id).data.fuel, {
+    unitPrice: '6',
+    liters: '50'
+  });
+
+  const incomeOperation = {
+    op: 'put',
+    type: 'trip_income',
+    id: 't1:income-exponent',
+    expectedVersion: 0,
+    data: {
+      id: 'income-exponent', tripId: 't1', categoryId: 'cargo',
+      amount: '8e2', date: '2026-07-03', sortOrder: 2
+    }
+  };
+  assert.doesNotThrow(() => Cloud.applySyncResults([], [incomeOperation], [{
+    op: 'put', type: 'trip_income', id: 't1:income-exponent',
+    status: 'applied', version: 1,
+    data: Object.assign({}, incomeOperation.data, { amount: 800 })
+  }]));
 });
 
 test('守恒比较会明确列出金额或数量差异', () => {
@@ -190,8 +442,21 @@ test('守恒比较会明确列出金额或数量差异', () => {
   assert.equal(comparison.equal, false);
   assert.deepEqual(
     comparison.differences.map(item => item.field).sort(),
-    ['amounts.maintenance', 'amounts.tripIncomes', 'counts.maintenance']
+    [
+      'amounts.maintenance',
+      'amounts.tripIncomes',
+      'counts.maintenance',
+      'exactAmounts.maintenanceCents',
+      'exactAmounts.tripIncomesCents'
+    ]
   );
+
+  const malformed = clone(before);
+  malformed.trips[0].expenses[0].amount = '12abc';
+  assert.throws(() => Cloud.summarizeState(malformed), /金额无效/);
+  const exponent = clone(before);
+  exponent.trips[0].expenses[0].amount = '8e2';
+  assert.equal(Cloud.summarizeState(exponent).amounts.tripExpenses, 815);
 });
 
 test('JSON 导入账期缺失或非法时明确保留当前有效账期', () => {
