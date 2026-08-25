@@ -299,6 +299,9 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
 .fuel-status { min-height:18px; margin-top:4px; color:var(--cool); font-size:12px; }
 .fuel-error { min-height:19px; margin-top:5px; color:var(--danger); font-size:12.5px; line-height:1.5; }
 .fuel-field input[data-calculated="true"] { border-color:var(--cool); background:var(--accent-soft); }
+.fuel-field input[data-active="true"] { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+.fuel-field input[readonly] { cursor:pointer; caret-color:transparent; }
+.fuel-pad { margin-top:10px; }
 .fuel-legacy { color:var(--cool); }
 .profit-breakdown { margin-top:10px; padding-top:8px; border-top:1px dashed var(--line); }
 .profit-breakdown .kv { padding:6px 2px; font-size:13px; }
@@ -539,11 +542,11 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       </div>
       <div class="fuel-form" id="quickFuelForm" data-fuel-form style="display:none">
         <div class="fuel-grid">
-          <div class="fuel-field"><label for="quickFuelTotal">油费总价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="quickFuelTotal" data-fuel-field="totalAmount" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">元</span></div></div>
-          <div class="fuel-field"><label for="quickFuelPrice">油品单价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="quickFuelPrice" data-fuel-field="unitPrice" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">元/升</span></div></div>
-          <div class="fuel-field"><label for="quickFuelLiters">加油升数</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="done" id="quickFuelLiters" data-fuel-field="liters" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">升</span></div></div>
+          <div class="fuel-field"><label for="quickFuelTotal">油费总价</label><div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="quickFuelTotal" data-fuel-field="totalAmount" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">元</span></div></div>
+          <div class="fuel-field"><label for="quickFuelPrice">油品单价</label><div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="quickFuelPrice" data-fuel-field="unitPrice" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">元/升</span></div></div>
+          <div class="fuel-field"><label for="quickFuelLiters">加油升数</label><div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="quickFuelLiters" data-fuel-field="liters" aria-describedby="quickFuelHelp quickFuelStatus quickFuelError" aria-invalid="false"><span class="fuel-unit">升</span></div></div>
         </div>
-        <div class="fuel-help" id="quickFuelHelp">填写任意两项，系统会联算第三项；三项不一致时不能保存。</div>
+        <div class="fuel-help" id="quickFuelHelp">任填两项自动算第三项；油价输 56 会识别为 5.60，手动点小数点则按原样输入。</div>
         <div class="fuel-status" id="quickFuelStatus" role="status" aria-live="polite"></div>
         <div class="fuel-error" id="quickFuelError" role="alert" aria-live="polite"></div>
         <button type="button" class="btn sm" id="quickFuelSave" data-business-write>✓ 记 上</button>
@@ -578,11 +581,11 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       </div>
       <div class="fuel-form" id="amtFuelForm" data-fuel-form style="display:none">
         <div class="fuel-grid">
-          <div class="fuel-field"><label for="amtFuelTotal">油费总价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="amtFuelTotal" data-fuel-field="totalAmount" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">元</span></div></div>
-          <div class="fuel-field"><label for="amtFuelPrice">油品单价</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="next" id="amtFuelPrice" data-fuel-field="unitPrice" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">元/升</span></div></div>
-          <div class="fuel-field"><label for="amtFuelLiters">加油升数</label><div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="done" id="amtFuelLiters" data-fuel-field="liters" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">升</span></div></div>
+          <div class="fuel-field"><label for="amtFuelTotal">油费总价</label><div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="amtFuelTotal" data-fuel-field="totalAmount" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">元</span></div></div>
+          <div class="fuel-field"><label for="amtFuelPrice">油品单价</label><div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="amtFuelPrice" data-fuel-field="unitPrice" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">元/升</span></div></div>
+          <div class="fuel-field"><label for="amtFuelLiters">加油升数</label><div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="amtFuelLiters" data-fuel-field="liters" aria-describedby="amtFuelHelp amtFuelStatus amtFuelError" aria-invalid="false"><span class="fuel-unit">升</span></div></div>
         </div>
-        <div class="fuel-help" id="amtFuelHelp">填写任意两项，系统会联算第三项；三项不一致时不能保存。</div>
+        <div class="fuel-help" id="amtFuelHelp">任填两项自动算第三项；油价输 56 会识别为 5.60，手动点小数点则按原样输入。</div>
         <div class="fuel-status" id="amtFuelStatus" role="status" aria-live="polite"></div>
         <div class="fuel-error" id="amtFuelError" role="alert" aria-live="polite"></div>
         <button type="button" class="btn sm" id="amtFuelSave" data-business-write>✓ 保 存</button>
@@ -1449,6 +1452,80 @@ function setFuelCalculatedStatus(root, field) {
   const labels = { totalAmount: '油费总价', unitPrice: '油品单价', liters: '加油升数' };
   if (status) status.textContent = field ? '已联算' + labels[field] + '，可继续修改或保存。' : '';
 }
+function setFuelActiveField(root, input, shouldFocus) {
+  if (!root || !input) return;
+  root.dataset.activeFuelField = input.dataset.fuelField;
+  root.dataset.replaceFuelInput = 'true';
+  root.querySelectorAll('[data-fuel-field]').forEach(field => {
+    if (field === input) field.dataset.active = 'true';
+    else delete field.dataset.active;
+  });
+  if (shouldFocus && typeof input.focus === 'function') input.focus({ preventScroll: true });
+}
+function nextFuelInputValue(value, key, maxFraction, maxInteger, replace) {
+  let current = String(value == null ? '' : value).trim();
+  if (key === 'clear') return '';
+  if (key === 'backspace') return current.slice(0, -1);
+  if (key !== '.' && !/^\d$/.test(key)) return current;
+  if (replace) current = '';
+  if (key === '.') {
+    if (maxFraction < 1 || current.includes('.')) return current;
+    return current ? current + '.' : '0.';
+  }
+  const parts = current.split('.');
+  if (parts.length > 1) {
+    if (parts[1].length >= maxFraction) return current;
+    return current + key;
+  }
+  if (current === '0') return key === '0' ? current : key;
+  if (current.replace(/^0+/, '').length >= maxInteger) return current;
+  return current + key;
+}
+function formatSmartFuelPriceDigits(value) {
+  const digits = String(value == null ? '' : value).replace(/\D/g, '').slice(0, 4);
+  if (!digits) return '';
+  if (digits.length === 1) return digits + '.00';
+  if (digits.length === 2) return digits[0] + '.' + digits[1] + '0';
+  return digits.slice(0, -2) + '.' + digits.slice(-2);
+}
+function nextFuelPriceInputValue(value, rawDigits, manualDecimal, key, replace) {
+  let raw = String(rawDigits == null ? '' : rawDigits).replace(/\D/g, '').slice(0, 4);
+  let manual = manualDecimal === true || manualDecimal === 'true';
+  if (key === 'clear') return { value: '', rawDigits: '', manualDecimal: false };
+  if (replace) {
+    if (/^\d$/.test(key)) return { value: formatSmartFuelPriceDigits(key), rawDigits: key, manualDecimal: false };
+    if (key === '.') return { value: '0.', rawDigits: '', manualDecimal: true };
+    if (key === 'backspace') return { value: String(value == null ? '' : value).slice(0, -1), rawDigits: '', manualDecimal: true };
+  }
+  if (!manual && /^\d$/.test(key)) {
+    if (raw.length < 4) raw += key;
+    return { value: formatSmartFuelPriceDigits(raw), rawDigits: raw, manualDecimal: false };
+  }
+  if (!manual && key === 'backspace') {
+    raw = raw.slice(0, -1);
+    return { value: formatSmartFuelPriceDigits(raw), rawDigits: raw, manualDecimal: false };
+  }
+  if (!manual && key === '.') {
+    return { value: nextFuelInputValue(raw, '.', 4, 3, false), rawDigits: '', manualDecimal: true };
+  }
+  return {
+    value: nextFuelInputValue(value, key, 4, 3, false),
+    rawDigits: '',
+    manualDecimal: true
+  };
+}
+function prepareFuelFieldEdit(root, input) {
+  const values = fuelFormValues(root);
+  const present = Object.keys(values).filter(key => values[key] !== '');
+  const field = input.dataset.fuelField;
+  const calculated = root.dataset.calculatedField || '';
+  if (calculated !== field && !(present.length === 3 && !calculated)) return;
+  const dependent = { totalAmount: 'liters', unitPrice: 'liters', liters: 'totalAmount' }[field];
+  const target = dependent && root.querySelector('[data-fuel-field="' + dependent + '"]');
+  if (target && target !== input) target.value = '';
+  root.dataset.calculatedField = '';
+  setFuelCalculatedStatus(root, null);
+}
 function resetFuelForm(root, values, legacyAmountOnly) {
   const next = values || {};
   root.dataset.calculatedField = '';
@@ -1456,16 +1533,20 @@ function resetFuelForm(root, values, legacyAmountOnly) {
   root.querySelectorAll('[data-fuel-field]').forEach(input => {
     input.value = next[input.dataset.fuelField] == null ? '' : String(next[input.dataset.fuelField]);
     input.setAttribute('aria-invalid', 'false');
+    delete input.dataset.fuelRawDigits;
+    delete input.dataset.fuelManualDecimal;
   });
   setFuelCalculatedStatus(root, null);
   const help = root.querySelector('.fuel-help');
   if (help) {
     help.textContent = legacyAmountOnly
-      ? '旧油费只有总价，可仍按总价保存；一旦填写单价或升数，就必须补全并通过联算。'
-      : '填写任意两项，系统会联算第三项；三项不一致时不能保存。';
+      ? '旧油费可只保留总价；油价输 56 会识别为 5.60，手动点小数点则按原样输入。'
+      : '任填两项自动算第三项；油价输 56 会识别为 5.60，手动点小数点则按原样输入。';
     help.classList.toggle('fuel-legacy', Boolean(legacyAmountOnly));
   }
   setFuelFormError(root, null);
+  const first = root.querySelector('[data-fuel-field]');
+  if (first) setFuelActiveField(root, first, false);
 }
 function resolveFuelForm(root, allowLegacyAmountOnly, reportErrors) {
   const shouldReport = reportErrors !== false;
@@ -1520,36 +1601,81 @@ function updateFuelForm(root, changedInput) {
     setFuelFormError(root, result.error);
     return;
   }
-  Object.keys(result.formatted).forEach(key => {
-    const input = root.querySelector('[data-fuel-field="' + key + '"]');
-    if (input) input.value = result.formatted[key];
-  });
-  root.dataset.calculatedField = result.calculatedField || '';
-  setFuelCalculatedStatus(root, result.calculatedField || null);
+  const nextCalculated = result.calculatedField || '';
+  if (nextCalculated) {
+    const input = root.querySelector('[data-fuel-field="' + nextCalculated + '"]');
+    if (input) input.value = result.formatted[nextCalculated];
+  }
+  root.dataset.calculatedField = nextCalculated;
+  setFuelCalculatedStatus(root, nextCalculated || null);
   setFuelFormError(root, null);
 }
 function fuelFormHTML(prefix, values, legacyAmountOnly) {
   const v = values || {};
   const help = prefix + 'FuelHelp', status = prefix + 'FuelStatus', error = prefix + 'FuelError';
   const field = (key, label, unit) => '<div class="fuel-field"><label for="' + prefix + 'Fuel' + key + '">' + label + '</label>'
-    + '<div class="fuel-input-wrap"><input type="text" inputmode="decimal" enterkeyhint="' + (key === 'liters' ? 'done' : 'next') + '" id="' + prefix + 'Fuel' + key + '" data-fuel-field="' + key + '" value="' + attrEsc(v[key] || '') + '" aria-describedby="' + help + ' ' + status + ' ' + error + '" aria-invalid="false"><span class="fuel-unit">' + unit + '</span></div></div>';
+    + '<div class="fuel-input-wrap"><input type="text" inputmode="none" readonly autocomplete="off" id="' + prefix + 'Fuel' + key + '" data-fuel-field="' + key + '" value="' + attrEsc(v[key] || '') + '" aria-describedby="' + help + ' ' + status + ' ' + error + '" aria-invalid="false"><span class="fuel-unit">' + unit + '</span></div></div>';
   return '<div class="fuel-form" data-fuel-form data-allow-legacy="' + (legacyAmountOnly ? 'true' : 'false') + '"><div class="fuel-grid">'
     + field('totalAmount', '油费总价', '元') + field('unitPrice', '油品单价', '元/升') + field('liters', '加油升数', '升')
     + '</div><div class="fuel-help' + (legacyAmountOnly ? ' fuel-legacy' : '') + '" id="' + help + '">'
-    + (legacyAmountOnly ? '旧账可只录总价；补另一项后会联算并保存升数、单价。' : '填写任意两项，系统会联算第三项。')
+    + (legacyAmountOnly ? '旧账可只录总价；油价输 56 会识别为 5.60，手动点小数点则按原样输入。' : '任填两项自动算第三项；油价输 56 会识别为 5.60，手动点小数点则按原样输入。')
     + '</div><div class="fuel-status" id="' + status + '" role="status" aria-live="polite"></div>'
     + '<div class="fuel-error" id="' + error + '" role="alert" aria-live="polite"></div></div>';
 }
 function initFuelKeyboard(root, saveButton) {
   if (!root || root.dataset.keyboardReady === 'true') return;
   root.dataset.keyboardReady = 'true';
-  root.addEventListener('keydown', event => {
-    if (event.key !== 'Enter' || !event.target.matches('[data-fuel-field]')) return;
-    event.preventDefault();
-    const fields = Array.from(root.querySelectorAll('[data-fuel-field]'));
-    const index = fields.indexOf(event.target);
-    if (index >= 0 && index < fields.length - 1) fields[index + 1].focus();
-    else if (saveButton) saveButton.focus();
+  const fields = Array.from(root.querySelectorAll('[data-fuel-field]'));
+  const pad = document.createElement('div');
+  pad.className = 'pad fuel-pad';
+  pad.dataset.fuelPad = '';
+  pad.setAttribute('aria-label', '油费数字键盘');
+  pad.innerHTML = ['1', '2', '3', 'backspace', '4', '5', '6', 'clear', '7', '8', '9', '.']
+    .map(key => '<button type="button" data-fuel-key="' + key + '"' + (['backspace', 'clear', '.'].includes(key) ? ' class="fn"' : '') + '>'
+      + ({ backspace: '⌫', clear: '清' }[key] || key) + '</button>').join('')
+    + '<button type="button" class="zero" data-fuel-key="0">0</button><button type="button" class="ok" data-fuel-key="next">下一项</button>';
+  if (saveButton && root.contains(saveButton)) root.insertBefore(pad, saveButton);
+  else root.appendChild(pad);
+  if (typeof syncBusinessWriteControls === 'function') syncBusinessWriteControls(pad);
+  fields.forEach(input => {
+    input.addEventListener('focus', () => setFuelActiveField(root, input, false));
+    input.addEventListener('click', () => setFuelActiveField(root, input, true));
+  });
+  if (fields.length) setFuelActiveField(root, fields[0], false);
+  pad.addEventListener('click', event => {
+    const button = event.target.closest('[data-fuel-key]');
+    if (!button) return;
+    const key = button.dataset.fuelKey;
+    const active = root.querySelector('[data-fuel-field="' + (root.dataset.activeFuelField || '') + '"]') || fields[0];
+    if (!active) return;
+    if (key === 'next') {
+      const index = fields.indexOf(active);
+      const ordered = fields.slice(index + 1).concat(fields.slice(0, index));
+      const next = ordered.find(input => !input.value && input.dataset.fuelField !== root.dataset.calculatedField);
+      if (next) setFuelActiveField(root, next, true);
+      else if (saveButton && typeof saveButton.focus === 'function') saveButton.focus({ preventScroll: true });
+      return;
+    }
+    prepareFuelFieldEdit(root, active);
+    const limits = { totalAmount: [2, 9], unitPrice: [4, 3], liters: [3, 6] }[active.dataset.fuelField];
+    if (active.dataset.fuelField === 'unitPrice') {
+      const next = nextFuelPriceInputValue(
+        active.value,
+        active.dataset.fuelRawDigits,
+        active.dataset.fuelManualDecimal,
+        key,
+        root.dataset.replaceFuelInput === 'true'
+      );
+      active.value = next.value;
+      if (next.rawDigits) active.dataset.fuelRawDigits = next.rawDigits;
+      else delete active.dataset.fuelRawDigits;
+      if (next.manualDecimal) active.dataset.fuelManualDecimal = 'true';
+      else delete active.dataset.fuelManualDecimal;
+    } else {
+      active.value = nextFuelInputValue(active.value, key, limits[0], limits[1], root.dataset.replaceFuelInput === 'true');
+    }
+    root.dataset.replaceFuelInput = key === 'clear' ? 'true' : 'false';
+    active.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 function formatScaledInteger(value, scale, maxFraction) {

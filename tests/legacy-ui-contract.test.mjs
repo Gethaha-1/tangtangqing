@@ -49,14 +49,18 @@ function fuelRoot(values) {
       focus() { this.focused = true; },
     }));
   const alert = { textContent: "" };
+  const status = { textContent: "" };
   return {
+    dataset: {},
     inputs,
     alert,
+    status,
     querySelectorAll(selector) {
       return selector === "[data-fuel-field]" ? inputs : [];
     },
     querySelector(selector) {
       if (selector === ".fuel-error") return alert;
+      if (selector === ".fuel-status") return status;
       if (selector === "[data-fuel-field]") return inputs[0];
       const match = /^\[data-fuel-field="([^"]+)"\]$/.exec(selector);
       return match ? inputs.find((item) => item.dataset.fuelField === match[1]) : null;
@@ -125,9 +129,12 @@ test("快记、支出编辑、补录都接入三字段 fuel，普通支出仍保
     }
   }
   assert.match(source, /fuelFormHTML\('bf', \{\}, true\)/);
-  assert.match(source, /enterkeyhint="next"/);
+  assert.match(source, /inputmode="none" readonly autocomplete="off"/);
+  assert.doesNotMatch(source, /data-fuel-field[^>]*inputmode="decimal"|inputmode="decimal"[^>]*data-fuel-field/);
+  assert.match(extractFunction("initFuelKeyboard"), /'backspace'/);
+  assert.match(source, /data-fuel-key="next">下一项/);
   assert.match(source, /data-business-write>✓ 记 上/);
-  assert.match(source, /setFuelCalculatedStatus\(root, result\.calculatedField \|\| null\)/);
+  assert.match(source, /setFuelCalculatedStatus\(root, nextCalculated \|\| null\)/);
   assert.match(source, /id="quickPad"/);
   assert.match(source, /id="amtPad"/);
   assert.match(source, /nextTrip\.expenses\.push\([^\n]*catId: 'fuel'[^\n]*fuel: resolved\.fuel/);
@@ -138,6 +145,56 @@ test("快记、支出编辑、补录都接入三字段 fuel，普通支出仍保
   assert.match(extractFunction("renderQuickChips"), /<button type="button" class="chip/);
   assert.match(extractFunction("renderAmtChips"), /<button type="button" class="chip/);
   assert.ok(extractFunction("quickFuelSave").indexOf("resolveFuelForm") < extractFunction("quickFuelSave").indexOf("guardOnce"));
+});
+
+test("油费自带数字键盘保留手输原文，只格式化系统联算项", () => {
+  const functions = compile(
+    ["fuelFormValues", "setFuelCalculatedStatus", "setFuelFormError", "updateFuelForm", "nextFuelInputValue", "formatSmartFuelPriceDigits", "nextFuelPriceInputValue"],
+    { TTQDomain: globalThis.TTQDomain },
+  );
+  assert.equal(functions.nextFuelInputValue("", "7", 4, 3, true), "7");
+  assert.equal(functions.nextFuelInputValue("7", ".", 4, 3, false), "7.");
+  assert.equal(functions.nextFuelInputValue("7.", "6", 4, 3, false), "7.6");
+  assert.equal(functions.nextFuelInputValue("7.6667", "8", 4, 3, false), "7.6667");
+  assert.equal(functions.nextFuelInputValue("7.6667", "8", 4, 3, true), "8");
+  assert.equal(functions.nextFuelInputValue("12.3", "backspace", 4, 3, false), "12.");
+  assert.equal(functions.nextFuelInputValue("12.3", "clear", 4, 3, false), "");
+
+  assert.equal(functions.formatSmartFuelPriceDigits("5"), "5.00");
+  assert.equal(functions.formatSmartFuelPriceDigits("56"), "5.60");
+  assert.equal(functions.formatSmartFuelPriceDigits("566"), "5.66");
+  assert.equal(functions.formatSmartFuelPriceDigits("1222"), "12.22");
+  let smart = functions.nextFuelPriceInputValue("", "", false, "5", true);
+  assert.equal(smart.value, "5.00");
+  smart = functions.nextFuelPriceInputValue(smart.value, smart.rawDigits, smart.manualDecimal, "6", false);
+  assert.equal(smart.value, "5.60", "自动补零后必须仍能接收第二位数字");
+  smart = functions.nextFuelPriceInputValue(smart.value, smart.rawDigits, smart.manualDecimal, "6", false);
+  assert.equal(smart.value, "5.66");
+  smart = functions.nextFuelPriceInputValue(smart.value, smart.rawDigits, smart.manualDecimal, "9", false);
+  assert.equal(smart.value, "56.69");
+  const capped = functions.nextFuelPriceInputValue(smart.value, smart.rawDigits, smart.manualDecimal, "8", false);
+  assert.equal(capped.value, "56.69", "自动推算最多接收四位数字");
+  let manual = functions.nextFuelPriceInputValue("", "", false, "5", true);
+  manual = functions.nextFuelPriceInputValue(manual.value, manual.rawDigits, manual.manualDecimal, ".", false);
+  assert.equal(manual.value, "5.");
+  manual = functions.nextFuelPriceInputValue(manual.value, manual.rawDigits, manual.manualDecimal, "6", false);
+  assert.equal(manual.value, "5.6", "手动小数点必须覆盖智能划分");
+
+  const root = fuelRoot({ totalAmount: "300", unitPrice: "7" });
+  const price = root.inputs.find((input) => input.dataset.fuelField === "unitPrice");
+  const liters = root.inputs.find((input) => input.dataset.fuelField === "liters");
+  functions.updateFuelForm(root, price);
+  assert.equal(price.value, "7", "手输油价不能被补成固定四位小数");
+  assert.equal(liters.value, "42.857");
+  assert.equal(root.dataset.calculatedField, "liters");
+
+  price.value = functions.nextFuelInputValue(price.value, ".", 4, 3, false);
+  functions.updateFuelForm(root, price);
+  price.value = functions.nextFuelInputValue(price.value, "6", 4, 3, false);
+  functions.updateFuelForm(root, price);
+  assert.equal(price.value, "7.6", "第二个数字必须能继续追加");
+  assert.equal(liters.value, "39.474");
+  assert.equal(root.inputs.find((input) => input.dataset.fuelField === "totalAmount").value, "300");
 });
 
 test("首页、统计与三种报告 scope 统一使用净利润和 buildReportSummary", () => {
