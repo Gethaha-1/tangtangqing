@@ -175,6 +175,27 @@ test('补录旧账按到家日期插入当前车辆趟号', () => {
   );
 });
 
+test('同日收车后再次发车时，在途趟自动排到已收车趟之后', () => {
+  const state = baseData();
+  state.vehicles = [
+    { id: 'v1', name: '一号车', plateNo: '', active: true, createdAt: '1' }
+  ];
+  const arrived = trip('arrived', 'v1', '2026-08-20', '2026-08-23', 2000, 500);
+  arrived.createdAt = '2026-08-20T08:00:00.000Z';
+  arrived.closedAt = '2026-08-23T09:00:00.000Z';
+  const departed = trip('departed', 'v1', '2026-08-23', null, 0, 100);
+  departed.createdAt = '2026-08-23T10:00:00.000Z';
+  departed.closedAt = '';
+  state.trips = [departed, arrived];
+
+  assert.equal(D.tripSeq(state, arrived, '2025-10-01', '2026-09-30'), 1);
+  assert.equal(D.tripSeq(state, departed, '2025-10-01', '2026-09-30'), 2);
+  assert.deepEqual(
+    state.trips.slice().sort(D.compareTripsDesc).map(item => item.id),
+    ['departed', 'arrived']
+  );
+});
+
 test('账期和车辆筛选共同控制统计范围', () => {
   const state = baseData();
   state.vehicles = [

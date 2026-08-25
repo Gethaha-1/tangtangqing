@@ -348,8 +348,9 @@
   function tripTieKey(trip) {
     return [
       tripDate(trip) || '',
-      trip.closedAt || '',
+      trip.status === 'open' ? '1' : '0',
       trip.createdAt || '',
+      trip.closedAt || '',
       trip.id || ''
     ].join('|');
   }
