@@ -70,7 +70,7 @@ function fuelRoot(values) {
 
 test("fuel 表单只用领域联算并支持结构化与旧油费两条保存路径", () => {
   const functions = compile(
-    ["parseLegacyFuelAmount", "fuelFormValues", "setFuelCalculatedStatus", "setFuelFormError", "reportFuelFormError", "resolveFuelForm"],
+    ["parseLegacyFuelAmount", "fuelFormValues", "setFuelCalculatedStatus", "setFuelFormError", "reportFuelFormError", "formatFuelTwoDecimals", "resolveFuelForm"],
     { TTQDomain: globalThis.TTQDomain },
   );
 
@@ -92,8 +92,8 @@ test("fuel 表单只用领域联算并支持结构化与旧油费两条保存路
     fuelRoot({ totalAmount: "300.001" }),
     true,
   );
-  assert.equal(invalidLegacy.ok, false);
-  assert.equal(invalidLegacy.error.code, "invalid-amount");
+  assert.equal(invalidLegacy.ok, true);
+  assert.equal(invalidLegacy.amount, 300, "超过两位的小数在表单保存时四舍五入");
 
   assert.equal(functions.parseLegacyFuelAmount("1e2").ok, false);
   assert.equal(functions.parseLegacyFuelAmount("999999999.99").ok, true);
@@ -113,8 +113,8 @@ test("fuel 表单只用领域联算并支持结构化与旧油费两条保存路
     fuelRoot({ totalAmount: "300.001", unitPrice: "7.5" }),
     false,
   );
-  assert.equal(invalid.ok, false);
-  assert.equal(invalid.error.code, "too-many-decimals");
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.resolved.formatted.liters, "40.000");
   assert.match(source, /TTQDomain\.calculateFuelFields\(values\)/);
   assert.doesNotMatch(extractFunction("resolveFuelForm"), /Math\.round\(/);
 });
@@ -133,6 +133,8 @@ test("快记、支出编辑、补录都接入三字段 fuel，普通支出仍保
   assert.doesNotMatch(source, /data-fuel-field[^>]*inputmode="decimal"|inputmode="decimal"[^>]*data-fuel-field/);
   assert.match(extractFunction("initFuelKeyboard"), /'backspace'/);
   assert.match(source, /data-fuel-key="next">下一项/);
+  assert.match(source, /\.fuel-pad \+ \.btn \{ margin-top:12px; \}/);
+  assert.doesNotMatch(source, /旧油费可只保留总价|旧账可只录总价|油价输 56 会识别为 5\.60/);
   assert.match(source, /data-business-write>✓ 记 上/);
   assert.match(source, /setFuelCalculatedStatus\(root, nextCalculated \|\| null\)/);
   assert.match(source, /id="quickPad"/);
@@ -147,11 +149,23 @@ test("快记、支出编辑、补录都接入三字段 fuel，普通支出仍保
   assert.ok(extractFunction("quickFuelSave").indexOf("resolveFuelForm") < extractFunction("quickFuelSave").indexOf("guardOnce"));
 });
 
-test("油费自带数字键盘保留手输原文，只格式化系统联算项", () => {
+test("油费数字键盘统一两位显示、智能油价和联算存储精度", () => {
   const functions = compile(
-    ["fuelFormValues", "setFuelCalculatedStatus", "setFuelFormError", "updateFuelForm", "nextFuelInputValue", "formatSmartFuelPriceDigits", "nextFuelPriceInputValue"],
+    ["parseLegacyFuelAmount", "fuelFormValues", "setFuelCalculatedStatus", "setFuelFormError", "reportFuelFormError", "formatFuelTwoDecimals", "updateFuelForm", "resolveFuelForm", "nextFuelInputValue", "nextFuelFixedInputValue", "formatSmartFuelPriceDigits", "nextFuelPriceInputValue"],
     { TTQDomain: globalThis.TTQDomain },
   );
+  assert.equal(functions.formatFuelTwoDecimals("3296"), "3296.00");
+  assert.equal(functions.formatFuelTwoDecimals("540.328"), "540.33");
+  assert.equal(functions.formatFuelTwoDecimals("9.999"), "10.00");
+  let fixed = functions.nextFuelFixedInputValue("", "", false, "3", 9, true);
+  assert.equal(fixed.value, "3.00");
+  fixed = functions.nextFuelFixedInputValue(fixed.value, fixed.rawDigits, fixed.manualDecimal, "2", 9, false);
+  assert.equal(fixed.value, "32.00", "整数输入要补齐两位但仍能继续追加");
+  fixed = functions.nextFuelFixedInputValue(fixed.value, fixed.rawDigits, fixed.manualDecimal, ".", 9, false);
+  assert.equal(fixed.value, "32.");
+  fixed = functions.nextFuelFixedInputValue(fixed.value, fixed.rawDigits, fixed.manualDecimal, "5", 9, false);
+  assert.equal(fixed.value, "32.5", "手动小数点按原样录入");
+
   assert.equal(functions.nextFuelInputValue("", "7", 4, 3, true), "7");
   assert.equal(functions.nextFuelInputValue("7", ".", 4, 3, false), "7.");
   assert.equal(functions.nextFuelInputValue("7.", "6", 4, 3, false), "7.6");
@@ -185,7 +199,8 @@ test("油费自带数字键盘保留手输原文，只格式化系统联算项",
   const liters = root.inputs.find((input) => input.dataset.fuelField === "liters");
   functions.updateFuelForm(root, price);
   assert.equal(price.value, "7", "手输油价不能被补成固定四位小数");
-  assert.equal(liters.value, "42.857");
+  assert.equal(liters.value, "42.86");
+  assert.equal(liters.dataset.fuelCalculatedValue, "42.857", "内部保留定点联算值，避免显示四舍五入后保存失败");
   assert.equal(root.dataset.calculatedField, "liters");
 
   price.value = functions.nextFuelInputValue(price.value, ".", 4, 3, false);
@@ -193,15 +208,20 @@ test("油费自带数字键盘保留手输原文，只格式化系统联算项",
   price.value = functions.nextFuelInputValue(price.value, "6", 4, 3, false);
   functions.updateFuelForm(root, price);
   assert.equal(price.value, "7.6", "第二个数字必须能继续追加");
-  assert.equal(liters.value, "39.474");
+  assert.equal(liters.value, "39.47");
   assert.equal(root.inputs.find((input) => input.dataset.fuelField === "totalAmount").value, "300");
+  const resolved = functions.resolveFuelForm(root, false);
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.fuel.liters, "39.474");
 });
 
 test("首页、统计与三种报告 scope 统一使用净利润和 buildReportSummary", () => {
-  const { formatScaledInteger } = compile(["formatScaledInteger"]);
+  const { formatScaledInteger, formatScaledFixed } = compile(["formatScaledInteger", "formatScaledFixed"]);
   assert.equal(formatScaledInteger(150001, 3, 3), "150.001");
   assert.equal(formatScaledInteger(76667, 4, 4), "7.6667");
   assert.equal(formatScaledInteger(-12345, 2, 2), "−123.45");
+  assert.equal(formatScaledFixed(540328, 3, 2), "540.33");
+  assert.equal(formatScaledFixed(61000, 4, 2), "6.10");
   assert.match(source, /本 账 期 净 利 润/);
   assert.match(source, /\$\('#homeProfit'\)\.textContent = '¥ ' \+ fmt\(st\.netProfit\)/);
   assert.match(source, /趟次支出占收入（维修另列）/);
