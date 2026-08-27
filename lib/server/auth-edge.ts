@@ -8,8 +8,13 @@ import {
   resolveNodeEnv,
   SITES_AUTH_HEADERS,
   type AuthMode,
+  type PrincipalIssuer,
 } from "./auth.ts";
 import { LOCAL_AUTH_COOKIE } from "../auth/logout.ts";
+import {
+  CLOUDBASE_GATEWAY_HEADERS,
+  verifyCloudbaseIdentity,
+} from "./cloudbase-auth.ts";
 
 const SITES_NAME_ENCODING = "percent-encoded-utf-8";
 const LOCAL_COOKIE_VALUE = "local-test-owner-v1";
@@ -25,10 +30,10 @@ export type EdgeAuthOptions = {
  * identity header is removed first, including headers that imitate our
  * internal boundary.
  */
-export function adaptAuthenticationAtEdge(
+export async function adaptAuthenticationAtEdge(
   request: Request,
   options: EdgeAuthOptions = {},
-): Request {
+): Promise<Request> {
   const mode = resolveAuthMode(options.authMode);
   const internalSecret = resolveInternalAuthSecret(options.internalSecret);
   assertModeMayServeRequest(request, mode, options.nodeEnv);
@@ -47,8 +52,33 @@ export function adaptAuthenticationAtEdge(
       LOCAL_COOKIE_VALUE
   ) {
     mintInternalHeaders(headers, LOCAL_TEST_PRINCIPAL);
+  } else if (mode === "cloudbase") {
+    // Trust the CloudBase gateway-injected identity (x-cloudbase-context) and
+    // mint an internal identity. Any failure is swallowed on purpose: the
+    // request simply carries no identity, so getTrustedPrincipal treats it as
+    // unauthenticated (fail-closed).
+    try {
+      const identity = await verifyCloudbaseIdentity(request, {
+        authMode: options.authMode,
+        nodeEnv: options.nodeEnv,
+        internalSecret: options.internalSecret,
+      });
+      mintInternalHeaders(headers, {
+        issuer: "cloudbase",
+        subject: identity.uid,
+        displayName: identity.nickName || identity.uid,
+        email: identity.email,
+        loginName: identity.email,
+      });
+    } catch {
+      // No identity minted.
+    }
+    // Defense in depth: drop the raw gateway assertion so it can never be
+    // forwarded to internal services or replayed by a downstream handler.
+    for (const name of Object.values(CLOUDBASE_GATEWAY_HEADERS)) {
+      headers.delete(name);
+    }
   }
-  // cloudbase deliberately has no adapter yet and therefore mints no identity.
 
   return new Request(request, { headers });
 }
@@ -118,7 +148,7 @@ function mintSitesHeaders(source: Headers, destination: Headers): void {
 function mintInternalHeaders(
   headers: Headers,
   principal: {
-    issuer: "sites" | "local";
+    issuer: PrincipalIssuer;
     subject: string;
     displayName: string;
     email: string | null;

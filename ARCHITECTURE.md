@@ -16,7 +16,7 @@
 | API | `app/api/bootstrap`、`app/api/sync`、`app/auth/logout` | POST 请求边界、原子写入契约、HTTP 状态 |
 | 服务端 | `lib/server/` | fleet/role/assignment 授权、输入校验、D1 批次与幂等 |
 | 持久化 | `db/`、`drizzle/` | D1 schema、运行时旧表升级、正式 migrations |
-| Worker | `worker/index.ts` | 认证 adapter、账本资源保护、本地登录和全响应安全头 |
+| Edge 中间件 | `middleware.ts` | 认证 adapter、账本资源保护、本地登录和全响应安全头（替代原 Cloudflare Worker） |
 
 成熟 UI 仍保留在单文件中。高风险逻辑尽量放在第一方纯模块或服务端边界中测试，没有为本批增加图表、视频或认证 SDK。
 

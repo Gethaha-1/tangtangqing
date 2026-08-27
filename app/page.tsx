@@ -39,6 +39,7 @@ export default async function LoginPage() {
     process.env.NODE_ENV !== "production" &&
     isLocalHost(requestHeaders.get("host"));
   const showSitesSignIn = !user && authMode === "sites";
+  const showCloudbaseSignIn = !user && authMode === "cloudbase";
 
   return (
     <main className="login-page">
@@ -120,6 +121,16 @@ export default async function LoginPage() {
                     </a>
                   ) : null}
 
+                  {showCloudbaseSignIn ? (
+                    <a
+                      className="action action-primary"
+                      href="/auth/cloudbase/login?return_to=/ledger"
+                    >
+                      使用微信登录
+                      <span aria-hidden="true">→</span>
+                    </a>
+                  ) : null}
+
                   {showLocalSignIn ? (
                     <div className="local-access">
                       <span>仅本地测试</span>
@@ -130,11 +141,13 @@ export default async function LoginPage() {
                         用 13800000000 进入
                       </AuthPostButton>
                     </div>
-                  ) : showSitesSignIn ? null : (
+                  ) : null}
+
+                  {!showSitesSignIn && !showCloudbaseSignIn && !showLocalSignIn ? (
                     <p className="auth-error" role="alert">
                       认证模式尚未配置，账本保持锁定。
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </>
             )}

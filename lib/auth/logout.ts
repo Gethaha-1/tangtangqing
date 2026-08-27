@@ -6,6 +6,9 @@ import {
   type AuthMode,
 } from "../server/auth.ts";
 import {
+  clearCloudbaseAuthCookie,
+} from "../server/cloudbase-auth.ts";
+import {
   enforceMutationRequest,
   readJsonWithinLimit,
   RequestSecurityError,
@@ -23,6 +26,8 @@ const RESERVED_AUTH_PATHS = new Set([
   "/signin-with-chatgpt",
   SITES_SIGN_OUT_PATH,
   "/api/local-auth/signin",
+  "/auth/cloudbase/login",
+  "/auth/cloudbase/callback",
 ]);
 
 export type LogoutProvider = {
@@ -122,10 +127,17 @@ export async function handleLogout(
     const returnTo = safeAuthReturnTo(url.searchParams.get("return_to"));
 
     if (mode === "cloudbase") {
-      throw new AuthenticationError(
-        "auth_mode_unavailable",
-        "当前认证方式尚未配置",
-      );
+      // Clear the local session cookie we issued (our ttq_cb_token), then let
+      // the client navigate to returnTo. In production with CloudBase gateway
+      // auth you may also redirect to the CloudBase sign-out endpoint; for the
+      // custom-token path clearing our cookie is sufficient and fail-safe.
+      const response = secureJson(request, { location: returnTo }, 200);
+      const headers = new Headers(response.headers);
+      headers.append("set-cookie", clearCloudbaseAuthCookie(request));
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
     }
 
     if (mode === "local") {

@@ -8,9 +8,9 @@
   },
   "scripts": {
     "prepare:ledger": "node scripts/prepare-ledger-assets.mjs",
-    "dev": "npm run prepare:ledger && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
-    "build": "npm run prepare:ledger && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
+    "dev": "next dev",
+    "build": "npm run prepare:ledger && next build",
+    "start": "next start",
     "test": "node --experimental-strip-types --test tests/*.test.js tests/*.test.mjs",
     "test:domain": "node --test tests/domain.test.js",
     "db:generate": "drizzle-kit generate",
@@ -23,7 +23,6 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -34,8 +33,6 @@
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",
     "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "vite": "8.0.13"
   }
 }

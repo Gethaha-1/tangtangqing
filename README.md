@@ -2,7 +2,7 @@
 
 当前版本：**v1.5.1 · Sites 正式站点与 `develop` 运行代码一致 · 严格在线写入**。
 
-趟趟清面向货运车主和司机，提供多车辆、发车、快记、二次确认收车、补录、账期统计、结构化油费和维修体验。当前实现由服务端 D1 保存正式业务状态；认证边界已经抽象为 provider-neutral `Principal`，但生产实现仍是 Sites/Cloudflare 技术栈。
+趟趟清面向货运车主和司机，提供多车辆、发车、快记、二次确认收车、补录、账期统计、结构化油费和维修体验。当前实现由服务端 SQLite（Node 22 内置 `node:sqlite`，经 D1 兼容层驱动）保存正式业务状态；认证边界抽象为 provider-neutral `Principal`，生产采用 CloudBase 云托管（容器 + CFS）+ 云网关微信身份认证。
 
 ## 保存与离线边界
 
@@ -86,7 +86,7 @@ tests/                  业务、XSS、认证、原子写入、迁移测试
 | 本实验源码/文档 | 约 0.88 MiB | 含转场模块、测试与文档修改 |
 | 用户原主检出目录 | 约 764 MiB | 其中 `node_modules` 约 758 MiB（99.12%） |
 | 当前独立 worktree `node_modules` | 约 763 MiB | 删除候选后干净 `npm ci`；仍主要是 Sites/构建工具链和多平台二进制 |
-| 当前 `dist` / `.wrangler` / `public/ledger` | 约 2.0 MiB / 372 KiB / 248 KiB | 都是可再生成且 gitignored 的本地产物 |
+| 当前 `dist` / `public/ledger` | 约 2.0 MiB / 248 KiB | 都是可再生成且 gitignored 的本地产物（另有 `.next` 构建缓存） |
 
 因此 700 MiB 量级不是源码体积，也不等于模型需要通读的上下文。
 
@@ -94,22 +94,18 @@ tests/                  业务、XSS、认证、原子写入、迁移测试
 
 | 依赖 | 用途 / 结论 |
 |---|---|
-| `next`、`react`、`react-dom` | 页面、App Router、React renderer/RSC peer；生产必需 |
-| `drizzle-orm` | D1 runtime 与 schema；生产必需 |
-| `vinext`、`vite` | Sites Worker 的开发/构建核心 |
-| `@cloudflare/vite-plugin`、`wrangler` | Cloudflare bindings、本地 D1/Worker runtime |
-| `@vitejs/plugin-react`、`@vitejs/plugin-rsc`、`react-server-dom-webpack` | Vinext 自动加载的 React/RSC 构建 peers |
+| `next`、`react`、`react-dom` | 页面、App Router、React renderer/RSC；生产必需 |
+| `drizzle-orm` | 经 `sqlite-proxy` 驱动 `node:sqlite`，schema 与数据访问；生产必需 |
+| `node:sqlite` | Node 22 内置 SQLite 引擎（零原生依赖），无需 `better-sqlite3` |
 | `drizzle-kit` | migration 生成 |
 | `typescript`、`@types/node`、`@types/react`、`@types/react-dom` | 类型检查与 TS/TSX |
 | `eslint`、`eslint-config-next` | lint |
-| `@cloudflare/workers-types` | 无源码/配置引用；干净测试、lint、tsc、build 全通过后已删除，安装约减少 12 MiB |
+| 已移除：`vinext` / `vite` / `@cloudflare/vite-plugin` / `wrangler` / `@cloudflare/workers-types` | 原 Cloudflare/Vinext 构建链，迁移到 CloudBase 后删除，安装体积显著下降 |
 
-本轮动画未增加依赖；只删除上述一个证据充分的直接类型依赖，生产构建输出体积不变。
-
-`node_modules`、`dist`、`.wrangler`、`.next`、`public/ledger` 均保持 gitignore，不提交。
+`node_modules`、`dist`、`.next`、`public/ledger` 均保持 gitignore，不提交。
 
 ## 报告与部署边界
 
 `buildReportSummary()` 已统一账期/月度交集/自然年、车辆、净利润和 fuel 口径，供当前卡片与文字报告共用。定时生成、视频、外部 OpenAI/API、网络 endpoint 和新依赖均未实现。
 
-当前 `.openai/hosting.json`、Vinext Worker、D1 adapter 与 Sites 身份仍属于 Sites/Cloudflare 构建，不能直接上传为腾讯云标准 Node 应用。本地代码尚未完成腾讯适配、部署或合规认证。腾讯上海地域、个人主体小范围封闭非经营试用、纯数字手机号用户名、CloudBase Auth + MySQL 只作为下一批候选方案，需用户确认平台资格、域名/备案、安全和迁移细节后再实施。
+已迁移到腾讯云 CloudBase 云托管：Next.js（App Router，`next build && next start`）容器 + CFS 挂载 SQLite（`node:sqlite`），Edge 中间件做身份铸造，云网关微信身份认证作为账户区分。构建基于标准 Node 应用，可直接由云托管容器运行。部署细节见 `deploy/CLOUDBASE-DEPLOY.md` 与 `deploy/env-vars.md`。

@@ -40,7 +40,7 @@ function mutation(url, init = {}) {
   });
 }
 
-test("Sites adapter 先剥离伪造内部头，再从稳定 Sites subject 重铸 Principal", () => {
+test("Sites adapter 先剥离伪造内部头，再从稳定 Sites subject 重铸 Principal", async () => {
   const publicRequest = mutation("https://app.example/api/bootstrap", {
     headers: {
       "oai-authenticated-user-id": "usr_123",
@@ -52,7 +52,7 @@ test("Sites adapter 先剥离伪造内部头，再从稳定 Sites subject 重铸
       [INTERNAL_AUTH_HEADERS.subject]: "attacker",
     },
   });
-  const adapted = adaptAuthenticationAtEdge(publicRequest, {
+  const adapted = await adaptAuthenticationAtEdge(publicRequest, {
     ...authOptions("sites"),
   });
   assert.equal(adapted.headers.get("oai-authenticated-user-email"), null);
@@ -65,8 +65,8 @@ test("Sites adapter 先剥离伪造内部头，再从稳定 Sites subject 重铸
   });
 });
 
-test("Sites 缺少可选全名时使用非联系占位名，不把 email 变成业务显示名", () => {
-  const adapted = adaptAuthenticationAtEdge(
+test("Sites 缺少可选全名时使用非联系占位名，不把 email 变成业务显示名", async () => {
+  const adapted = await adaptAuthenticationAtEdge(
     mutation("https://app.example/api/bootstrap", {
       headers: {
         "oai-authenticated-user-id": "usr_without_name",
@@ -81,12 +81,12 @@ test("Sites 缺少可选全名时使用非联系占位名，不把 email 变成�
   assert.notEqual(principal.displayName, principal.email);
 });
 
-test("Sites/local/cloudbase adapter 互斥，非 Sites 模式绝不信任 OAI 头", () => {
+test("Sites/local/cloudbase adapter 互斥，非 Sites 模式绝不信任 OAI 头，cloudbase 无身份按未认证处理", async () => {
   const oai = {
     "oai-authenticated-user-id": "usr_123",
     "oai-authenticated-user-email": "owner@example.com",
   };
-  const localNoCookie = adaptAuthenticationAtEdge(
+  const localNoCookie = await adaptAuthenticationAtEdge(
     mutation("http://localhost:3000/api/bootstrap", { headers: oai }),
     authOptions("local", "development"),
   );
@@ -96,20 +96,22 @@ test("Sites/local/cloudbase adapter 互斥，非 Sites 模式绝不信任 OAI �
     AuthenticationError,
   );
 
-  const cloudbase = adaptAuthenticationAtEdge(
+  const cloudbase = await adaptAuthenticationAtEdge(
     mutation("https://app.example/api/bootstrap", { headers: oai }),
     authOptions("cloudbase", "production"),
   );
   assert.equal(cloudbase.headers.get(INTERNAL_AUTH_HEADERS.subject), null);
+  // This migration intentionally removed the `auth_mode_unavailable` throw for
+  // cloudbase with no identity: the edge simply mints no internal identity, so
+  // the downstream principal resolution treats it as `unauthenticated`.
   assert.throws(
     () => getTrustedPrincipal(cloudbase, authOptions("cloudbase", "production")),
     (error) =>
-      error instanceof AuthenticationError &&
-      error.code === "auth_mode_unavailable",
+      error instanceof AuthenticationError && error.code === "unauthenticated",
   );
 
-  assert.throws(
-    () => adaptAuthenticationAtEdge(
+  await assert.rejects(
+    adaptAuthenticationAtEdge(
       mutation("https://app.example/api/bootstrap", { headers: oai }),
       { ...authOptions("unknown") },
     ),
@@ -118,7 +120,7 @@ test("Sites/local/cloudbase adapter 互斥，非 Sites 模式绝不信任 OAI �
   );
 });
 
-test("local 只接受显式 development loopback 与固定测试 subject，手机号不作 subject", () => {
+test("local 只接受显式 development loopback 与固定测试 subject，手机号不作 subject", async () => {
   const request = mutation("http://localhost:3000/api/bootstrap", {
     headers: {
       cookie: "ttq_local_auth=local-test-owner-v1",
@@ -126,7 +128,7 @@ test("local 只接受显式 development loopback 与固定测试 subject，手�
       "oai-authenticated-user-email": "attacker@example.com",
     },
   });
-  const adapted = adaptAuthenticationAtEdge(request, {
+  const adapted = await adaptAuthenticationAtEdge(request, {
     ...authOptions("local"),
   });
   assert.deepEqual(
@@ -136,15 +138,15 @@ test("local 只接受显式 development loopback 与固定测试 subject，手�
   assert.equal(LOCAL_TEST_PRINCIPAL.loginName, "13800000000");
   assert.notEqual(LOCAL_TEST_PRINCIPAL.subject, LOCAL_TEST_PRINCIPAL.loginName);
 
-  assert.throws(
-    () => adaptAuthenticationAtEdge(request, {
+  await assert.rejects(
+    adaptAuthenticationAtEdge(request, {
       ...authOptions("local", "production"),
     }),
     /development loopback/,
   );
   for (const nodeEnv of [undefined, "", "test", "staging", "unexpected"]) {
-    assert.throws(
-      () => adaptAuthenticationAtEdge(request, {
+    await assert.rejects(
+      adaptAuthenticationAtEdge(request, {
         authMode: "local",
         nodeEnv,
         internalSecret: INTERNAL_SECRET,
@@ -153,8 +155,8 @@ test("local 只接受显式 development loopback 与固定测试 subject，手�
       `nodeEnv=${String(nodeEnv)}`,
     );
   }
-  assert.throws(
-    () => adaptAuthenticationAtEdge(
+  await assert.rejects(
+    adaptAuthenticationAtEdge(
       mutation("https://trial.example/api/bootstrap", {
         headers: { cookie: "ttq_local_auth=local-test-owner-v1" },
       }),
@@ -269,7 +271,7 @@ test("安全响应头 no-store/nosniff/frame deny/no-referrer，HSTS 仅 https",
   assert.equal(httpResponse.headers.get("strict-transport-security"), null);
 });
 
-test("bootstrap/logout 路由 POST-only，worker 明确接入 adapter 与全响应安全头", () => {
+test("bootstrap/logout 路由 POST-only，middleware 明确接入 adapter 与全响应安全头", () => {
   const bootstrap = readFileSync(
     new URL("../app/api/bootstrap/route.ts", import.meta.url),
     "utf8",
@@ -282,8 +284,8 @@ test("bootstrap/logout 路由 POST-only，worker 明确接入 adapter 与全响�
     new URL("../app/api/sync/route.ts", import.meta.url),
     "utf8",
   );
-  const worker = readFileSync(
-    new URL("../worker/index.ts", import.meta.url),
+  const middleware = readFileSync(
+    new URL("../middleware.ts", import.meta.url),
     "utf8",
   );
   assert.match(bootstrap, /export async function GET[\s\S]*status: 405/);
@@ -296,7 +298,12 @@ test("bootstrap/logout 路由 POST-only，worker 明确接入 adapter 与全响�
   assert.match(sync, /getTrustedPrincipal\(request, serverAuthOptions\(\)\)/);
   assert.doesNotMatch(logout, /export function GET/);
   assert.match(logout, /export function POST/);
-  assert.match(worker, /adaptAuthenticationAtEdge\(originalRequest/);
-  assert.match(worker, /withSecurityHeaders\(response, originalRequest\)/);
-  assert.match(worker, /originalRequest\.method !== "POST"/);
+  // The edge middleware (replacing the old Cloudflare Worker) must wire up every
+  // auth primitive it depends on.
+  assert.match(middleware, /adaptAuthenticationAtEdge\(request/);
+  assert.match(middleware, /safeAuthReturnTo\(/);
+  assert.match(middleware, /resolveAuthMode\(/);
+  assert.match(middleware, /localAuthCookie\(/);
+  assert.match(middleware, /enforceMutationRequest\(/);
+  assert.match(middleware, /secureJson\(/);
 });

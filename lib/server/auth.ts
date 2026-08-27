@@ -100,14 +100,6 @@ export function getTrustedPrincipal(
       "本地测试认证只允许显式 development loopback 环境",
     );
   }
-  if (mode === "cloudbase") {
-    // The type is reserved for a future adapter. No speculative endpoint or
-    // token verification is installed before a deployment design is chosen.
-    throw new AuthenticationError(
-      "auth_mode_unavailable",
-      "当前认证方式尚未配置",
-    );
-  }
 
   const issuer = clean(request.headers.get(INTERNAL_AUTH_HEADERS.issuer));
 
@@ -142,7 +134,7 @@ export function getTrustedPrincipal(
   }
 
   return {
-    issuer: "sites",
+    issuer,
     subject,
     displayName,
     email: email?.toLowerCase() ?? null,
