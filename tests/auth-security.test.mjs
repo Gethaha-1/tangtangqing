@@ -293,9 +293,9 @@ test("bootstrap/logout 路由 POST-only，middleware 明确接入 adapter 与全
   assert.match(bootstrap, /export async function POST/);
   assert.match(
     bootstrap,
-    /getTrustedPrincipal\(request, serverAuthOptions\(\)\)/,
+    /await requestIdentity\(request\)/,
   );
-  assert.match(sync, /getTrustedPrincipal\(request, serverAuthOptions\(\)\)/);
+  assert.match(sync, /await requestIdentity\(request\)/);
   assert.doesNotMatch(logout, /export function GET/);
   assert.match(logout, /export function POST/);
   // The edge middleware (replacing the old Cloudflare Worker) must wire up every

@@ -1,3 +1,8 @@
+> **本分支是 Netlify + Supabase 隔离实验**，不是原 Sites/CloudBase 发布版本。
+> 当前实施与验证以 [Netlify/Supabase 部署说明](deploy/NETLIFY-SUPABASE.md) 为准。
+> 保留原业务规则；旧托管、D1/SQLite运行和发布指令仅作历史参考，不适用于本分支。
+> 禁止向原 Sites 项目发布，禁止合并 main/develop，禁止使用真实账本测试。
+
 # AI 接手手册
 
 适用版本：**v1.5.0 · 严格在线写入**。

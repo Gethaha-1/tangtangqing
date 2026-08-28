@@ -8,3 +8,10 @@ public/ledger/
 .env
 .env.local
 *.tsbuildinfo
+
+.env.*
+!.env.example
+data/
+.netlify/
+.test-data/
+deno.lock

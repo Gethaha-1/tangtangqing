@@ -1,4 +1,5 @@
-import { getD1 } from "./index";
+import { getD1, usesPostgres } from "./index";
+import { assertPostgresSchema } from "./postgres";
 import { INVARIANT_SCHEMA_STATEMENTS } from "./invariants";
 
 // Keep one SQL statement per item. Sites' D1 adapter prepares each item
@@ -305,6 +306,7 @@ async function ensureFuelColumns(d1: D1Database): Promise<void> {
 let schemaPromise: Promise<void> | null = null;
 
 export function ensureSchema(): Promise<void> {
+  if (usesPostgres()) return assertPostgresSchema();
   if (!schemaPromise) {
     const d1 = getD1();
     schemaPromise = d1

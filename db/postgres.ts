@@ -1,0 +1,188 @@
+import pg from "pg";
+import type { Pool, PoolClient, PoolConfig, QueryResult } from "pg";
+
+const TABLES = new Set([
+  "users", "identities", "fleets", "fleet_members", "vehicles",
+  "vehicle_assignments", "categories", "fleet_settings", "trips",
+  "trip_expenses", "trip_incomes", "maintenance", "sync_commits", "sync_assertions",
+]);
+
+/** Compile the repository's controlled SQL, respecting literals and comments. */
+export function compilePostgresSql(sql: string): string {
+  let output = "";
+  let position = 0;
+  let parameter = 0;
+  while (position < sql.length) {
+    const remaining = sql.slice(position);
+    if (remaining.startsWith("--")) {
+      const end = sql.indexOf("\n", position);
+      const stop = end < 0 ? sql.length : end;
+      output += sql.slice(position, stop);
+      position = stop;
+      continue;
+    }
+    if (remaining.startsWith("/*")) {
+      let depth = 1;
+      const start = position;
+      position += 2;
+      while (position < sql.length && depth) {
+        if (sql.startsWith("/*", position)) { depth++; position += 2; }
+        else if (sql.startsWith("*/", position)) { depth--; position += 2; }
+        else position++;
+      }
+      if (depth) throw new Error("Unterminated SQL comment");
+      output += sql.slice(start, position);
+      continue;
+    }
+    const dollar = remaining.match(/^\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$/)?.[0];
+    if (dollar) {
+      const end = sql.indexOf(dollar, position + dollar.length);
+      if (end < 0) throw new Error("Unterminated SQL literal");
+      output += sql.slice(position, end + dollar.length);
+      position = end + dollar.length;
+      continue;
+    }
+    const character = sql[position];
+    if (character === "'" || character === '"') {
+      const start = position++;
+      let closed = false;
+      while (position < sql.length) {
+        if (sql[position++] === character) {
+          if (sql[position] === character) position++;
+          else { closed = true; break; }
+        }
+      }
+      if (!closed) throw new Error("Unterminated SQL quote");
+      output += sql.slice(start, position);
+      continue;
+    }
+    if (character === "?") {
+      output += `$${++parameter}`;
+      position++;
+      continue;
+    }
+    const token = remaining.match(/^[A-Za-z_][A-Za-z_0-9]*/)?.[0];
+    if (token) {
+      const name = token.toLowerCase();
+      const qualify = (TABLES.has(name) || name === "datetime") && sql[position - 1] !== ".";
+      output += qualify ? `ttq.${token}` : token;
+      position += token.length;
+      continue;
+    }
+    output += character;
+    position++;
+  }
+  return output;
+}
+
+export function postgresPoolOptions(env: NodeJS.ProcessEnv = process.env): PoolConfig {
+  const value = env.TTQ_DATABASE_URL;
+  if (!value) throw new Error("TTQ_DATABASE_URL 必须配置为独立测试项目的后端连接串");
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("TTQ_DATABASE_URL 格式无效（连接串已隐藏）"); }
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) throw new Error("数据库连接串协议无效");
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (local && env.NETLIFY === "true") throw new Error("Netlify 不能使用本地数据库");
+  if (env.TTQ_AUTH_MODE === "supabase" && !local) {
+    let authHost: string;
+    try { authHost = new URL(env.TTQ_SUPABASE_URL ?? "").hostname; }
+    catch { throw new Error("Supabase 项目配置无效"); }
+    const ref = authHost.match(/^([a-z0-9]{16,32})\.supabase\.co$/)?.[1];
+    const pooler = url.hostname.endsWith(".pooler.supabase.com") && decodeURIComponent(url.username) === `ttq_app.${ref}`;
+    const direct = url.hostname === `db.${ref}.supabase.co` && decodeURIComponent(url.username) === "ttq_app";
+    if (!ref || (!pooler && !direct)) throw new Error("数据库与 Supabase Auth 测试项目不一致，拒绝连接");
+  }
+  // node-postgres parses SSL URL parameters after Pool options. Remove them so
+  // sslmode=disable/require can never silently override certificate validation.
+  url.search = ""; // URL parameters may override ssl/host/options; PoolConfig is authoritative.
+  return {
+    connectionString: url.toString(),
+    ssl: local ? false : { rejectUnauthorized: true, ...(env.TTQ_DATABASE_CA ? { ca: env.TTQ_DATABASE_CA.replaceAll("\\n", "\n") } : {}) },
+    max: 3,
+    idleTimeoutMillis: 15_000,
+    connectionTimeoutMillis: 8_000,
+    statement_timeout: 15_000,
+    idle_in_transaction_session_timeout: 15_000,
+    allowExitOnIdle: true,
+    application_name: "tangtangqing-netlify-validation",
+    // Monetary cents can exceed int4. Preserve the old safe JS-number contract.
+    types: { getTypeParser(oid: number, format?: string) {
+      if (oid === 20 && format !== "binary") return (value: string) => {
+        const number = Number(value);
+        if (!Number.isSafeInteger(number)) throw new Error("数据库整数超出安全范围");
+        return number;
+      };
+      return pg.types.getTypeParser(oid, format as "text");
+    } },
+  };
+}
+
+function result<T>(query: QueryResult): D1Result<T> {
+  return { results: query.rows as T[], success: true, meta: { changes: query.rowCount ?? 0 } };
+}
+
+class PostgresStatement implements D1PreparedStatement {
+  readonly owner: PostgresDatabase;
+  readonly sql: string;
+  readonly values: unknown[];
+  constructor(owner: PostgresDatabase, sql: string, values: unknown[] = []) {
+    this.owner = owner; this.sql = sql; this.values = values;
+  }
+  bind(...values: unknown[]): D1PreparedStatement { return new PostgresStatement(this.owner, this.sql, values); }
+  async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    return result<T>(await this.owner.pool.query(compilePostgresSql(this.sql), this.values));
+  }
+  run<T = Record<string, unknown>>(): Promise<D1Result<T>> { return this.all<T>(); }
+  async first<T = Record<string, unknown>>(columnName?: string): Promise<T | null> {
+    const first = (await this.all<Record<string, unknown>>()).results?.[0];
+    return first ? (columnName ? first[columnName] : first) as T : null;
+  }
+}
+
+/** No named prepared statements: compatible with Supavisor transaction pooling. */
+export class PostgresDatabase implements D1Database {
+  readonly pool: Pool;
+  constructor(pool: Pool) { this.pool = pool; }
+  prepare(sql: string): D1PreparedStatement { return new PostgresStatement(this, sql); }
+  async batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      const responses: D1Result<T>[] = [];
+      for (const statement of statements) {
+        if (!(statement instanceof PostgresStatement) || statement.owner !== this) throw new Error("混用数据库语句");
+        responses.push(result<T>(await client.query(compilePostgresSql(statement.sql), statement.values)));
+      }
+      await client.query("COMMIT");
+      return responses;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      const code = (error as { code?: string }).code;
+      if (code === "40001" || code === "40P01") {
+        // Existing atomic API maps this named guard failure to HTTP 409 and
+        // preserves the exact operationId for safe retry. Never auto-replay UI writes.
+        throw new Error("sync_assertions_ok_check: concurrent transaction", { cause: error });
+      }
+      throw error;
+    } finally { client.release(); }
+  }
+}
+
+let database: PostgresDatabase | undefined;
+export function getPostgresDatabase(): PostgresDatabase {
+  if (!database) {
+    const pool = new pg.Pool(postgresPoolOptions());
+    pool.on("error", () => console.error("postgres idle connection error"));
+    database = new PostgresDatabase(pool);
+  }
+  return database;
+}
+
+export async function assertPostgresSchema(): Promise<void> {
+  const { rows } = await getPostgresDatabase().pool.query(
+    "SELECT version, current_user AS role FROM ttq.schema_versions WHERE version = 1",
+  );
+  if (rows.length !== 1 || rows[0].role !== "ttq_app") {
+    throw new Error("请先执行独立测试库迁移，并使用 ttq_app 最小权限连接");
+  }
+}

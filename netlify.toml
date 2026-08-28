@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "24"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Runtime variables must be set with Functions scope in the NEW test site's
+# environment settings. Never link/deploy this branch to the original site.
+# Keep Next.js API routes: do not upload public/ledger as a static-only site.

@@ -1,3 +1,4 @@
+import { SupabaseLoginForm } from "./supabase-login-form";
 import { headers } from "next/headers";
 import { authLogoutPath } from "../lib/auth/logout";
 import { INTERNAL_AUTH_HEADERS } from "../lib/server/auth";
@@ -39,6 +40,7 @@ export default async function LoginPage() {
     process.env.NODE_ENV !== "production" &&
     isLocalHost(requestHeaders.get("host"));
   const showSitesSignIn = !user && authMode === "sites";
+  const showSupabaseSignIn = !user && authMode === "supabase";
   const showCloudbaseSignIn = !user && authMode === "cloudbase";
 
   return (
@@ -111,6 +113,7 @@ export default async function LoginPage() {
                 </p>
 
                 <div className="auth-actions">
+                  {showSupabaseSignIn ? <SupabaseLoginForm /> : null}
                   {showSitesSignIn ? (
                     <a
                       className="action action-primary"
@@ -143,7 +146,7 @@ export default async function LoginPage() {
                     </div>
                   ) : null}
 
-                  {!showSitesSignIn && !showCloudbaseSignIn && !showLocalSignIn ? (
+                  {!showSitesSignIn && !showCloudbaseSignIn && !showLocalSignIn && !showSupabaseSignIn ? (
                     <p className="auth-error" role="alert">
                       认证模式尚未配置，账本保持锁定。
                     </p>

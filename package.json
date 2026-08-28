@@ -1,6 +1,6 @@
 {
-  "name": "tangtangqing",
-  "version": "1.5.1",
+  "name": "tangtangqing-netlify-supabase",
+  "version": "1.5.1-supabase.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,27 +11,41 @@
     "dev": "next dev",
     "build": "npm run prepare:ledger && next build",
     "start": "next start",
-    "test": "node --experimental-strip-types --test tests/*.test.js tests/*.test.mjs",
+    "test": "node --import tsx --test tests/*.test.js tests/*.test.mjs",
     "test:domain": "node --test tests/domain.test.js",
     "db:generate": "drizzle-kit generate",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern public/ledger"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern public/ledger --ignore-pattern .netlify",
+    "test:postgres": "node --import tsx --test tests/postgres-integration.test.mjs",
+    "test:auth": "node --import tsx --test tests/supabase-auth.test.mjs",
+    "build:netlify": "netlify build --offline --context production",
+    "db:setup:supabase": "node --env-file=.env.local --import tsx scripts/setup-supabase.mjs",
+    "verify:cloud": "node --env-file=.env.local --import tsx scripts/verify-cloud.mjs",
+    "test:http": "npm run build && node --import tsx tests/http-smoke.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "0.12.5",
+    "@supabase/supabase-js": "2.112.4",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
+    "pg": "8.23.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "5.15.13",
     "@types/node": "22.19.19",
+    "@types/pg": "8.23.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "embedded-postgres": "17.7.0-beta.15",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "netlify-cli": "27.4.0",
     "react-server-dom-webpack": "19.2.6",
+    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vite": "8.0.13"
   }

@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  turbopack: { root: process.cwd() },
+  outputFileTracingRoot: process.cwd(),
   async headers() {
     return [
       {

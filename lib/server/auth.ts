@@ -1,7 +1,7 @@
 export const AUTH_MODE_ENV = "TTQ_AUTH_MODE";
 export const INTERNAL_AUTH_SECRET_ENV = "TTQ_INTERNAL_AUTH_SECRET";
 
-export type AuthMode = "sites" | "local" | "cloudbase";
+export type AuthMode = "sites" | "local" | "cloudbase" | "supabase";
 export type PrincipalIssuer = AuthMode;
 
 /**
@@ -160,12 +160,16 @@ export function resolveAuthMode(value?: string | null): AuthMode {
   if (
     configured !== "sites" &&
     configured !== "local" &&
-    configured !== "cloudbase"
+    configured !== "cloudbase" &&
+    configured !== "supabase"
   ) {
     throw new AuthenticationError(
       "auth_mode_invalid",
       `${AUTH_MODE_ENV} 配置无效`,
     );
+  }
+  if (typeof process !== "undefined" && (process.env.NETLIFY === "true" || process.env.NODE_ENV === "production") && configured !== "supabase") {
+    throw new AuthenticationError("auth_mode_unavailable", "本实验分支的生产运行只允许 Supabase 认证");
   }
   return configured;
 }

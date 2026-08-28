@@ -26,6 +26,7 @@ const RESERVED_AUTH_PATHS = new Set([
   "/signin-with-chatgpt",
   SITES_SIGN_OUT_PATH,
   "/api/local-auth/signin",
+  "/auth/supabase/signin",
   "/auth/cloudbase/login",
   "/auth/cloudbase/callback",
 ]);

@@ -1,3 +1,8 @@
+> **本分支是 Netlify + Supabase 隔离实验**，不是原 Sites/CloudBase 发布版本。
+> 当前实施以 [Netlify/Supabase 部署说明](deploy/NETLIFY-SUPABASE.md) 为准；验证结果见 [验证报告](deploy/VALIDATION-RESULTS.md)。
+> 保留原业务规则；旧托管、D1/SQLite运行和发布指令仅作历史参考，不适用于本分支。
+> 禁止向原 Sites 项目发布，禁止合并 main/develop，禁止使用真实账本测试。
+
 # 趟趟清 · 货运趟次云账本
 
 当前版本：**v1.5.1 · Sites 正式站点与 `develop` 运行代码一致 · 严格在线写入**。

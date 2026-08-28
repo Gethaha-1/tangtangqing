@@ -5,7 +5,6 @@ import {
 } from "../../../lib/server/bootstrap";
 import {
   AuthenticationError,
-  getTrustedPrincipal,
 } from "../../../lib/server/auth";
 import {
   enforceMutationRequest,
@@ -13,7 +12,7 @@ import {
   RequestSecurityError,
   secureJson,
 } from "../../../lib/server/http-security";
-import { serverAuthOptions } from "../../../lib/server/auth-runtime";
+import { requestIdentity, withRequestSession } from "../../../lib/server/request-identity";
 import {
   canonicalSyncPayload,
   parseSyncRequest,
@@ -26,12 +25,17 @@ import {
 } from "../../../lib/server/sync-repository";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function POST(request: Request): Promise<Response> {
+  return withRequestSession(request, await sync(request));
+}
+
+async function sync(request: Request): Promise<Response> {
   try {
     enforceMutationRequest(request);
     const input = await readJsonWithinLimit(request);
-    const identity = getTrustedPrincipal(request, serverAuthOptions());
+    const identity = await requestIdentity(request);
     const syncRequest = parseSyncRequest(input);
     const requestHash = await hashSyncPayload(
       canonicalSyncPayload(
@@ -98,7 +102,7 @@ export async function POST(request: Request): Promise<Response> {
         400,
       );
     }
-    console.error("sync failed", error);
+    console.error("sync failed", error instanceof Error ? error.name : "unknown");
     return secureJson(
       request,
       {

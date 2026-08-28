@@ -6,7 +6,6 @@ import {
 } from "../../../lib/server/bootstrap";
 import {
   AuthenticationError,
-  getTrustedPrincipal,
 } from "../../../lib/server/auth";
 import {
   enforceMutationRequest,
@@ -15,9 +14,10 @@ import {
   secureJson,
   withSecurityHeaders,
 } from "../../../lib/server/http-security";
-import { serverAuthOptions } from "../../../lib/server/auth-runtime";
+import { requestIdentity, withRequestSession } from "../../../lib/server/request-identity";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(request: Request): Promise<Response> {
   return withSecurityHeaders(
@@ -27,14 +27,14 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  return bootstrap(request);
+  return withRequestSession(request, await bootstrap(request));
 }
 
 async function bootstrap(request: Request): Promise<Response> {
   try {
     enforceMutationRequest(request);
     await readJsonWithinLimit(request);
-    const identity = getTrustedPrincipal(request, serverAuthOptions());
+    const identity = await requestIdentity(request);
     await ensureSchema();
     const d1 = getD1();
     const actor = await resolveOrCreateActor(d1, identity);
@@ -62,7 +62,7 @@ async function bootstrap(request: Request): Promise<Response> {
         400,
       );
     }
-    console.error("bootstrap failed", error);
+    console.error("bootstrap failed", error instanceof Error ? error.name : "unknown");
     return secureJson(
       request,
       {

@@ -1,8 +1,8 @@
 import { handleLogout } from "../../../lib/auth/logout";
-import { serverAuthOptions } from "../../../lib/server/auth-runtime";
-
+import { resolveAuthMode } from "../../../lib/server/auth";
+import { handleSupabaseAction } from "../../../lib/server/supabase-actions";
 export const dynamic = "force-dynamic";
-
+export const runtime = "nodejs";
 export function POST(request: Request): Promise<Response> {
-  return handleLogout(request, serverAuthOptions());
+  return resolveAuthMode() === "supabase" ? handleSupabaseAction(request, "signout") : handleLogout(request);
 }

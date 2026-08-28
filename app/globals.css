@@ -586,3 +586,9 @@ a {
     border: 1px solid CanvasText;
   }
 }
+
+.supabase-login { display: grid; gap: 10px; width: 100%; }
+.supabase-login label { color: var(--ink); font-size: 15px; font-weight: 600; }
+.supabase-login input { width: 100%; min-height: 48px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--paper); color: var(--ink); font: inherit; }
+.supabase-login input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.supabase-login .action { margin-top: 10px; }

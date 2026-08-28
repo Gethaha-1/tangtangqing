@@ -1,5 +1,14 @@
 # 变更记录（CHANGELOG）
 
+## v1.5.1-supabase.0 · 隔离验证分支
+
+- 保留账本界面和严格在线 API；新增 Supabase 邮箱密码登录与 HttpOnly 会话。
+- 新增 PostgreSQL 私有 schema、后端角色、参数适配与 SERIALIZABLE 原子批次。
+- 新增真实 PostgreSQL、Supabase SDK 协议、生产 HTTP 冒烟测试及 Netlify 离线构建配置。
+- 修复标准 Next.js 下 `/ledger` 未映射到账本 HTML 的入口问题；认证接口自行回写刷新 cookie，避免重复鉴权。
+- 移除本分支的旧 Sites hosting 关联；原项目和未提交改动保持独立。
+- 真实云端部署与国内移动网络验收需独立测试账号/资源，不以本地通过替代。
+
 ## Unreleased · 本地改进 · 2026-08-09
 
 ### 财务、fuel 与报告
