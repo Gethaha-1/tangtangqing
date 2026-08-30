@@ -6,7 +6,7 @@
 
 已实现并通过本地可行性验证：保留现有账本和 API，将登录接到 Supabase 官方 SSR SDK、数据接到 PostgreSQL，并生成 Netlify Functions 与 Edge 部署产物。
 
-**尚未验证真实 Netlify + Supabase 云端运行，也没有证明国内移动网络稳定。** 本地 Auth 使用受控 HTTPS 协议夹具，不把它当作真实 Supabase 账号验证。当前 Netlify CLI 未登录，本分支未配置新 Supabase 项目凭据。
+**已验证真实 Supabase 云端数据库与 Auth；尚未验证 Netlify 云端运行，也没有证明国内移动网络稳定。** 本地生产 HTTP 仍使用受控 HTTPS 协议夹具；Supabase 云端验证单独记录如下。当前 Netlify CLI 未登录，尚未创建 Netlify 测试站。
 
 ## 原项目隔离
 
@@ -44,6 +44,19 @@
 - 同时停用两辆最后活动车辆，仍保留至少一辆。
 - 原有500操作原子批次上限可运行；本地耗时不代表跨洲云端耗时。
 
+### Supabase 云端验证（2026-08-30）
+
+- 在原组织内创建全新的 Singapore 免费测试项目，没有打开或修改原有暂停项目。
+- Data API 关闭；公开注册、匿名登录和手动身份链接关闭，邮箱确认开启。
+- 使用官方 CA 完成 TLS 证书与主机校验，未关闭 `rejectUnauthorized`。
+- 真实云端迁移成功：`ttq` 私有 schema、15 张表、RLS 和专用 `ttq_app` 后端角色。
+- `ttq_app` 能连接和读写业务表，但不能建表；数据库与 Auth Project Ref 必须一致。
+- Supabase Security Advisor：0 errors、0 warnings、0 suggestions。
+- 创建两个自动确认的隔离测试账号；真实 Auth 登录、`getUser` 远端复核、退出和身份隔离全部通过。
+- 管理连接、应用连接、CA、内部密钥和测试账号密码只在本机 `.env.local`（0600、Git 忽略）中；公开 publishable key 也未写入仓库。
+
+迁移过程中发现并修复：本地安装器曾错误复用生产环境的 `ttq_app` 角色检查，导致合法的项目管理员迁移连接在 SQL 执行前被拒绝。修复后仍先核对 Project Ref/host，且管理员连接不会上传 Netlify。
+
 ### Auth 与 HTTP 实测内容
 
 Supabase SDK：配置拒绝管理密钥和不安全地址；HttpOnly/Secure cookie；getUser 远端核验；拒绝伪造 cookie/身份头；刷新过期会话并返回 cookie；Auth 故障不会退回信任缓存身份；同源检查；退出清除 cookie。
@@ -54,10 +67,9 @@ Supabase SDK：配置拒绝管理密钥和不安全地址；HttpOnly/Secure cook
 
 ## 尚需用户提供的测试条件
 
-1. 一个**全新 Supabase 测试项目**及两个已验证的测试账号。
-2. 一个**全新 Netlify 测试站**的授权，不复用原站。
-3. 按 [部署说明](NETLIFY-SUPABASE.md) 配置本机 `.env.local` 与测试站运行变量。密码、管理员连接、私钥不要贴在聊天中或提交到 Git。
-4. 执行 `verify:cloud` 后，用国内手机流量实测登录、保存、掉线/重试和晚高峰访问。
+1. 一个**全新 Netlify 测试站**的授权，不复用原站。
+2. 将本机已验证的运行变量安全配置到测试站；迁移管理员连接和测试用户密码不得上传。
+3. 执行 `verify:cloud` 后，用国内手机流量实测登录、保存、掉线/重试和晚高峰访问。
 
 还需要真实环境审查：Supabase 自定义数据库角色/连接证书、Netlify 函数地域与时限、账号恢复/邮件投递、备份恢复和实际数据迁移。当前实验只实现管理员开通账号后的邮箱密码登录与退出，不包含开放注册或自助找回页面。
 

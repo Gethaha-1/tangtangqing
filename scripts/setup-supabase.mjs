@@ -12,7 +12,14 @@ if (!adminUrl || !appPassword || appPassword.length < 32) throw new Error('缺�
 let parsed;
 try { parsed = new URL(adminUrl); } catch { throw new Error("迁移连接串格式无效（已隐藏）"); }
 if (parsed.hostname !== `db.${ref}.supabase.co` && !decodeURIComponent(parsed.username).endsWith(`.${ref}`)) throw new Error('连接串不属于指定测试项目，已拒绝迁移。');
-const client = new pg.Client(postgresPoolOptions({ ...process.env, TTQ_DATABASE_URL: adminUrl }));
+// The application runtime must use ttq_app. This one-shot local installer is
+// the only path that accepts the project-scoped postgres administrator after
+// the project-ref/host check above has succeeded.
+const client = new pg.Client(postgresPoolOptions({
+  ...process.env,
+  TTQ_AUTH_MODE: undefined,
+  TTQ_DATABASE_URL: adminUrl,
+}));
 try {
   await client.connect();
   const existing = await client.query("SELECT to_regnamespace('ttq') AS schema, EXISTS(SELECT 1 FROM pg_roles WHERE rolname='ttq_app') AS role");
