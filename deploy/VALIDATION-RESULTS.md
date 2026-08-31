@@ -48,7 +48,7 @@
 
 - 在原组织内创建全新的 Singapore 免费测试项目，没有打开或修改原有暂停项目。
 - Data API 关闭；公开注册、匿名登录和手动身份链接关闭，邮箱确认开启。
-- 使用官方 CA 完成 TLS 证书与主机校验，未关闭 `rejectUnauthorized`。
+- 使用官方 CA 完成 TLS 证书与主机校验，未关闭 `rejectUnauthorized`；控制台已启用 **Enforce SSL on incoming connections**，数据库重启后再次连接验证通过。
 - 真实云端迁移成功：`ttq` 私有 schema、15 张表、RLS 和专用 `ttq_app` 后端角色。
 - `ttq_app` 能连接和读写业务表，但不能建表；数据库与 Auth Project Ref 必须一致。
 - Supabase Security Advisor：0 errors、0 warnings、0 suggestions。
