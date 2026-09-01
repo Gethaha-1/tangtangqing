@@ -68,9 +68,11 @@
 ### Netlify + Supabase 隔离生产测试站（2026-09-01）
 
 - 新建且只关联本工作树的 Netlify 站点：`https://tangtangqing-supabase-test.netlify.app`；没有关联 Git 仓库，也没有修改原站。
+- 最新生产部署 `6a96f339d0090d141d57f947` 已使用 `.netlify/static` 与同构建 Node 函数发布；Manifest 和 180/192/512 图标均返回 200。
 - 生产部署日志确认上传 1 个 Node 服务器函数以及 Next.js Edge 中间件；首页返回 200，未登录访问 `/ledger` 返回 307，受保护 API 保持 POST-only。
 - `/api/deployment-info` 返回预期部署标记及新 Supabase Project Ref，避免误连旧项目。
 - `verify:cloud` 在真实 HTTPS 站点通过：两个测试账号登录和首次开账、账号 A 保存一条测试车辆、相同 operationId 幂等重放、刷新回读、账号 B 数据隔离、两个账号退出。没有导入真实账目。
+- 手机安装版本发布后再次通过账号 A 登录、bootstrap、受保护账本 HTML/JS 加载和退出；临时写入验证记录已从测试库清理，不留业务数据。
 - Netlify 仅保存运行需要的 8 个变量；Supabase 管理连接、应用账号原始密码和测试账号密码没有上传。
 
 ### Auth 与 HTTP 实测内容
