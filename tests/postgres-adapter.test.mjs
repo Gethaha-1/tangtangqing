@@ -30,6 +30,34 @@ test('D1-compatible batch rolls back all writes and always releases its connecti
   assert.equal(calls.includes('COMMIT'), false);
 });
 
+test('read-only batches use one escaped serializable snapshot round trip', async () => {
+  const calls = [];
+  const client = {
+    escapeLiteral(value) { return `'${String(value).replaceAll("'", "''")}'`; },
+    async query(sql) {
+      calls.push(sql);
+      return [
+        { command: 'BEGIN', rows: [], rowCount: null },
+        { command: 'SELECT', rows: [{ value: 'one' }], rowCount: 1 },
+        { command: 'SELECT', rows: [{ value: 'two' }], rowCount: 1 },
+        { command: 'COMMIT', rows: [], rowCount: null },
+      ];
+    },
+    release() { calls.push('release'); },
+  };
+  const db = new PostgresDatabase({ connect: async () => client });
+  const results = await db.batch([
+    db.prepare('SELECT ? AS value FROM users WHERE display_name = ?').bind('one', "O'Reilly"),
+    db.prepare('SELECT ? AS value FROM vehicles').bind('two'),
+  ]);
+  assert.deepEqual(results.map(result => result.results[0].value), ['one', 'two']);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], /^BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY;/);
+  assert.match(calls[0], /'O''Reilly'/);
+  assert.match(calls[0], /FROM ttq\.users/);
+  assert.deepEqual(calls.slice(-1), ['release']);
+});
+
 test('cloud Auth and database must belong to the same explicitly configured test project', () => {
   const ref='abcdefghijklmnopqrst';
   const env={NETLIFY:'true',TTQ_AUTH_MODE:'supabase',TTQ_SUPABASE_URL:`https://${ref}.supabase.co`,TTQ_DATABASE_URL:`postgresql://ttq_app.${ref}:password@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres`};

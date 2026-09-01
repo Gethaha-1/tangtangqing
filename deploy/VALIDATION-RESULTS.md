@@ -23,7 +23,7 @@
 | 检查 | 结果 |
 |---|---|
 | 改造前基线测试 | 120/120 通过 |
-| 最终 `npm test` | 142/142 通过，无跳过 |
+| 最终 `npm test` | 144/144 通过，无跳过 |
 | `npm run lint` | 通过，排除构建生成目录 |
 | `npx tsc --noEmit` | 通过 |
 | `npm run build:netlify` | 通过，包含 Next.js 生产构建、Node Functions 和 Edge Functions 打包 |
@@ -74,6 +74,13 @@
 - `verify:cloud` 在真实 HTTPS 站点通过：两个测试账号登录和首次开账、账号 A 保存一条测试车辆、相同 operationId 幂等重放、刷新回读、账号 B 数据隔离、两个账号退出。没有导入真实账目。
 - 手机安装版本发布后再次通过账号 A 登录、bootstrap、受保护账本 HTML/JS 加载和退出；临时写入验证记录已从测试库清理，不留业务数据。
 - Netlify 仅保存运行需要的 8 个变量；Supabase 管理连接、应用账号原始密码和测试账号密码没有上传。
+
+### 跨区启动延迟优化（2026-09-01）
+
+- 免费 Netlify 站的函数当前在 `us-east-2`（Ohio），Supabase 在 `ap-southeast-1`（Singapore）。Netlify 自定义 Functions region 需要 Pro/Enterprise，本次没有升级套餐或产生付费。
+- 原 bootstrap 的 8 条只读查询在一个串行化事务内逐条往返；连续实测为 4393、3221、3119、3152、3204 ms。
+- PostgreSQL 适配器现在只对全 SELECT 批次使用单次 simple-query 网络消息，仍在同一个 `SERIALIZABLE READ ONLY` 快照中；写入批次保持原参数绑定、逐条执行、串行化事务和冲突处理。
+- 隔离草稿真实账号连续 bootstrap 为 2705、1206、1198、1217、1263 ms；热请求约从 3.2 秒降到 1.2 秒。该结果来自当前开发机网络，不替代国内运营商实测。
 
 ### Auth 与 HTTP 实测内容
 

@@ -97,6 +97,7 @@ npm run db:setup:supabase -- --confirm-new-project=你的测试项目ref
 
 4. 在 Supabase Auth 的 URL 设置中填入测试站 Site URL，只添加实际需要的回跳 URL，不使用宽泛通配域名。
 5. 检查 Netlify Functions region。新站默认可能在美国；选择与 Supabase 同地域能减少数据库往返延迟。可自选 region 的套餐限制以 Netlify 当前控制台为准，文档列出该能力需要 Pro/Enterprise。若仍是跨洲链路，必须测真实保存时间，不能用本地性能代替。
+   当前免费测试站保持 Ohio，未付费改区；代码已把 bootstrap 的只读查询合并为同一串行化只读快照的一次网络消息，减少跨洲往返，但仍需国内手机实测。
 6. 检查当前 Functions 执行时限、连接池额度；大批次导入最多500操作，迁移保留原边界，跨洲大量 SQL 往返可能超时。未完成真实负载验证前不要批量迁移正式账本。
 7. 关闭任何公开缓存认证页面/API 的规则。保留响应 no-store；不要设置把所有路径重写成 index.html 的 SPA 通配规则。
 

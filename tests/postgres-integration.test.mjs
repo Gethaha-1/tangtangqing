@@ -45,6 +45,15 @@ test('real PostgreSQL: bootstrap, strict save, replay and account isolation', as
   await assert.rejects(sync(b, [vehicle('v1', '越权', 1)]), error => error.status === 409);
 });
 
+test('real PostgreSQL: read-only batch keeps parameter escaping and result order', async () => {
+  const results = await database.batch([
+    database.prepare('SELECT ?::text AS value').bind("甲'O"),
+    database.prepare('SELECT ?::int AS value').bind(42),
+  ]);
+  assert.equal(results[0].results[0].value, "甲'O");
+  assert.equal(results[1].results[0].value, 42);
+});
+
 test('real PostgreSQL: concurrent updates allow one winner and never overwrite silently', async () => {
   const actor = await resolveOrCreateActor(database, identity());
   await sync(actor, [vehicle()]);

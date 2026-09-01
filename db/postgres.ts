@@ -7,8 +7,10 @@ const TABLES = new Set([
   "trip_expenses", "trip_incomes", "maintenance", "sync_commits", "sync_assertions",
 ]);
 
-/** Compile the repository's controlled SQL, respecting literals and comments. */
-export function compilePostgresSql(sql: string): string {
+function compileControlledSql(
+  sql: string,
+  parameterToken: (position: number) => string,
+): string {
   let output = "";
   let position = 0;
   let parameter = 0;
@@ -57,7 +59,7 @@ export function compilePostgresSql(sql: string): string {
       continue;
     }
     if (character === "?") {
-      output += `$${++parameter}`;
+      output += parameterToken(++parameter);
       position++;
       continue;
     }
@@ -73,6 +75,39 @@ export function compilePostgresSql(sql: string): string {
     position++;
   }
   return output;
+}
+
+/** Compile the repository's controlled SQL, respecting literals and comments. */
+export function compilePostgresSql(sql: string): string {
+  return compileControlledSql(sql, (position) => `$${position}`);
+}
+
+function postgresLiteral(client: PoolClient, value: unknown): string {
+  if (value === null) return "NULL";
+  if (typeof value === "string") return client.escapeLiteral(value);
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (value instanceof Uint8Array) {
+    return `${client.escapeLiteral(`\\x${Buffer.from(value).toString("hex")}`)}::bytea`;
+  }
+  if (value instanceof ArrayBuffer) {
+    return `${client.escapeLiteral(`\\x${Buffer.from(value).toString("hex")}`)}::bytea`;
+  }
+  throw new TypeError("只读批次包含不支持的参数类型");
+}
+
+function compilePostgresLiteralSql(
+  client: PoolClient,
+  sql: string,
+  values: unknown[],
+): string {
+  let used = 0;
+  const compiled = compileControlledSql(sql, () => {
+    if (used >= values.length) throw new Error("SQL 参数数量不足");
+    return postgresLiteral(client, values[used++]);
+  });
+  if (used !== values.length) throw new Error("SQL 参数数量不匹配");
+  return compiled.trim().replace(/;+$/, "");
 }
 
 export function postgresPoolOptions(env: NodeJS.ProcessEnv = process.env): PoolConfig {
@@ -147,10 +182,31 @@ export class PostgresDatabase implements D1Database {
   async batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
     const client: PoolClient = await this.pool.connect();
     try {
+      const owned = statements.map((statement) => {
+        if (!(statement instanceof PostgresStatement) || statement.owner !== this) throw new Error("混用数据库语句");
+        return statement;
+      });
+      if (owned.length && owned.every((statement) => /^\s*SELECT\b/i.test(statement.sql))) {
+        // Supabase and the Netlify function can be on different continents.
+        // Send all independent bootstrap SELECTs in one PostgreSQL simple-query
+        // message while preserving one serializable, read-only snapshot.
+        const sql = [
+          "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY",
+          ...owned.map((statement) =>
+            compilePostgresLiteralSql(client, statement.sql, statement.values),
+          ),
+          "COMMIT",
+        ].join(";\n");
+        const response = await client.query(sql);
+        const queries = (Array.isArray(response) ? response : [response]).filter(
+          (query) => query.command === "SELECT",
+        );
+        if (queries.length !== owned.length) throw new Error("只读批次结果数量不匹配");
+        return queries.map((query) => result<T>(query));
+      }
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       const responses: D1Result<T>[] = [];
-      for (const statement of statements) {
-        if (!(statement instanceof PostgresStatement) || statement.owner !== this) throw new Error("混用数据库语句");
+      for (const statement of owned) {
         responses.push(result<T>(await client.query(compilePostgresSql(statement.sql), statement.values)));
       }
       await client.query("COMMIT");
