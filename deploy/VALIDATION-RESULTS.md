@@ -6,7 +6,7 @@
 
 已实现并通过本地及隔离云端验证：保留现有账本和 API，将登录接到 Supabase 官方 SSR SDK、数据接到 PostgreSQL，并以 Netlify Functions 与 Edge Function 运行。
 
-**真实 Supabase 数据库/Auth 与 Netlify 隔离生产测试站的端到端流程已经通过；仍没有证明国内移动网络稳定，也未完成业务正式上线验收。** 本地生产 HTTP 使用受控 HTTPS 协议夹具，真实云端验证单独记录如下。
+**真实 Supabase 数据库/Auth 与 Netlify 隔离生产测试站的端到端流程已经通过；用户已确认当前国内网络可访问，但仍需复测优化后的登录/保存耗时，也未完成长期稳定性验收。** 本地生产 HTTP 使用受控 HTTPS 协议夹具，真实云端验证单独记录如下。
 
 ## 原项目隔离
 
@@ -68,7 +68,7 @@
 ### Netlify + Supabase 隔离生产测试站（2026-09-01）
 
 - 新建且只关联本工作树的 Netlify 站点：`https://tangtangqing-supabase-test.netlify.app`；没有关联 Git 仓库，也没有修改原站。
-- 最新生产部署 `6a9734ce5e507191f74587a1` 已使用 `.netlify/static` 与同构建 Node 函数发布；Manifest 和 180/192/512 图标均返回 200。
+- 最新生产部署 `6a9739d0bbacf0c1c2a596eb` 已使用 `.netlify/static` 与同构建 Node 函数发布；Manifest 和 180/192/512 图标均返回 200。
 - 生产部署日志确认上传 1 个 Node 服务器函数以及 Next.js Edge 中间件；首页返回 200，未登录访问 `/ledger` 返回 307，受保护 API 保持 POST-only。
 - `/api/deployment-info` 返回预期部署标记及新 Supabase Project Ref，避免误连旧项目。
 - `verify:cloud` 在真实 HTTPS 站点通过：两个测试账号登录和首次开账、账号 A 保存一条测试车辆、相同 operationId 幂等重放、刷新回读、账号 B 数据隔离、两个账号退出。没有导入真实账目。
@@ -89,6 +89,7 @@
 - PostgreSQL 适配器把受控写入批次也改为一次 simple-query 网络消息，仍保留 `SERIALIZABLE`、成员/车辆分配/父趟/版本守卫、约束失败全批回滚和幂等提交记录。
 - 原子同步预检把成员状态、operationId 重放和各记录当前版本放入同一个串行化只读快照；事务内守卫继续防止预检后撤权或并发改动。
 - 隔离草稿连续单笔保存为 1672、1748、1653 ms，清理为 1422、1496、1423 ms；相对原保存耗时约减半。所有临时记录均已验证清理。
+- 正式站发布后保存为 1681、1696、3119 ms，清理为 1422、1617、1435 ms；通常约 1.7 秒，仍观察到一次 3.1 秒平台冷启动/调度波动。临时记录全部清理，受保护账本和退出复验通过。
 
 ### Auth 与 HTTP 实测内容
 
