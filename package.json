@@ -18,6 +18,9 @@
     "test:postgres": "node --import tsx --test tests/postgres-integration.test.mjs",
     "test:auth": "node --import tsx --test tests/supabase-auth.test.mjs",
     "build:netlify": "netlify build --offline --context production",
+    "prepare:netlify:deploy": "node scripts/prepare-netlify-manual-deploy.mjs",
+    "deploy:netlify:draft": "npm run build:netlify && npm run prepare:netlify:deploy && netlify deploy --no-build --dir .netlify/static --functions .netlify/functions-internal",
+    "deploy:netlify:prod": "npm run build:netlify && npm run prepare:netlify:deploy && netlify deploy --no-build --dir .netlify/static --functions .netlify/functions-internal --prod",
     "db:setup:supabase": "node --env-file=.ttq-local.env --import tsx scripts/setup-supabase.mjs",
     "verify:cloud": "node --env-file=.ttq-local.env --import tsx scripts/verify-cloud.mjs",
     "test:http": "npm run build && node --import tsx tests/http-smoke.mjs"

@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="趟趟清">
+<meta name="theme-color" content="#A63A2E">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/ttq-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/ttq-180.png">
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
@@ -490,6 +495,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
       <div class="row" data-go="export"><span class="ric">📤</span><div class="rmain"><b>备份数据</b><span>导出成文件，发到微信收藏保存</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="import"><span class="ric">📥</span><div class="rmain"><b>恢复数据</b><span>换手机后，用备份文件找回全部账</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="theme"><span class="ric">🌗</span><div class="rmain"><b>切换日 / 夜模式</b><span id="themeStateTxt">当前：宣纸账房（日）</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="install" role="button" tabindex="0"><span class="ric">📲</span><div class="rmain"><b>放到手机桌面</b><span id="installStateTxt">以后点图标直接进入账本</span></div><span class="rarrow">›</span></div>
     </div>
     <div class="panel account-panel">
       <div class="account-copy"><b id="accountTitle">当前账号</b><span id="accountDetail">正在核对登录状态和车队归属…</span></div>
@@ -766,6 +772,54 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
 const APP_VER = '1.5.1-supabase.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
+let installPromptEvent = null;
+
+function isStandaloneApp() {
+  return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+}
+
+function installHelpText() {
+  if (isStandaloneApp()) return '已从手机桌面打开';
+  if (installPromptEvent) return '点这里安装，之后从桌面直接进入';
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    ? 'iPhone：点分享，再选“添加到主屏幕”'
+    : '浏览器菜单里选择“安装应用”或“添加到主屏幕”';
+}
+
+async function requestAppInstall() {
+  if (isStandaloneApp()) {
+    toast('现在已经是从手机桌面打开');
+    return;
+  }
+  if (!installPromptEvent) {
+    toast(installHelpText());
+    return;
+  }
+  const prompt = installPromptEvent;
+  installPromptEvent = null;
+  try {
+    await prompt.prompt();
+    await prompt.userChoice;
+  } catch {
+    toast('请从浏览器菜单选择“安装应用”或“添加到主屏幕”');
+  }
+  const state = $('#installStateTxt');
+  if (state) state.textContent = installHelpText();
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPromptEvent = event;
+  const state = $('#installStateTxt');
+  if (state) state.textContent = installHelpText();
+});
+window.addEventListener('appinstalled', () => {
+  installPromptEvent = null;
+  const state = $('#installStateTxt');
+  if (state) state.textContent = '已添加到手机桌面';
+  toast('趟趟清已添加到手机桌面');
+});
 
 /*
  * D1 是唯一正式数据源。历史未归属 localStorage 永远不在登录会话中读取；
@@ -2174,6 +2228,7 @@ function renderMaint() {
 /* ---- 更多 ---- */
 function renderMore() {
   $('#themeStateTxt').textContent = '当前：' + (DevicePrefs.theme === 'day' ? '宣纸账房（日）· 点了换瓷青泥金（夜）' : '瓷青泥金（夜）· 点了换宣纸账房（日）');
+  $('#installStateTxt').textContent = installHelpText();
   const fleet = Store.fleet;
   $('#accountTitle').textContent = fleet ? fleet.name : '当前账号';
   $('#accountDetail').textContent = '已通过当前登录账号核对身份；业务数据归属当前车队。';
@@ -3502,6 +3557,7 @@ document.addEventListener('click', async e => {
     else if (go === 'export') exportData();
     else if (go === 'import') $('#importFile').click();
     else if (go === 'theme') toggleTheme();
+    else if (go === 'install') requestAppInstall();
     return;
   }
   if ((el = q('#nav button'))) { showView(el.dataset.v); return; }

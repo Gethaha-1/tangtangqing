@@ -23,7 +23,7 @@
 | 检查 | 结果 |
 |---|---|
 | 改造前基线测试 | 120/120 通过 |
-| 最终 `npm test` | 140/140 通过，无跳过 |
+| 最终 `npm test` | 142/142 通过，无跳过 |
 | `npm run lint` | 通过，排除构建生成目录 |
 | `npx tsc --noEmit` | 通过 |
 | `npm run build:netlify` | 通过，包含 Next.js 生产构建、Node Functions 和 Edge Functions 打包 |
@@ -61,8 +61,9 @@
 ### Netlify 本地打包安全与草稿验证（2026-09-01）
 
 - Netlify Next.js Runtime 会主动把标准 `.env.local` 复制到服务器函数；本机凭据已迁到 Git 忽略且权限为 0600 的 `.ttq-local.env`，由 Node `loadEnvFile` 仅在本地显式读取。重新构建后函数 ZIP 不含 `.env*`、本机凭据文件或证书文件。
-- Netlify CLI 27.4.0 在这个 `git worktree` 中把上层用户目录误判为仓库根目录，先前因此发布了错误的 `.next` 路径且没有上传 Node 函数。使用显式 `--dir .next --functions .netlify/functions-internal` 后，日志确认上传 1 个函数。
+- Netlify CLI 27.4.0 在这个 `git worktree` 中把上层用户目录误判为仓库根目录，先前因此发布了错误路径且没有上传 Node 函数。手动部署现在显式使用 `--dir .netlify/static --functions .netlify/functions-internal`：前者是插件恢复后的公开静态目录，后者是 Node 函数目录。
 - 隔离草稿域名的动态首页和 `/api/deployment-info` 均返回 200；未触碰原 Netlify 站点或原分支。
+- Web App Manifest、180/192/512 PNG 图标及受保护的 `/ledger` 桌面启动入口通过草稿验证。手机可添加到主屏幕；未注册 Service Worker，也不缓存认证页、API 或业务数据。
 
 ### Netlify + Supabase 隔离生产测试站（2026-09-01）
 

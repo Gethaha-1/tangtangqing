@@ -171,6 +171,7 @@ export default async function LoginPage() {
         <footer className="page-note">
           <p>登录只用于确认记账人和车队归属。</p>
           <p>第一阶段先向车主开放，司机账号与车辆分配稍后接入。</p>
+          <p>手机浏览器可将本站添加到主屏幕，以后点击“趟趟清”直接进入账本。</p>
         </footer>
       </div>
     </main>

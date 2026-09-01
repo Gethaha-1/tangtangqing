@@ -51,10 +51,13 @@ git diff --check
 
 ```sh
 npm run build:netlify
-npx netlify deploy --no-build --dir .next --functions .netlify/functions-internal
+npm run prepare:netlify:deploy
+npx netlify deploy --no-build --dir .netlify/static --functions .netlify/functions-internal
 ```
 
-正常 Git 克隆和 Netlify Git 持续部署不需要这个工作树兼容参数。若草稿部署正确，再在同一条命令增加 `--prod`；不要在路径未核对时直接发布。
+`.netlify/static` 是插件完成构建后恢复的最终公开目录，包含 `public/` 与 `_next/static`；`.next` 只用于 Next.js 服务器构建，不能作为独立手动部署的公开目录。也可直接运行 `npm run deploy:netlify:draft`，草稿确认后运行 `npm run deploy:netlify:prod`。
+
+正常 Git 克隆和 Netlify Git 持续部署不需要这个工作树兼容参数。不要在路径未核对时直接发布。
 
 ## 新 Supabase 测试项目
 

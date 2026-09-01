@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="趟趟清">
+  <rect width="512" height="512" fill="#F1EBDC"/>
+  <path d="M72 104c54-40 121-54 190-47 74 8 139 40 178 87" fill="none" stroke="#D8CDB2" stroke-width="16" stroke-linecap="round"/>
+  <path d="M78 405c57 35 123 51 191 45 70-7 132-34 173-74" fill="none" stroke="#D8CDB2" stroke-width="16" stroke-linecap="round"/>
+  <rect x="112" y="90" width="288" height="312" rx="66" fill="#A63A2E"/>
+  <rect x="129" y="107" width="254" height="278" rx="52" fill="none" stroke="#E3C8A0" stroke-width="5" opacity=".78"/>
+  <text x="256" y="309" text-anchor="middle" font-family="Songti SC, STSong, serif" font-size="194" font-weight="700" fill="#FBF7EC">趟</text>
+  <circle cx="158" cy="344" r="8" fill="#E3C8A0"/>
+  <path d="M181 344h173" stroke="#E3C8A0" stroke-width="7" stroke-linecap="round" stroke-dasharray="14 15"/>
+</svg>

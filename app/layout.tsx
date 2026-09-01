@@ -9,6 +9,21 @@ export const metadata: Metadata = {
   },
   description: "登录趟趟清，让车队账本跨设备安全保存。",
   applicationName: "趟趟清",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "趟趟清",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/ttq-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/ttq-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/ttq-180.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
