@@ -121,7 +121,7 @@ npm run verify:cloud -- --confirm-new-project=你的测试项目ref
 
 ## 上线前仍需做的工作
 
-- 真实 Netlify + Supabase 云端运行与国内网络验证。
+- 隔离 Netlify + Supabase 云端端到端已经通过；仍需国内移动网络和常用 Wi-Fi 验证。
 - 备份计划及恢复演练（Supabase免费方案会因低活跃暂停；默认SMTP不适合正式用户）。
 - 新旧身份的迁移安排：新 Supabase UID 不等于旧 Sites/CloudBase subject。真实账本只能在核对账号后显式导入 JSON，不按邮箱自动合并身份。
 - 自助找回/注册/邀请和邮件投递若需要，另行完成；当前只支持管理员开通账号。

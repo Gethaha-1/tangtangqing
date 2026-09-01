@@ -1,12 +1,12 @@
 # Netlify + Supabase 隔离验证结果
 
-日期：2026-08-27（America/Los_Angeles）。
+日期：2026-09-01（America/Los_Angeles）。
 
 ## 结论
 
-已实现并通过本地可行性验证：保留现有账本和 API，将登录接到 Supabase 官方 SSR SDK、数据接到 PostgreSQL，并生成 Netlify Functions 与 Edge 部署产物。
+已实现并通过本地及隔离云端验证：保留现有账本和 API，将登录接到 Supabase 官方 SSR SDK、数据接到 PostgreSQL，并以 Netlify Functions 与 Edge Function 运行。
 
-**已验证真实 Supabase 云端数据库与 Auth；尚未验证 Netlify 云端运行，也没有证明国内移动网络稳定。** 本地生产 HTTP 仍使用受控 HTTPS 协议夹具；Supabase 云端验证单独记录如下。当前 Netlify CLI 未登录，尚未创建 Netlify 测试站。
+**真实 Supabase 数据库/Auth 与 Netlify 隔离生产测试站的端到端流程已经通过；仍没有证明国内移动网络稳定，也未完成业务正式上线验收。** 本地生产 HTTP 使用受控 HTTPS 协议夹具，真实云端验证单独记录如下。
 
 ## 原项目隔离
 
@@ -28,6 +28,7 @@
 | `npx tsc --noEmit` | 通过 |
 | `npm run build:netlify` | 通过，包含 Next.js 生产构建、Node Functions 和 Edge Functions 打包 |
 | 生产 Next.js HTTP 冒烟 | 通过，实际 HTTP/HTTPS 与真实 PostgreSQL |
+| Netlify + Supabase 云端端到端 | 通过，两个账号登录、开账、保存、幂等重放、回读、隔离、退出 |
 | `git diff --check` | 通过 |
 
 ### PostgreSQL 实测内容
@@ -63,6 +64,14 @@
 - Netlify CLI 27.4.0 在这个 `git worktree` 中把上层用户目录误判为仓库根目录，先前因此发布了错误的 `.next` 路径且没有上传 Node 函数。使用显式 `--dir .next --functions .netlify/functions-internal` 后，日志确认上传 1 个函数。
 - 隔离草稿域名的动态首页和 `/api/deployment-info` 均返回 200；未触碰原 Netlify 站点或原分支。
 
+### Netlify + Supabase 隔离生产测试站（2026-09-01）
+
+- 新建且只关联本工作树的 Netlify 站点：`https://tangtangqing-supabase-test.netlify.app`；没有关联 Git 仓库，也没有修改原站。
+- 生产部署日志确认上传 1 个 Node 服务器函数以及 Next.js Edge 中间件；首页返回 200，未登录访问 `/ledger` 返回 307，受保护 API 保持 POST-only。
+- `/api/deployment-info` 返回预期部署标记及新 Supabase Project Ref，避免误连旧项目。
+- `verify:cloud` 在真实 HTTPS 站点通过：两个测试账号登录和首次开账、账号 A 保存一条测试车辆、相同 operationId 幂等重放、刷新回读、账号 B 数据隔离、两个账号退出。没有导入真实账目。
+- Netlify 仅保存运行需要的 8 个变量；Supabase 管理连接、应用账号原始密码和测试账号密码没有上传。
+
 ### Auth 与 HTTP 实测内容
 
 Supabase SDK：配置拒绝管理密钥和不安全地址；HttpOnly/Secure cookie；getUser 远端核验；拒绝伪造 cookie/身份头；刷新过期会话并返回 cookie；Auth 故障不会退回信任缓存身份；同源检查；退出清除 cookie。
@@ -71,12 +80,12 @@ Supabase SDK：配置拒绝管理密钥和不安全地址；HttpOnly/Secure cook
 
 验证发现并修复：标准 Next.js 不会自动把 `/ledger` 映射到 `public/ledger/index.html`，现已在完成认证后显式映射。
 
-## 尚需用户提供的测试条件
+## 尚需用户完成的测试条件
 
-1. 一个**全新 Netlify 测试站**的授权，不复用原站。
-2. 将本机已验证的运行变量安全配置到测试站；迁移管理员连接和测试用户密码不得上传。
-3. 执行 `verify:cloud` 后，用国内手机流量实测登录、保存、掉线/重试和晚高峰访问。
+1. 用国内手机 4G/5G 和常用 Wi-Fi 实测登录、保存、刷新、退出。
+2. 实测断网只读、恢复网络、重复点击、备份导出，并在晚高峰复测。
+3. 记录失败率和最长等待时间；完成前不能承诺“国内正常访问”。
 
 还需要真实环境审查：Supabase 自定义数据库角色/连接证书、Netlify 函数地域与时限、账号恢复/邮件投递、备份恢复和实际数据迁移。当前实验只实现管理员开通账号后的邮箱密码登录与退出，不包含开放注册或自助找回页面。
 
-因此本报告支持“代码适配和本地运行可行”，不代表“生产环境已上线/国内网络已验收”。
+因此本报告支持“Netlify + Supabase 技术方案在隔离云端可运行”。当前上线的是测试站，不代表国内网络已经验收或业务正式生产已经完成。
