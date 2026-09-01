@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: { root: process.cwd() },
   outputFileTracingRoot: process.cwd(),
+  // Next.js loads .env files during the build. They are runtime configuration,
+  // not application dependencies, and must never be copied into Netlify's
+  // server-function bundle by output-file tracing.
+  outputFileTracingExcludes: {
+    "/*": ["./.env", "./.env.*", "./.ttq-local.env", "./.certs/**/*"],
+  },
   async headers() {
     return [
       {

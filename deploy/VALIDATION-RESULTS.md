@@ -53,9 +53,15 @@
 - `ttq_app` 能连接和读写业务表，但不能建表；数据库与 Auth Project Ref 必须一致。
 - Supabase Security Advisor：0 errors、0 warnings、0 suggestions。
 - 创建两个自动确认的隔离测试账号；真实 Auth 登录、`getUser` 远端复核、退出和身份隔离全部通过。
-- 管理连接、应用连接、CA、内部密钥和测试账号密码只在本机 `.env.local`（0600、Git 忽略）中；公开 publishable key 也未写入仓库。
+- 管理连接、应用连接、CA、内部密钥和测试账号密码只在本机 `.ttq-local.env`（0600、Git 忽略）中；公开 publishable key 也未写入仓库。为防止 Netlify Next.js Runtime 自动把标准 `.env.local` 复制进函数包，脚本使用非标准本机文件名显式加载。
 
 迁移过程中发现并修复：本地安装器曾错误复用生产环境的 `ttq_app` 角色检查，导致合法的项目管理员迁移连接在 SQL 执行前被拒绝。修复后仍先核对 Project Ref/host，且管理员连接不会上传 Netlify。
+
+### Netlify 本地打包安全与草稿验证（2026-09-01）
+
+- Netlify Next.js Runtime 会主动把标准 `.env.local` 复制到服务器函数；本机凭据已迁到 Git 忽略且权限为 0600 的 `.ttq-local.env`，由 Node `loadEnvFile` 仅在本地显式读取。重新构建后函数 ZIP 不含 `.env*`、本机凭据文件或证书文件。
+- Netlify CLI 27.4.0 在这个 `git worktree` 中把上层用户目录误判为仓库根目录，先前因此发布了错误的 `.next` 路径且没有上传 Node 函数。使用显式 `--dir .next --functions .netlify/functions-internal` 后，日志确认上传 1 个函数。
+- 隔离草稿域名的动态首页和 `/api/deployment-info` 均返回 200；未触碰原 Netlify 站点或原分支。
 
 ### Auth 与 HTTP 实测内容
 

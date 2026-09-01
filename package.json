@@ -8,9 +8,9 @@
   },
   "scripts": {
     "prepare:ledger": "node scripts/prepare-ledger-assets.mjs",
-    "dev": "next dev",
-    "build": "npm run prepare:ledger && next build",
-    "start": "next start",
+    "dev": "node scripts/next-with-local-env.mjs dev",
+    "build": "npm run prepare:ledger && node scripts/next-with-local-env.mjs build",
+    "start": "node scripts/next-with-local-env.mjs start",
     "test": "node --import tsx --test tests/*.test.js tests/*.test.mjs",
     "test:domain": "node --test tests/domain.test.js",
     "db:generate": "drizzle-kit generate",
@@ -18,8 +18,8 @@
     "test:postgres": "node --import tsx --test tests/postgres-integration.test.mjs",
     "test:auth": "node --import tsx --test tests/supabase-auth.test.mjs",
     "build:netlify": "netlify build --offline --context production",
-    "db:setup:supabase": "node --env-file=.env.local --import tsx scripts/setup-supabase.mjs",
-    "verify:cloud": "node --env-file=.env.local --import tsx scripts/verify-cloud.mjs",
+    "db:setup:supabase": "node --env-file=.ttq-local.env --import tsx scripts/setup-supabase.mjs",
+    "verify:cloud": "node --env-file=.ttq-local.env --import tsx scripts/verify-cloud.mjs",
     "test:http": "npm run build && node --import tsx tests/http-smoke.mjs"
   },
   "dependencies": {

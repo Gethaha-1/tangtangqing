@@ -47,10 +47,19 @@ git diff --check
 - `test:http` 运行真正的 Next.js 生产构建 + PostgreSQL。Auth 使用本机 HTTPS 协议夹具和官方 Supabase SDK，并明确不是 Supabase 云端验证。需要本机 `openssl`。
 - `build:netlify` 是官方 Netlify CLI 离线构建和 Functions/Edge 打包，不创建或部署站点。
 
+本仓库若通过 `git worktree` 检出，工作树根目录的 `.git` 是文件而非目录。Netlify CLI 27.4.0 在这种情况下可能继续向上查找其他 `.git` 目录，把发布根目录解析到错误位置。部署前必须检查 CLI 显示的 `Deploy path` 和 `Functions path`；本地工作树验证使用显式目录：
+
+```sh
+npm run build:netlify
+npx netlify deploy --no-build --dir .next --functions .netlify/functions-internal
+```
+
+正常 Git 克隆和 Netlify Git 持续部署不需要这个工作树兼容参数。若草稿部署正确，再在同一条命令增加 `--prod`；不要在路径未核对时直接发布。
+
 ## 新 Supabase 测试项目
 
 1. 创建一个全新项目。region 选择 Singapore；记录 project ref。免费方案仅用于验证，不作为可用性保证。
-2. 复制 `.env.example` 为 `.env.local`，保持 gitignored。设置新的 Supabase URL、publishable key 和随机内部密钥。
+2. 复制 `.env.example` 为 `.ttq-local.env`，保持 gitignored。项目脚本通过 Node 的 `loadEnvFile` 读取它，避免 Netlify Next.js Runtime 把标准 `.env.local` 自动打入服务器函数。设置新的 Supabase URL、publishable key 和随机内部密钥。
 3. 从 Supabase Connect 对话框取得管理连接（Session pooler 5432 或 direct），只放本机 `TTQ_DATABASE_ADMIN_URL`。设置 `TTQ_TEST_PROJECT_REF` 和至少32字符随机 `TTQ_APP_DATABASE_PASSWORD`。
 4. 明确确认仅针对这个新项目后运行：
 
@@ -90,7 +99,7 @@ npm run db:setup:supabase -- --confirm-new-project=你的测试项目ref
 
 ## 真实云端验证（目前须由真实测试资源完成）
 
-在本机 `.env.local` 中额外设置，勿提交或上传：
+在本机 `.ttq-local.env` 中额外设置，勿提交或上传：
 
 ```dotenv
 TTQ_TEST_PROJECT_REF=你的新项目ref
