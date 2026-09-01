@@ -113,10 +113,14 @@ test('real PostgreSQL: driver assignment filtering and transaction-time revocati
   await assert.rejects(sync(driver, [maintenance('denied')]), error => error.status === 422);
   const operation = maintenance('revoked'); operation.data.vehicleId = 'allowed';
   const batch = parseSyncRequest({ operationId: randomUUID(), operations: [operation], finalize: false });
+  let guardedBatchCalls = 0;
   const guardedDb = {
     prepare: database.prepare.bind(database),
     async batch(statements) {
-      await fixture.admin.query('UPDATE ttq.fleet_members SET active=0, version=version+1 WHERE id=$1', [memberId]);
+      guardedBatchCalls++;
+      if (guardedBatchCalls === 2) {
+        await fixture.admin.query('UPDATE ttq.fleet_members SET active=0, version=version+1 WHERE id=$1', [memberId]);
+      }
       return database.batch(statements);
     },
   };

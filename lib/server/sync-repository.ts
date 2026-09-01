@@ -141,19 +141,42 @@ export async function applyAtomicSyncBatch(
   operations: SyncOperation[],
   finalize: boolean,
 ): Promise<AtomicSyncResponse> {
-  await requireActiveMembership(d1, actor);
-  const replay = await readSyncCommit(d1, actor.fleetId, operationId);
+  const preflight = await d1.batch([
+    activeMembershipStatement(d1, actor),
+    syncCommitStatement(d1, actor.fleetId, operationId),
+    ...operations.map((operation) =>
+      currentStatement(d1, actor.fleetId, operation),
+    ),
+  ]);
+  assertActiveMembership(
+    actor,
+    (preflight[0]?.results?.[0] as { role?: string } | undefined) ?? null,
+  );
+  const replay =
+    (preflight[1]?.results?.[0] as {
+      request_hash: string;
+      response_json: string;
+    } | undefined) ?? null;
   if (replay) return replaySyncCommit(replay, requestHash);
+  const currentRows = preflight.slice(2).map(
+    (result) => (result.results?.[0] as RawRow | undefined) ?? null,
+  );
 
   const projection = buildBatchProjection(operations);
   const entries: AtomicEntry[] = [];
   const failures: SyncResult[] = [];
 
-  for (const operation of operations) {
+  for (const [operationIndex, operation] of operations.entries()) {
     try {
-      const current = await getCurrent(d1, actor.fleetId, operation);
+      const current = currentRows[operationIndex] ?? null;
       if (current) {
-        await authorizeCurrentRecord(d1, actor, operation.type, current);
+        await authorizeCurrentRecord(
+          d1,
+          actor,
+          operation.type,
+          current,
+          true,
+        );
       }
 
       if (operation.op === "delete") {
@@ -432,12 +455,20 @@ async function readSyncCommit(
   fleetId: string,
   operationId: string,
 ): Promise<{ request_hash: string; response_json: string } | null> {
+  return syncCommitStatement(d1, fleetId, operationId)
+    .first<{ request_hash: string; response_json: string }>();
+}
+
+function syncCommitStatement(
+  d1: D1Database,
+  fleetId: string,
+  operationId: string,
+): D1PreparedStatement {
   return d1
     .prepare(
       "SELECT request_hash, response_json FROM sync_commits WHERE fleet_id = ? AND operation_id = ? LIMIT 1",
     )
-    .bind(fleetId, operationId)
-    .first<{ request_hash: string; response_json: string }>();
+    .bind(fleetId, operationId);
 }
 
 function replaySyncCommit(
@@ -1427,8 +1458,9 @@ async function authorizeCurrentRecord(
   actor: Actor,
   type: SyncType,
   current: RawRow,
+  membershipAlreadyVerified = false,
 ): Promise<void> {
-  await requireActiveMembership(d1, actor);
+  if (!membershipAlreadyVerified) await requireActiveMembership(d1, actor);
   if (type === "category" || type === "vehicle" || type === "fleet_settings") {
     requireOwner(actor);
     return;
@@ -1453,12 +1485,26 @@ async function requireActiveMembership(
   d1: D1Database,
   actor: Actor,
 ): Promise<void> {
-  const membership = await d1
+  const membership = await activeMembershipStatement(d1, actor)
+    .first<{ role: string }>();
+  assertActiveMembership(actor, membership);
+}
+
+function activeMembershipStatement(
+  d1: D1Database,
+  actor: Actor,
+): D1PreparedStatement {
+  return d1
     .prepare(
       "SELECT role FROM fleet_members WHERE id = ? AND fleet_id = ? AND user_id = ? AND active = 1 LIMIT 1",
     )
-    .bind(actor.membershipId, actor.fleetId, actor.userId)
-    .first<{ role: string }>();
+    .bind(actor.membershipId, actor.fleetId, actor.userId);
+}
+
+function assertActiveMembership(
+  actor: Actor,
+  membership: { role?: string } | null,
+): void {
   if (!membership || membership.role !== actor.role) {
     throw new RecordValidationError(
       "membership_inactive",
@@ -1626,11 +1672,18 @@ async function getCurrent(
   fleetId: string,
   operation: SyncOperation,
 ): Promise<RawRow | null> {
+  return currentStatement(d1, fleetId, operation).first<RawRow>();
+}
+
+function currentStatement(
+  d1: D1Database,
+  fleetId: string,
+  operation: SyncOperation,
+): D1PreparedStatement {
   if (operation.type === "fleet_settings") {
     return d1
       .prepare("SELECT * FROM fleet_settings WHERE fleet_id = ? LIMIT 1")
-      .bind(fleetId)
-      .first<RawRow>();
+      .bind(fleetId);
   }
   if (operation.type === "category") {
     const separator = operation.id.indexOf(":");
@@ -1646,8 +1699,7 @@ async function getCurrent(
       .prepare(
         "SELECT * FROM categories WHERE fleet_id = ? AND kind = ? AND id = ? LIMIT 1",
       )
-      .bind(fleetId, kind, id)
-      .first<RawRow>();
+      .bind(fleetId, kind, id);
   }
   if (
     operation.type === "trip_expense" ||
@@ -1662,16 +1714,14 @@ async function getCurrent(
       .prepare(
         `SELECT * FROM ${table} WHERE fleet_id = ? AND trip_id = ? AND id = ? LIMIT 1`,
       )
-      .bind(fleetId, tripId, id)
-      .first<RawRow>();
+      .bind(fleetId, tripId, id);
   }
   const target = recordTarget(operation);
   return d1
     .prepare(
       `SELECT * FROM ${target.table} WHERE fleet_id = ? AND id = ? LIMIT 1`,
     )
-    .bind(fleetId, target.id)
-    .first<RawRow>();
+    .bind(fleetId, target.id);
 }
 
 function recordTarget(operation: SyncOperation): {

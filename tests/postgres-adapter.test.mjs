@@ -22,10 +22,15 @@ test('Postgres requires explicit configuration and verifies TLS for remote hosts
 
 test('D1-compatible batch rolls back all writes and always releases its connection', async () => {
   const calls = [];
-  const client = { async query(sql) { calls.push(sql); if (sql.includes('broken')) throw new Error('constraint'); return { rows: [], rowCount: 1 }; }, release() { calls.push('release'); } };
+  const client = {
+    escapeLiteral(value) { return `'${String(value).replaceAll("'", "''")}'`; },
+    async query(sql) { calls.push(sql); if (sql.includes('broken')) throw new Error('constraint'); return { rows: [], rowCount: 1 }; },
+    release() { calls.push('release'); },
+  };
   const db = new PostgresDatabase({ connect: async () => client });
   await assert.rejects(db.batch([db.prepare('INSERT INTO users (id) VALUES (?)').bind('one'), db.prepare('broken')]), /constraint/);
-  assert.equal(calls[0], 'BEGIN ISOLATION LEVEL SERIALIZABLE');
+  assert.match(calls[0], /^BEGIN ISOLATION LEVEL SERIALIZABLE;/);
+  assert.match(calls[0], /INSERT INTO ttq\.users \(id\) VALUES \('one'\)/);
   assert.deepEqual(calls.slice(-2), ['ROLLBACK', 'release']);
   assert.equal(calls.includes('COMMIT'), false);
 });

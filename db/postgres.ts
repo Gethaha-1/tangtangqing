@@ -186,31 +186,24 @@ export class PostgresDatabase implements D1Database {
         if (!(statement instanceof PostgresStatement) || statement.owner !== this) throw new Error("混用数据库语句");
         return statement;
       });
-      if (owned.length && owned.every((statement) => /^\s*SELECT\b/i.test(statement.sql))) {
-        // Supabase and the Netlify function can be on different continents.
-        // Send all independent bootstrap SELECTs in one PostgreSQL simple-query
-        // message while preserving one serializable, read-only snapshot.
-        const sql = [
-          "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY",
-          ...owned.map((statement) =>
-            compilePostgresLiteralSql(client, statement.sql, statement.values),
-          ),
-          "COMMIT",
-        ].join(";\n");
-        const response = await client.query(sql);
-        const queries = (Array.isArray(response) ? response : [response]).filter(
-          (query) => query.command === "SELECT",
-        );
-        if (queries.length !== owned.length) throw new Error("只读批次结果数量不匹配");
-        return queries.map((query) => result<T>(query));
-      }
-      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      const responses: D1Result<T>[] = [];
-      for (const statement of owned) {
-        responses.push(result<T>(await client.query(compilePostgresSql(statement.sql), statement.values)));
-      }
-      await client.query("COMMIT");
-      return responses;
+      if (!owned.length) return [];
+      const readOnly = owned.every((statement) => /^\s*SELECT\b/i.test(statement.sql));
+      // Keep D1 batch atomicity while avoiding one trans-oceanic network round
+      // trip per statement. All SQL and values originate from this repository;
+      // values are escaped by node-postgres before using the simple protocol.
+      const sql = [
+        `BEGIN ISOLATION LEVEL SERIALIZABLE${readOnly ? " READ ONLY" : ""}`,
+        ...owned.map((statement) =>
+          compilePostgresLiteralSql(client, statement.sql, statement.values),
+        ),
+        "COMMIT",
+      ].join(";\n");
+      const response = await client.query(sql);
+      const queries = (Array.isArray(response) ? response : [response]).filter(
+        (query) => query.command !== "BEGIN" && query.command !== "COMMIT",
+      );
+      if (queries.length !== owned.length) throw new Error("数据库批次结果数量不匹配");
+      return queries.map((query) => result<T>(query));
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       const code = (error as { code?: string }).code;
