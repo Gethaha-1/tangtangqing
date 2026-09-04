@@ -29,6 +29,6 @@ export function SupabaseLoginForm() {
     <input id="login-password" name="password" type="password" autoComplete="current-password" required maxLength={1024} disabled={busy} />
     <button className="action action-primary" type="submit" disabled={busy}>{busy ? "正在登录…" : "登录到账本"}</button>
     {error ? <p className="auth-error" role="alert">{error}</p> : null}
-    <p className="auth-copy">验证期间由管理员开通账号；忘记密码请联系管理员。</p>
+    <p className="auth-copy">账号由管理员开通；忘记密码请联系管理员。</p>
   </form>;
 }

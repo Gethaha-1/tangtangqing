@@ -3,7 +3,7 @@ import { AuthenticationError, resolveAuthMode } from "./auth.ts";
 import { enforceMutationRequest, readJsonWithinLimit, RequestSecurityError, secureJson } from "./http-security.ts";
 import { createSupabaseContext, principalFromSupabaseUser } from "./supabase-auth.ts";
 
-/** No signup endpoint: the experiment accepts explicitly provisioned accounts. */
+/** No public signup endpoint: accounts are provisioned explicitly. */
 export async function handleSupabaseAction(request: Request, action: "signin" | "signout", transport: typeof fetch = fetch): Promise<Response> {
   try {
     if (resolveAuthMode() !== "supabase") return secureJson(request, { error: { code: "not_found", message: "入口未启用" } }, 404);
