@@ -1,6 +1,6 @@
 {
   "name": "tangtangqing-netlify-supabase",
-  "version": "1.5.1-supabase.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "engines": {

@@ -13,7 +13,7 @@
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
-  趟趟清 v1.5.1 —— 严格在线写入 · 离线只读 · 原子云端确认
+  趟趟清 v1.6.0 —— 批量快记 · 严格在线写入 · 离线只读 · 原子云端确认
   文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md / AI-GUIDE.md）：
     [CSS-1] 主题令牌（日「宣纸账房」/ 夜「瓷青泥金」双主题）
     [CSS-2] 通用布局 / 组件
@@ -827,7 +827,7 @@ if (location.protocol === 'file:') {
 <script>
 if (location.protocol !== 'file:') {
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.5.1-supabase.0';
+const APP_VER = '1.6.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 let installPromptEvent = null;

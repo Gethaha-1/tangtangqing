@@ -1,6 +1,6 @@
 # 数据迁移与恢复
 
-适用版本：**v1.5.1-supabase.0 + Unreleased 批量快记**。页面快照和云同步使用 `schemaVersion = 3`；线上 PostgreSQL 保存独立的 fleet-scoped records。
+适用版本：**v1.6.0**。页面快照和云同步使用 `schemaVersion = 3`；线上 PostgreSQL 保存独立的 fleet-scoped records。
 
 ## v1 / v2 → schema v3
 

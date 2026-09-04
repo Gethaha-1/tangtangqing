@@ -4,7 +4,7 @@
 
 # 趟趟清 · 货运趟次云账本
 
-当前版本：**v1.5.1-supabase.0 + Unreleased 批量快记 · Netlify/Supabase 在线运行 · 严格在线写入**。
+当前版本：**v1.6.0 · 批量快记 · Netlify/Supabase 在线运行 · 严格在线写入**。
 
 趟趟清面向货运车主和司机，提供多车辆、发车、批量快记、二次确认收车、补录、账期统计、结构化油费和维修体验。线上由 Netlify 承载完整 Next.js 应用与服务端 API，Supabase Auth 提供邮箱密码会话，Supabase PostgreSQL 的私有 `ttq` schema 保存正式业务状态。
 
