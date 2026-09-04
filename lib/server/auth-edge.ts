@@ -23,6 +23,7 @@ export type EdgeAuthOptions = {
   authMode?: string | null;
   nodeEnv?: string | null;
   internalSecret?: string | null;
+  localAutoSignIn?: boolean;
 };
 
 /**
@@ -48,8 +49,9 @@ export async function adaptAuthenticationAtEdge(
     mintSitesHeaders(publicHeaders, headers);
   } else if (
     mode === "local" &&
-    cookieValue(publicHeaders.get("cookie"), LOCAL_AUTH_COOKIE) ===
-      LOCAL_COOKIE_VALUE
+    (options.localAutoSignIn === true ||
+      cookieValue(publicHeaders.get("cookie"), LOCAL_AUTH_COOKIE) ===
+        LOCAL_COOKIE_VALUE)
   ) {
     mintInternalHeaders(headers, LOCAL_TEST_PRINCIPAL);
   } else if (mode === "cloudbase") {

@@ -49,7 +49,18 @@ export async function middleware(request: NextRequest) {
 
   try {
     if (mode === "supabase") return await supabaseMiddleware(request);
-    const adapted = await adaptAuthenticationAtEdge(request, options);
+    const localAutoSignIn = process.env.TTQ_LOCAL_AUTO_SIGNIN === "1";
+    const adapted = await adaptAuthenticationAtEdge(request, {
+      ...options,
+      localAutoSignIn,
+    });
+    if (
+      mode === "local" &&
+      localAutoSignIn &&
+      new URL(request.url).pathname === "/"
+    ) {
+      return NextResponse.redirect(new URL("/ledger", request.url));
+    }
     if (isLedgerPath(new URL(request.url).pathname) && !hasIdentity(adapted)) {
       const next = encodeURIComponent(safeAuthReturnTo("/ledger"));
       return NextResponse.redirect(new URL(`/?next=${next}`, request.url));

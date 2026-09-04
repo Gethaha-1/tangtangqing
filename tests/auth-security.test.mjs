@@ -172,6 +172,47 @@ test("local 只接受显式 development loopback 与固定测试 subject，手�
   );
 });
 
+test("本地自动登录仅由显式服务端选项启用，仍受 development loopback 限制", async () => {
+  const manual = await adaptAuthenticationAtEdge(
+    mutation("http://localhost:3000/api/bootstrap"),
+    authOptions("local"),
+  );
+  assert.equal(manual.headers.get(INTERNAL_AUTH_HEADERS.subject), null);
+
+  const automatic = await adaptAuthenticationAtEdge(
+    mutation("http://localhost:3000/api/bootstrap"),
+    {
+      ...authOptions("local"),
+      localAutoSignIn: true,
+    },
+  );
+  assert.deepEqual(
+    getTrustedPrincipal(automatic, authOptions("local")),
+    LOCAL_TEST_PRINCIPAL,
+  );
+
+  await assert.rejects(
+    adaptAuthenticationAtEdge(
+      mutation("http://localhost:3000/api/bootstrap"),
+      {
+        ...authOptions("local", "production"),
+        localAutoSignIn: true,
+      },
+    ),
+    /development loopback/,
+  );
+  await assert.rejects(
+    adaptAuthenticationAtEdge(
+      mutation("https://trial.example/api/bootstrap"),
+      {
+        ...authOptions("local"),
+        localAutoSignIn: true,
+      },
+    ),
+    /development loopback/,
+  );
+});
+
 test("直达 Route 的伪造内部身份没有部署 secret proof 时 fail-closed", () => {
   const forged = mutation("https://app.example/api/bootstrap", {
     headers: {

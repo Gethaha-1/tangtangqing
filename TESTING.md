@@ -34,10 +34,12 @@ schema 改动另运行 `npm run db:generate`，确认没有意外新 migration�
 ## 2. 本地认证、POST 与退出
 
 ```bash
-TTQ_AUTH_MODE=local npm run dev
+npm run dev:local
 ```
 
-使用输出的 loopback Local URL：
+默认 UI 回归使用输出的 loopback Local URL，打开 `/` 会自动进入 `/ledger`，无需重复登录。`dev:local` 强制使用固定测试 Principal、本地 SQLite 和进程内随机认证边界密钥；不得改成真实账号或云端账本。直接双击 `legacy/ledger.html` 只应显示本地开发地址说明，不能绕过服务端核验显示账本。
+
+需要验证登录页、登录 POST 和 Cookie 时，改用 `TTQ_AUTH_MODE=local TTQ_INTERNAL_AUTH_SECRET="$(openssl rand -hex 32)" npm run dev`，并按下列契约检查：
 
 1. 未登录 `/` 只显示本地测试入口，按钮文案使用 `13800000000`；非 loopback、production 或未显式 local 模式不得显示/接受该身份。
 2. 本地登录是同源 JSON POST；成功设置 HttpOnly、SameSite=Strict cookie 并进入 `/ledger`。

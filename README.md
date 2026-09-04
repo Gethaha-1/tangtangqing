@@ -54,10 +54,12 @@ npm test
 npm run lint
 npx tsc --noEmit
 npm run build
-TTQ_AUTH_MODE=local npm run dev
+npm run dev:local
 ```
 
-打开开发服务器打印的 Local URL。只有显式 `TTQ_AUTH_MODE=local`、development 且 loopback 时才显示本地入口：
+打开开发服务器打印的 Local URL，或直接访问 `http://localhost:3000/ledger`。`dev:local` 会自动进入固定测试车主的本地 SQLite 账本，不需要反复登录；运行期间修改 `legacy/ledger.html` 或 `src/` 下的账本脚本也会自动同步到本地页面。它会忽略云端凭据，并且身份适配层仍只允许 development + loopback 请求。不要直接双击 `legacy/ledger.html`，`file://` 页面没有 Next.js、登录 Cookie 和 `/api/bootstrap`，无法核对账号与车队。
+
+需要手动检查登录页、登录 POST 和 Cookie 时，使用 `TTQ_AUTH_MODE=local TTQ_INTERNAL_AUTH_SECRET="$(openssl rand -hex 32)" npm run dev`。本地身份为：
 
 - 登录名：`13800000000`（固定测试 Principal）
 - 无密码，仅限 `localhost`、`127.0.0.1`、`[::1]`

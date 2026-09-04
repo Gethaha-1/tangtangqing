@@ -7,6 +7,13 @@ import "../src/cloud-sync.js";
 
 const source = readFileSync(new URL("../legacy/ledger.html", import.meta.url), "utf8");
 
+test("直接打开源 HTML 只给出开发入口说明，不启动未认证账本", () => {
+  assert.match(source, /if \(location\.protocol === 'file:'\)/);
+  assert.match(source, /请从本地开发地址打开/);
+  assert.match(source, /npm run dev:local/);
+  assert.match(source, /if \(location\.protocol !== 'file:'\) \{/);
+});
+
 function extractFunction(name) {
   const marker = `function ${name}(`;
   let start = source.indexOf(marker);

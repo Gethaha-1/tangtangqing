@@ -9,6 +9,7 @@
   "scripts": {
     "prepare:ledger": "node scripts/prepare-ledger-assets.mjs",
     "dev": "node scripts/next-with-local-env.mjs dev",
+    "dev:local": "node scripts/dev-local.mjs",
     "build": "npm run prepare:ledger && node scripts/next-with-local-env.mjs build",
     "start": "node scripts/next-with-local-env.mjs start",
     "test": "node --import tsx --test tests/*.test.js tests/*.test.mjs",

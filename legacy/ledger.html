@@ -412,6 +412,13 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
     </div>
   </div>
 </div>
+<script>
+if (location.protocol === 'file:') {
+  document.getElementById('sessionLockTitle').textContent = '请从本地开发地址打开';
+  document.getElementById('sessionLockText').textContent =
+    '直接打开 HTML 无法核对账号和车队。请在项目目录运行 npm run dev:local，再访问 http://localhost:3000/ledger。';
+}
+</script>
 
 <!-- ================= [HTML-1] 五个主视图 ================= -->
 
@@ -818,6 +825,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
 <script src="/ledger/cloud-sync.js"></script>
 <script src="/ledger/ui-transition.js"></script>
 <script>
+if (location.protocol !== 'file:') {
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
 const APP_VER = '1.5.1-supabase.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
@@ -4382,6 +4390,7 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
   unlockSession();
   if (location.hash === '#test') setTimeout(runSelfTests, 60);
 })();
+}
 </script>
 </body>
 </html>
