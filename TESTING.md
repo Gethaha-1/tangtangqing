@@ -20,8 +20,8 @@ git diff --check
 | 文件 | 重点 |
 |---|---|
 | `tests/domain.test.js` | schema v3、日期、账期、净利润、fuel 定点联算、报告摘要 |
-| `tests/cloud-sync.test.js` | v3 record/fuel 守恒、expectedVersion、回执、严格状态机、JSON 账期安全 |
-| `tests/legacy-ui-contract.test.mjs` | fuel UI、净利润/报告接线、收车确认、模态栈与失败留层 |
+| `tests/cloud-sync.test.js` | v3 record/fuel 守恒、expectedVersion、批量快记 diff、回执、严格状态机、JSON 账期安全 |
+| `tests/legacy-ui-contract.test.mjs` | fuel UI、快记清单/单批提交、净利润/报告接线、收车确认、模态栈与失败留层 |
 | `tests/auth-client.test.js` | 同源 POST、scope 存储、旧键隔离、BFCache 和多标签锁 |
 | `tests/auth-security.test.mjs` | Principal adapter、伪造头、Origin/marker/body limit、安全头、POST-only |
 | `tests/ui-transition.test.js` | 共享元素几何、关键帧、源失效、reduced motion、取消/焦点恢复 |
@@ -66,6 +66,14 @@ TTQ_AUTH_MODE=local npm run dev
 5. version、membership/role/assignment 或数据库 CHECK 在事务内失败时整批零写入。
 6. 400/422 保持在线并保留表单供修正；网络失败切只读；409 保持旧正式状态并要求重新核对。
 7. `online` 事件只提示；必须真实 POST bootstrap 成功后才恢复写入。
+
+快记清单另验证：
+
+- 普通费用和结构化油费加入时不调用 Store/API，不提前改正式 `S`，编辑后记录 ID 保持不变；
+- 多条保存只调用一次 `submitBusinessMutation()`，计划结果为同一请求内的多条 `trip_expense put`，不产生无关 trip 更新；
+- 200 完整回执后才清空并关闭快记两层；400/422 保留且可改，网络失败/409 保留并锁定，重连用原请求核对；
+- 最终保存防连点、按钮/层有 `aria-busy` 与 live 状态；清单合计按整数分，顶部计数、修改、移除和底部安全区按钮在日夜主题及窄屏可用；
+- 未提交返回、Escape、系统返回、左缘滑动和下拉都要求明确丢弃确认；会话锁定清除草稿且不写入浏览器存储。
 
 ## 5. 净利润与报告范围
 
