@@ -59,6 +59,14 @@ npm run dev:local
 
 打开开发服务器打印的 Local URL，或直接访问 `http://localhost:3000/ledger`。`dev:local` 会自动进入固定测试车主的本地 SQLite 账本，不需要反复登录；运行期间修改 `legacy/ledger.html` 或 `src/` 下的账本脚本也会自动同步到本地页面。它会忽略云端凭据，并且身份适配层仍只允许 development + loopback 请求。不要直接双击 `legacy/ledger.html`，`file://` 页面没有 Next.js、登录 Cookie 和 `/api/bootstrap`，无法核对账号与车队。
 
+### 本地预览避坑
+
+- 运行 `npm run dev:local` 后，必须等终端显示 `Ready`，并在测试期间保持该进程和终端运行；关闭终端或按 `Ctrl+C` 会停止网站。
+- 浏览器必须打开终端打印的 **Local** 地址（通常是 `http://localhost:3000/ledger`）。不要打开 `file://.../legacy/ledger.html`，也不要使用终端打印的局域网 **Network** 地址；本地测试身份按安全规则只接受 loopback。
+- 浏览器出现 `ERR_CONNECTION_REFUSED` 或“localhost 拒绝连接”，表示本地服务没有运行，不是账号、车队或数据库错误。回到项目目录重新执行 `npm run dev:local`，看到 `Ready` 后再刷新。
+- 直开 HTML 时出现“请从本地开发地址打开”是预期保护；如果通过 Local 地址长时间停在“正在核对会话”，先查看运行 `dev:local` 的终端报错，不得通过删除会话锁或伪造身份来绕过。
+- `dev:local` 只使用固定测试车主和 `data/tangtangqing.db`，不得导入或连接真实账本数据。
+
 需要手动检查登录页、登录 POST 和 Cookie 时，使用 `TTQ_AUTH_MODE=local TTQ_INTERNAL_AUTH_SECRET="$(openssl rand -hex 32)" npm run dev`。本地身份为：
 
 - 登录名：`13800000000`（固定测试 Principal）

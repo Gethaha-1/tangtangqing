@@ -39,6 +39,25 @@ npm run dev:local
 
 默认 UI 回归使用输出的 loopback Local URL，打开 `/` 会自动进入 `/ledger`，无需重复登录。`dev:local` 强制使用固定测试 Principal、本地 SQLite 和进程内随机认证边界密钥；不得改成真实账号或云端账本。直接双击 `legacy/ledger.html` 只应显示本地开发地址说明，不能绕过服务端核验显示账本。
 
+每次本地 UI 回归都按以下顺序执行：
+
+1. 在项目根目录运行 `npm run dev:local`，等待终端显示 `Ready`，测试结束前不要关闭终端或按 `Ctrl+C`。
+2. 只打开终端打印的 **Local** 地址；默认是 `http://localhost:3000/ledger`。禁止使用 `file://` 源文件或局域网 **Network** 地址测试本地身份。
+3. 确认页面自动显示“本地测试车主”的本地账本，不要求登录，也不读取 Supabase 或真实账本。
+4. 修改 `legacy/ledger.html` 或 `src/` 账本脚本后等待终端出现“已更新”提示，再刷新页面检查。
+5. 测试完成后才用 `Ctrl+C` 停止服务。
+
+常见现象与处理：
+
+| 现象 | 含义 | 处理 |
+|---|---|---|
+| `ERR_CONNECTION_REFUSED` / localhost 拒绝连接 | 本地开发进程未启动或已经退出 | 重新运行 `npm run dev:local`，等待 `Ready` 后刷新 |
+| “请从本地开发地址打开” | 浏览器直接打开了 `legacy/ledger.html` | 改用终端打印的 Local URL |
+| 长时间停在“正在核对会话” | bootstrap 没有完成，不能显示未核验账本 | 查看 `dev:local` 终端错误；不得删除会话锁或伪造身份 |
+| Local 端口不是 3000 | 3000 被其他进程占用，Next.js 选择了其他端口 | 使用本次终端实际打印的 Local URL |
+
+以上故障不通过关闭认证、改用真实账号或连接真实数据库来解决。
+
 需要验证登录页、登录 POST 和 Cookie 时，改用 `TTQ_AUTH_MODE=local TTQ_INTERNAL_AUTH_SECRET="$(openssl rand -hex 32)" npm run dev`，并按下列契约检查：
 
 1. 未登录 `/` 只显示本地测试入口，按钮文案使用 `13800000000`；非 loopback、production 或未显式 local 模式不得显示/接受该身份。
