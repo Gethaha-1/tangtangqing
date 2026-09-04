@@ -1,119 +1,108 @@
 # 技术架构
 
-适用版本：**v1.5.0 + Unreleased 本地改进 · 严格在线写入**。
+适用范围：当前 Netlify + Supabase 线上版本，以及严格隔离的本地测试模式。
 
-## 1. 分层
+## 1. 当前运行拓扑
+
+```text
+browser
+  → Netlify CDN / Next.js Proxy
+  → Next.js pages + Node route handlers
+  → Supabase Auth（核验登录用户）
+  → Supabase PostgreSQL（ttq 私有 schema）
+```
+
+- Netlify 托管完整 Next.js 应用，不把 `public/ledger` 单独当静态站发布。
+- Supabase Auth 使用邮箱密码登录；服务端通过官方 SSR SDK 管理 Cookie，并在业务 API 中用 Auth 服务重新核验用户。
+- 正式业务数据写入 Supabase PostgreSQL。`ttq_app` 后端角色通过 TLS 连接私有 `ttq` schema，浏览器不持有数据库连接串或特权密钥。
+- 生产强制 `TTQ_AUTH_MODE=supabase`、`TTQ_DATABASE_MODE=postgres`。SQLite 和固定本地身份只允许 development + loopback。
+
+## 2. 分层
 
 | 层 | 位置 | 职责 |
 |---|---|---|
-| 登录页 | `app/page.tsx`、`app/chatgpt-auth.ts`、`app/auth-post-button.tsx` | provider-neutral 会话展示；认证写动作使用同源 POST |
-| 认证边界 | `lib/server/auth*.ts`、`lib/auth/logout.ts` | edge adapter、内部 `Principal`、模式隔离、退出与 `return_to` |
-| 客户端会话 | `src/auth-client.js` | POST 客户端、会话 scope、多标签/BFCache 锁定 |
-| 账本 UI | `legacy/ledger.html` | 浏览、fuel 表单、收车确认、提案→确认→正式状态、JSON 交互 |
-| UI 转场 | `src/ui-transition.js` | 共享元素几何、WAAPI 控制、降级与焦点恢复 |
-| 纯业务规则 | `src/domain.js` | schema v3 清洗、fuel 联算、账期/趟号/统计、报告摘要契约 |
-| 云同步纯核心 | `src/cloud-sync.js` | schema v3 状态↔记录、fuel 守恒、diff、回执和严格在线状态机 |
-| API | `app/api/bootstrap`、`app/api/sync`、`app/auth/logout` | POST 请求边界、原子写入契约、HTTP 状态 |
-| 服务端 | `lib/server/` | fleet/role/assignment 授权、输入校验、D1 批次与幂等 |
-| 持久化 | `db/`、`drizzle/` | D1 schema、运行时旧表升级、正式 migrations |
-| Edge 中间件 | `middleware.ts` | 认证 adapter、账本资源保护、本地登录和全响应安全头（替代原 Cloudflare Worker） |
+| 登录页 | `app/page.tsx`、`app/current-user.ts`、`app/supabase-login-form.tsx` | 当前会话展示、Supabase 登录和本地测试入口 |
+| 认证边界 | `proxy.ts`、`lib/server/supabase-auth.ts`、`lib/server/request-identity.ts`、`lib/server/auth*.ts` | Auth 用户核验、内部 `Principal`、模式隔离 |
+| 客户端会话 | `src/auth-client.js` | 同源 POST、会话 scope、多标签和 BFCache 锁定 |
+| 账本 UI | `legacy/ledger.html` | 浏览、批量快记、fuel、收车、报告与 JSON 交互 |
+| 业务规则 | `src/domain.js` | schema v3、金额/fuel、账期、趟号和报告摘要 |
+| 同步规划 | `src/cloud-sync.js` | 状态↔记录、diff、守恒、回执与严格在线状态机 |
+| API | `app/api/bootstrap`、`app/api/sync`、`app/auth/*` | POST 边界、身份核验、原子写入与退出 |
+| 服务端业务 | `lib/server/bootstrap.ts`、`lib/server/sync-repository.ts` | fleet/role/assignment 授权、校验、幂等与并发控制 |
+| 线上持久化 | `db/postgres.ts`、`deploy/supabase/001_ledger.sql` | PostgreSQL 参数适配、SERIALIZABLE 事务、正式 schema |
+| 本地兼容 | `db/sqlite.ts`、`db/runtime-schema.ts`、`drizzle/` | 本地 SQLite 与旧 schema/migration 回归 |
 
-成熟 UI 仍保留在单文件中。高风险逻辑尽量放在第一方纯模块或服务端边界中测试，没有为本批增加图表、视频或认证 SDK。
+成熟 UI 仍保留在单文件中；高风险规则放在第一方纯模块或服务端边界并由自动化测试覆盖。
 
-## 2. Provider-neutral 身份边界
+## 3. 身份与车队边界
 
 ```text
-public request
-  → Worker 删除全部外部伪造的 OAI / x-ttq-auth-* 身份头
-  → 已选 adapter 验证 provider assertion
-  → Worker 用进程内 proof 铸造 Principal(issuer, subject, displayName, ...)
-  → API 只读取内部 Principal
-  → identities(issuer, subject) → users → fleet_members → fleet rows
+Supabase session cookie
+  → route 内 getUser() 远端核验
+  → Principal(issuer=supabase, subject=user.id)
+  → identities(issuer, subject)
+  → users → fleet_members → fleet-scoped rows
 ```
 
-- `TTQ_AUTH_MODE` 必须显式为 `sites`、`local` 或 `cloudbase`，不能从请求参数选择；
-- `sites` adapter 使用稳定 provider subject，email/loginName 只作请求级提示，不写入业务归属；
-- `local` 只允许 `NODE_ENV=development` 且 host 为 loopback，固定 subject 和纯数字登录名 `13800000000`，cookie 为 HttpOnly、SameSite=Strict、短时有效；
-- `cloudbase` 目前只保留类型并 fail closed：不会铸造 Principal，也没有 endpoint、SDK、token 验证或密钥；
-- 公共请求无法自造 user、fleet、role、membership 或 assignment；应用内部 user id 才是业务关联键。
+- 业务归属使用 provider issuer + 稳定 subject，不用邮箱、显示名或客户端 metadata 当授权键。
+- API 自己核验 Supabase 用户，不信任浏览器提交的 `x-ttq-auth-*`、旧 provider 头、user、fleet、role 或 assignment。
+- 登录 Cookie、认证响应和用户数据响应禁止公共缓存。
+- 本地 `dev:local` 使用固定测试 Principal，但必须同时满足显式 local 模式、`NODE_ENV=development` 和 loopback host；生产构建不能启用。
+- 车队 owner/driver 和车辆 assignment 在服务端检查；司机只读写已分配车辆。
 
-## 3. POST 与 HTTP 安全边界
+## 4. PostgreSQL 与访问控制
 
-- `/api/bootstrap`、`/api/sync`、`/auth/logout` 和本地登录动作统一使用同源 JSON POST；bootstrap 的 GET 明确返回 405，logout 不提供 GET handler；
-- 写请求验证 Origin allowlist、拒绝 `Sec-Fetch-Site: cross-site`、要求 `application/json` 与 `X-TTQ-Request: ledger-v1`；
-- body 逐流计数，不能依赖可伪造或缺失的 `Content-Length`，上限 2 MiB；
-- 动态响应统一 `Cache-Control: no-store`、`frame-ancestors 'none'`、`X-Frame-Options: DENY`、`nosniff`、`no-referrer` 和受限 Permissions Policy；HTTPS 才添加 HSTS；
-- `/auth/logout` 先用 POST 完成应用侧退出，再把经校验的同源相对 `return_to` 返回给客户端；Sites provider 的保留 GET 跳转只发生在该 POST 成功之后。
+- 线上 schema 为不对 Data API 暴露的 `ttq`；浏览器不通过 REST/GraphQL 直接读写业务表。
+- `ttq_app` 是最小权限后端登录角色，不能建表；管理连接只用于经审核的 schema 初始化或迁移，不能上传 Netlify。
+- 业务表启用 RLS 作为后端专用防御层；具体车队/车辆权限仍由应用服务端授权，不依赖客户端 JWT 直接选行。
+- 数据库连接必须与 Supabase Auth 属于同一 project ref，远程连接必须校验 TLS；禁止 `rejectUnauthorized:false`。
+- PostgreSQL 适配器保留原 D1-shaped repository 接口，名称是兼容层，不表示线上仍使用 Cloudflare D1。
 
-## 4. 正式状态、scope 存储与会话失效
+## 5. HTTP 与会话安全
 
-D1 是当前实现的业务正式状态。浏览器状态分为：
+- `/api/bootstrap`、`/api/sync`、登录和退出使用同源 JSON POST；bootstrap GET 返回 405。
+- 状态写请求校验 Origin allowlist、Fetch Metadata、`application/json`、`X-TTQ-Request: ledger-v1` 和 2 MiB body 上限。
+- 动态响应设置 `Cache-Control: no-store`、frame deny、nosniff、no-referrer 和受限 Permissions Policy；HTTPS 添加 HSTS。
+- BFCache、其他标签页退出、401 或手动退出会先锁界面、清内存状态、终止请求并递增 generation；迟到回执不能解锁旧账。
+- 恢复写入必须重新 POST bootstrap，不能只依赖 `navigator.onLine`。
 
-- 全设备 `tangtangqing-device-prefs-v1`：只保存 day/night 主题；
-- `fleet.id + membership.id` scope：`cache`、`conflict`、`migration`、`prefs`，账号相关内容只有 bootstrap 确认归属后才可读取；
-- `tangtangqing-session-epoch-v1` 与 BroadcastChannel：只传 logout/session-invalid epoch，不包含账号、车队或业务数据。
-
-未归属旧键（包括 `tangtangqing-data`、旧 migration/cache 键）不在登录会话中读取，也不自动搬到新账号。需要恢复旧账时，用户必须显式导入 JSON 并经过摘要、守恒和覆盖确认。
-
-BFCache `pagehide/pageshow`、其他标签页退出、401 或手动退出都会先锁界面、清空内存正式状态、终止请求并递增 generation；迟到回执不能重新解锁旧账。恢复只能重新加载并 POST bootstrap。
-
-快记清单是例外明确、生命周期很短的 UI 草稿：只保存在 `quickDrafts` 内存变量，不并入正式 `S`，也不进入任何浏览器存储。它以同一趟次为边界，每条在加入时生成稳定 ID；会话锁定时与其他敏感页面状态一起清空。
-
-## 5. 严格在线状态机
+## 6. 正式状态与原子写入
 
 ```text
-online → clone confirmed S → mutate proposal
-       → plan operations(expectedVersion)
-       → POST one operationId-bound atomic batch
-       → validate complete acknowledgement → replace S
+confirmed S → clone proposal → plan operations(expectedVersion)
+            → one operationId-bound SERIALIZABLE transaction
+            → validate complete acknowledgement → replace S
 
 network/server failure → keep old S + readonly + in-memory retry token
-409 conflict           → keep old S + readonly + reload/review
-400/422 rejection      → keep old S + current form for corrected retry
-401/session signal     → lock and hide all business state
+409 conflict           → keep old S + reload/review
+400/422 rejection      → keep old S + keep form for correction
+401/session signal     → lock and hide business state
 ```
 
-保存阶段锁定业务控件并设置 `aria-busy`。失败表单和收车确认层保留，只有完整服务器回执才显示成功和关闭弹层。网络恢复先 bootstrap；响应丢失时仅在版本仍安全的前提下用相同 `operationId` 和 operations 重放。
+- 同 fleet + operationId + payload hash 可安全回放；同 ID 不同 payload 返回冲突。
+- membership、assignment、父记录、版本与业务写在同一事务内守卫；任何一步失败整批回滚。
+- 批量快记清单只存在页面内存；“保存全部”才生成一次原子请求，完整回执后才清空。
+- 单次 JSON 完整恢复最多 500 operations，不能拆成可能部分成功的客户端分批写入。
 
-快记中的「加入清单」只改 UI 草稿，不是业务写入，所以网络中断后仍可继续整理当前已打开的清单；「保存全部」才调用一次 `submitBusinessMutation()`。一旦该请求进入未知回执状态，清单锁定编辑和退出，避免屏幕内容偏离待重放的同 ID、同 payload 请求。
+## 7. 客户端存储与备份
 
-## 6. 原子批次、fuel 与 D1
+- 全设备键只保存主题；账号相关偏好必须在 bootstrap 返回 `fleet.id + membership.id` 后按 scope 保存。
+- 未归属旧 localStorage 不自动读取或迁移，避免前一个账号的数据进入后一个账号。
+- JSON 导出只由 owner 生成可完整恢复文件；driver 裁剪视图标记为不可完整恢复。
+- schema v3 导入在清洗、提交和服务器回读阶段核对记录数、整数分和 fuel 守恒。
 
-- 新建 `expectedVersion=0`，更新/删除必须匹配正整数 version；同 fleet + operation ID + hash 回放原回执，ID 相同但 payload 不同返回 409；
-- `sync_assertions CHECK(ok=1)` 把 membership、driver assignment 和 version guard 放进同一批；`sync_commits` 保存幂等回执；
-- `drizzle/0002_lonely_shriek.sql` 只向 `trip_expenses` 增加 nullable `fuel_unit_price_x10000`、`fuel_volume_ml` 和约束触发器，不重建旧表、不回填旧油费；
-- 两个 fuel 列必须同时为空，或同时为合法范围且 `category_id='fuel'`。服务端另外用 BigInt 定点规则核对金额 2 位、单价 4 位、升数 3 位和固定 1 分误差；
-- bootstrap/repository 对成对字段、科目、范围和金额一致性 fail closed；旧 fuel 的 null/null 只作为明确兼容记录返回，不伪造 metadata；
-- schema v3 同步和 JSON 守恒摘要同时核对记录数、整数分、结构化/旧 fuel 条数、总毫升、结构化金额与逐记录 fingerprint。
+## 8. 报告与 UI 边界
 
-## 7. 报告摘要服务边界
+`TTQDomain.buildReportSummary(state, scope)` 统一账期、月度交集、自然年、车辆、净利润和 fuel 口径，供统计卡片和文字报告共同使用。当前没有报告网络 endpoint、定时任务、视频生成或外部 AI API。
 
-`TTQDomain.buildReportSummary(state, scope)` 是内部纯函数/结构契约：
+构建时 `scripts/prepare-ledger-assets.mjs` 把 `legacy/ledger.html` 与 `src/` 账本脚本复制到 gitignored 的 `public/ledger/`。线上必须发布完整 Next.js/Netlify 构建产物；本地 UI 使用 `npm run dev:local`，不得直接打开源 HTML。
 
-- 输入：账期范围、月份或自然年，以及车辆范围；
-- 输出：实际统计范围、趟次收入/支出/利润、维修、净利润、fuel 汇总/极值/车辆拆分与旧数据警告；
-- 月份与当前账期取交集；自然年使用完整年份；所有范围共用同一车辆筛选；
-- 当前统计页面、数值卡片和文字报告共同消费该摘要。
+## 9. 部署资料边界
 
-这里没有新建网络 endpoint、定时任务、外部 OpenAI/API、视频生成、数据库表或依赖。未来若做视频，必须在另批确定“服务端摘要 → 模板/视频渲染 → 用户审核 → 导出/分享”的方案及费用、隐私和权限。
+- 当前部署说明：`deploy/NETLIFY-SUPABASE.md`
+- 当前环境变量：`deploy/env-vars.md`
+- PostgreSQL schema：`deploy/supabase/001_ledger.sql`
+- 迁移期实测数据：`deploy/VALIDATION-RESULTS.md`（历史记录，不是当前配置来源）
+- 迁移方案草案：`deploy/NETLIFY-SUPABASE-PLAN.md`（历史记录）
 
-## 8. 收车与共享元素弹层
-
-- 首页和趟次详情的全宽按钮打开收车结算；结算页按钮再打开 `sheet-close-confirm`，形成真实嵌套模态栈；
-- 确认层展示车辆、到家日期、收入、支出、预计利润和零收入警告；提交锁定、状态 live region、失败留层、成功回执后 `closeAllSheets()`；
-- `syncSheetModality()` 只让最顶层 sheet 可交互，其他 view/nav/sheet 使用 inert；Tab 焦点圈、Escape/系统返回、顶部返回沿栈逐层处理；
-- `src/ui-transition.js` 只负责视觉与焦点。来源消失或离屏时降级，reduced motion/旧浏览器同步完成，不接触业务状态或回执；
-- 左缘返回与顶部下拉仍是通用“关闭弹层”手势，不是收车提交方式。
-- 快记清单使用 `sheet-quick-batch` 作为嵌套模态层：顶部返回只回到继续添加，最终按钮固定在安全区上方；未提交退出经确认框，系统返回和手势沿用同一退出策略。
-
-## 9. JSON 恢复与 schema v3
-
-导出使用 `tangtangqing-schema-v3`，在 `_backupMeta.conservation` 内保存守恒声明。导入先区分真正 v1/v2 旧备份与完整 v3 envelope；顶层 v3 缺少匹配 meta/守恒声明时不能伪装成旧格式降级。清洗、预检、完整替换确认、单批提交和服务器回读后都要核对守恒；单次最多 500 operations。
-
-全量恢复文件只由 owner 生成。driver bootstrap 的裁剪视图带内部只读能力标记；这类部分数据即使被导出，也会写入 `driver-visible-partial`/`restorable:false`，导入必须在 `migrate()` 和 `planSync()` 前拒绝，不能把不可见记录规划成删除。
-
-## 10. 构建与腾讯试用边界
-
-构建脚本把 `legacy/ledger.html`、`src/domain.js`、`src/cloud-sync.js`、`src/auth-client.js`、`src/ui-transition.js` 复制到 gitignored `public/ledger/`。当前 `.openai/hosting.json`、Vinext Worker、Cloudflare D1 adapter 和 Sites 身份模式仍是 Sites/Cloudflare 产物，**不能直接作为腾讯云标准 Node 应用部署**。
-
-腾讯云仅有架构预检结论，尚未适配、建库、配置账号、部署或验证合规。若用户另批确认，候选为上海地域的小范围封闭非经营测试、个人主体、纯数字手机号用户名，以及 CloudBase Auth + MySQL；仍需再确认实际产品资格、域名/备案、安全与迁移方案后实施。
+Sites、CloudBase、Cloudflare D1 与容器/CFS 部署已退出当前代码路径；如未来重新引入，必须作为新方案单独设计、测试和授权。

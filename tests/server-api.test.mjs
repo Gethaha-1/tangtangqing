@@ -31,15 +31,15 @@ import {
   getTrustedIdentity,
 } from "../lib/server/auth.ts";
 
-test("业务身份只接受 worker 内部 Principal，外部 OAI 或正文不能越过边界", () => {
+test("业务身份只接受服务端内部 Principal，外部旧身份头或正文不能越过边界", () => {
   const internalSecret = "test-only-internal-auth-secret-1234567890";
   const request = new Request("https://example.test/api/bootstrap", {
     method: "POST",
     headers: {
-      [INTERNAL_AUTH_HEADERS.mode]: "sites",
+      [INTERNAL_AUTH_HEADERS.mode]: "supabase",
       [INTERNAL_AUTH_HEADERS.proof]: internalSecret,
-      [INTERNAL_AUTH_HEADERS.issuer]: "sites",
-      [INTERNAL_AUTH_HEADERS.subject]: "usr_sites_123",
+      [INTERNAL_AUTH_HEADERS.issuer]: "supabase",
+      [INTERNAL_AUTH_HEADERS.subject]: "usr_supabase_123",
       [INTERNAL_AUTH_HEADERS.email]: " Owner@Example.COM ",
       [INTERNAL_AUTH_HEADERS.displayName]: "%E8%BD%A6%E4%B8%BB",
       [INTERNAL_AUTH_HEADERS.loginName]: "owner@example.com",
@@ -50,11 +50,11 @@ test("业务身份只接受 worker 内部 Principal，外部 OAI 或正文不能
     }),
   });
   assert.deepEqual(getTrustedIdentity(request, {
-    authMode: "sites",
+    authMode: "supabase",
     internalSecret,
   }), {
-    issuer: "sites",
-    subject: "usr_sites_123",
+    issuer: "supabase",
+    subject: "usr_supabase_123",
     email: "owner@example.com",
     displayName: "车主",
     loginName: "owner@example.com",
@@ -70,7 +70,7 @@ test("业务身份只接受 worker 内部 Principal，外部 OAI 或正文不能
           },
           body: JSON.stringify({ email: "attacker@example.com" }),
         }),
-        { authMode: "sites", internalSecret },
+        { authMode: "supabase", internalSecret },
       ),
     AuthenticationError,
   );
@@ -818,7 +818,7 @@ test("正式 schema CHECK 拒绝越权角色、非法状态/布尔/版本/排序
   );
 });
 
-test("严格同步 migration 可升级既有 D1，并落下幂等回执与版本守卫", () => {
+test("严格同步 migration 可升级既有本地 SQLite，并落下幂等回执与版本守卫", () => {
   const database = hardenedDatabase();
   try {
     database.exec(atomicSyncMigration);

@@ -1,6 +1,6 @@
 # 测试
 
-适用版本：**v1.5.0 + Unreleased 本地改进 · 严格在线写入**。全部测试使用独立本地 D1/测试车队；不得用唯一真实账本做破坏性验证。
+适用版本：**v1.5.1-supabase.0 + Unreleased 批量快记 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
 
 ## 1. 自动化与构建
 
@@ -25,11 +25,11 @@ git diff --check
 | `tests/auth-client.test.js` | 同源 POST、scope 存储、旧键隔离、BFCache 和多标签锁 |
 | `tests/auth-security.test.mjs` | Principal adapter、伪造头、Origin/marker/body limit、安全头、POST-only |
 | `tests/ui-transition.test.js` | 共享元素几何、关键帧、源失效、reduced motion、取消/焦点恢复 |
-| `tests/server-api.test.mjs` | ownership、fuel repository/bootstrap、原子 guard、D1 constraints/migrations |
-| `tests/auth-logout.test.mjs` | POST 退出、provider 委托、本地 cookie、安全 `return_to` |
+| `tests/server-api.test.mjs` | ownership、fuel repository/bootstrap、原子 guard、本地兼容 constraints/migrations |
+| `tests/auth-logout.test.mjs` | Supabase/本地 POST 退出、本地 cookie、安全 `return_to` |
 | `tests/legacy-xss.test.mjs` | 恶意备份、fuel/报告新增渲染 sink 的持久化 XSS |
 
-schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；检查 `0002_lonely_shriek.sql` 只做两列原位增加和 fuel 触发器，不重建旧表。
+本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；检查 `0002_lonely_shriek.sql` 只做两列原位增加和 fuel 触发器，不重建旧表。线上 PostgreSQL schema 必须新增并审核独立 SQL migration，不能用该命令的 SQLite 输出替代。
 
 ## 2. 本地认证、POST 与退出
 
@@ -67,7 +67,7 @@ npm run dev:local
 5. 缺 Origin、跨源、`Sec-Fetch-Site: cross-site`、非 JSON、缺 `X-TTQ-Request` 分别拒绝；chunked body 超过 2 MiB 返回 413。
 6. HTTPS 响应有 no-store、安全头和 HSTS；loopback HTTP 不错误发送 HSTS。
 7. 退出先锁住并隐藏账本，再 POST `/auth/logout`；请求失败仍保持锁定，只提供受保护的 POST 重试，不恢复旧账或提前跳转。
-8. localhost 退出清 cookie；Sites 模式只在 POST 成功后返回 dispatcher-owned 下一跳；外部 URL、`//host`、反斜杠、控制字符和认证循环降级 `/`。
+8. localhost 退出清 Cookie；Supabase 退出由服务端 Auth 动作处理；外部 URL、`//host`、反斜杠、控制字符和认证循环降级 `/`。
 
 ## 3. 会话隔离、BFCache 与多标签
 
@@ -107,7 +107,7 @@ npm run dev:local
 - 年报为完整自然年，年份只接受 1000–9999；
 - 油费跟随所属已收车趟次 `endDate`，维修跟随自身 `date`；在途趟不进入财务/fuel 摘要。
 
-## 6. Fuel 三项、聚合与 D1
+## 6. Fuel 三项、聚合与数据库
 
 | 场景 | 预期 |
 |---|---|
@@ -121,9 +121,9 @@ npm run dev:local
 
 还要覆盖快记、支出编辑、显式旧账补录、JSON 导入导出、同步回执、冲突重组、多车辆、跨账期/月/年。断言总油费、总毫升、加权均价、最低/最高、趋势和分车汇总；加权均价应落在有效记录最低/最高之间。
 
-D1 分别验证：
+本地 SQLite 兼容层分别验证：
 
-- 新库 schema、正式 `0002` 升级和 runtime 旧表升级约束等价；
+- 新库 schema、本地兼容 `0002` 升级和 runtime 旧表升级约束等价；
 - 升级前后旧行数和所有旧字段守恒，新列为 null/null；
 - fuel 列成对、范围和 category update 触发器不能绕过；
 - repository 写入/回执含 canonical fuel；bootstrap 对部分列、错科目、越界或金额矛盾 fail closed。
@@ -166,8 +166,11 @@ node scripts/verify-backup.js /绝对路径/备份.json
 - 来源被重绘、删除、滚出视口或消失时轻缩放淡出且无残留遮罩；
 - 日/夜主题、`prefers-reduced-motion` 和无 `Element.animate` 分别验证。
 
-## 10. 腾讯云候选试用前检查
+## 10. Netlify + Supabase 部署前检查
 
-当前代码只做本地验证，尚未授权推送或部署。现有 Sites/Cloudflare Worker、D1 与身份产物不能直接作为腾讯云标准 Node 应用发布。
-
-若用户另批确认腾讯方案，再验证上海地域、个人主体封闭非经营测试域名、域名/备案与产品资格、纯数字手机号登录名、CloudBase Auth、MySQL schema/migration、密钥管理、日志脱敏、安全头、备份回滚和移动端完整矩阵。未完成适配前不得声称“符合腾讯云规范”或“已可部署”。
+- `npm test`、lint、类型检查、`npm run build`、`npm run build:netlify` 和 `git diff --check` 全部通过；
+- 目标站点、分支、公开 HTTPS origin 与 Supabase project ref 已人工核对；
+- Functions 环境变量完整，生产固定 `supabase + postgres`，没有迁移管理员连接、测试密码或本地模式变量；
+- Auth/业务响应保持 no-store，`ttq` 不对 Data API 暴露，`ttq_app` 仍为最小权限角色，数据库 TLS 校验开启；
+- 使用专门测试账号验证登录、bootstrap、原子保存、幂等回放、账号隔离和退出；不写真实账本；
+- 部署必须得到用户明确授权，测试通过不等于自动获得发布或合并权限。

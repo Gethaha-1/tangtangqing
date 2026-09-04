@@ -1,4 +1,5 @@
--- Isolated Supabase test project only. Never run against the existing ledger.
+-- Initial schema for an empty, explicitly authorized Supabase project.
+-- Never re-run blindly against an existing ledger; use a reviewed migration.
 -- Application tables are intentionally outside the exposed public/auth schemas.
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS ttq;

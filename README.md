@@ -1,13 +1,12 @@
-> **本分支是 Netlify + Supabase 隔离实验**，不是原 Sites/CloudBase 发布版本。
-> 当前实施以 [Netlify/Supabase 部署说明](deploy/NETLIFY-SUPABASE.md) 为准；验证结果见 [验证报告](deploy/VALIDATION-RESULTS.md)。
-> 保留原业务规则；旧托管、D1/SQLite运行和发布指令仅作历史参考，不适用于本分支。
-> 禁止向原 Sites 项目发布，禁止合并 main/develop，禁止使用真实账本测试。
+> 当前线上架构是 **Netlify + Supabase**：Netlify 运行完整 Next.js 应用，Supabase 提供 Auth 与 PostgreSQL。
+> 当前部署与运维以 [Netlify/Supabase 部署说明](deploy/NETLIFY-SUPABASE.md) 为准；迁移期验证数据保存在 [历史验证报告](deploy/VALIDATION-RESULTS.md)。
+> SQLite 与旧 D1-shaped schema 只用于本地开发和兼容回归，不是线上数据源。Sites、CloudBase、Cloudflare D1 均不再是当前部署目标。
 
 # 趟趟清 · 货运趟次云账本
 
-当前版本：**v1.5.1 · Sites 正式站点与 `develop` 运行代码一致 · 严格在线写入**。
+当前版本：**v1.5.1-supabase.0 + Unreleased 批量快记 · Netlify/Supabase 在线运行 · 严格在线写入**。
 
-趟趟清面向货运车主和司机，提供多车辆、发车、快记、二次确认收车、补录、账期统计、结构化油费和维修体验。当前实现由服务端 SQLite（Node 22 内置 `node:sqlite`，经 D1 兼容层驱动）保存正式业务状态；认证边界抽象为 provider-neutral `Principal`，生产采用 CloudBase 云托管（容器 + CFS）+ 云网关微信身份认证。
+趟趟清面向货运车主和司机，提供多车辆、发车、批量快记、二次确认收车、补录、账期统计、结构化油费和维修体验。线上由 Netlify 承载完整 Next.js 应用与服务端 API，Supabase Auth 提供邮箱密码会话，Supabase PostgreSQL 的私有 `ttq` schema 保存正式业务状态。
 
 ## 保存与离线边界
 
@@ -23,9 +22,9 @@
 
 ## 登录与退出
 
-登录首页流程保持不变：已登录时显示“继续到账本”，由用户手动进入 `/ledger`，不自动跳转。
+线上登录使用 Supabase 邮箱密码认证。已登录时首页显示“继续到账本”，由用户手动进入 `/ledger`，不自动跳转。
 
-所有认证写动作使用带 Origin/请求标记检查的同源 JSON POST。`/auth/logout` 返回经校验的下一跳；当前 `sites` adapter 再委托 dispatcher-owned `/signout-with-chatgpt`。本地退出只清除 loopback 测试 cookie；`cloudbase` 模式尚未实现，默认 fail closed。
+所有认证写动作使用带 Origin/请求标记检查的同源 JSON POST。Supabase 会话保存在安全 Cookie 中，API 对业务请求重新向 Auth 服务核验用户；浏览器不能用公开身份头选择业务账号。本地退出只清除 loopback 测试 Cookie。
 
 账本“更多”页提供退出登录。退出前会等待进行中的保存；仍有未确认写入时阻止退出并可先导出核对。
 
@@ -79,9 +78,12 @@ npm run dev:local
 
 ```text
 app/                    登录页、POST 认证动作、bootstrap/sync API
+proxy.ts                Next.js 16 认证代理、受保护账本改写与安全头
 lib/auth/               provider-neutral 退出与 return_to 校验
-lib/server/             edge Principal、安全头、授权、同步与 D1 repository
-db/ + drizzle/          D1 schema、运行时建表、正式 migrations
+lib/server/             Supabase Principal、安全头、授权与 D1-shaped repository
+db/postgres.ts          线上 PostgreSQL 适配器与 SERIALIZABLE 批次
+db/sqlite.ts            仅本地开发/兼容测试的 SQLite 适配器
+deploy/supabase/        当前 PostgreSQL 初始 schema
 legacy/ledger.html      成熟账本 UI 与浏览器网络适配
 src/domain.js           schema v3、fuel 联算、净利润和报告摘要规则
 src/cloud-sync.js       v3 状态/记录、fuel 守恒、差异、回执和在线状态机
@@ -92,36 +94,23 @@ tests/                  业务、XSS、认证、原子写入、迁移测试
 
 构建前脚本把 `legacy/ledger.html` 和 `src/domain.js`、`src/cloud-sync.js`、`src/auth-client.js`、`src/ui-transition.js` 复制到 gitignored 的 `public/ledger/`。不要直接修改生成目录。
 
-## 依赖与体积
-
-2026-08-08 本地实验审计快照：
-
-| 范围 | 大小 | 说明 |
-|---|---:|---|
-| 目标基线 tracked 源码 | 891,830 B（约 0.85 MiB） | 不含安装和构建产物 |
-| 本实验源码/文档 | 约 0.88 MiB | 含转场模块、测试与文档修改 |
-| 用户原主检出目录 | 约 764 MiB | 其中 `node_modules` 约 758 MiB（99.12%） |
-| 当前独立 worktree `node_modules` | 约 763 MiB | 删除候选后干净 `npm ci`；仍主要是 Sites/构建工具链和多平台二进制 |
-| 当前 `dist` / `public/ledger` | 约 2.0 MiB / 248 KiB | 都是可再生成且 gitignored 的本地产物（另有 `.next` 构建缓存） |
-
-因此 700 MiB 量级不是源码体积，也不等于模型需要通读的上下文。
-
-直接依赖审计：
+## 运行依赖
 
 | 依赖 | 用途 / 结论 |
 |---|---|
 | `next`、`react`、`react-dom` | 页面、App Router、React renderer/RSC；生产必需 |
-| `drizzle-orm` | 经 `sqlite-proxy` 驱动 `node:sqlite`，schema 与数据访问；生产必需 |
-| `node:sqlite` | Node 22 内置 SQLite 引擎（零原生依赖），无需 `better-sqlite3` |
-| `drizzle-kit` | migration 生成 |
+| `@supabase/ssr`、`@supabase/supabase-js` | Supabase Auth 的服务端会话与用户核验；生产必需 |
+| `pg` | PostgreSQL 连接与 D1-shaped 数据访问适配；生产必需 |
+| `@netlify/plugin-nextjs` | 把 Next.js 页面、API 和认证代理打包为 Netlify 运行产物 |
+| `node:sqlite`、`drizzle-orm`、`drizzle-kit` | 本地测试、旧 SQLite schema 兼容与迁移回归；不作为线上数据库 |
 | `typescript`、`@types/node`、`@types/react`、`@types/react-dom` | 类型检查与 TS/TSX |
 | `eslint`、`eslint-config-next` | lint |
-| 已移除：`vinext` / `vite` / `@cloudflare/vite-plugin` / `wrangler` / `@cloudflare/workers-types` | 原 Cloudflare/Vinext 构建链，迁移到 CloudBase 后删除，安装体积显著下降 |
+| `embedded-postgres` | 自动化集成测试使用的临时真实 PostgreSQL；不进入线上运行时 |
 
 `node_modules`、`dist`、`.next`、`public/ledger` 均保持 gitignore，不提交。
 
-## 报告与部署边界
+## 报告与现行部署边界
 
 `buildReportSummary()` 已统一账期/月度交集/自然年、车辆、净利润和 fuel 口径，供当前卡片与文字报告共用。定时生成、视频、外部 OpenAI/API、网络 endpoint 和新依赖均未实现。
 
-已迁移到腾讯云 CloudBase 云托管：Next.js（App Router，`next build && next start`）容器 + CFS 挂载 SQLite（`node:sqlite`），Edge 中间件做身份铸造，云网关微信身份认证作为账户区分。构建基于标准 Node 应用，可直接由云托管容器运行。部署细节见 `deploy/CLOUDBASE-DEPLOY.md` 与 `deploy/env-vars.md`。
+当前线上只支持 Netlify + Supabase：Netlify 运行 Next.js 页面、Node API 与认证代理；Supabase Auth 负责账号会话，Supabase PostgreSQL 保存 `ttq` 私有 schema。生产配置强制 `TTQ_AUTH_MODE=supabase` 与 `TTQ_DATABASE_MODE=postgres`，不会回退本地身份或 SQLite。部署、环境变量和验证流程见 [deploy/NETLIFY-SUPABASE.md](deploy/NETLIFY-SUPABASE.md) 与 [deploy/env-vars.md](deploy/env-vars.md)。

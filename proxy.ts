@@ -20,8 +20,8 @@ import {
 import { createSupabaseContext, verifiedSupabasePrincipal } from "./lib/server/supabase-auth";
 import { serverAuthOptions } from "./lib/server/auth-runtime";
 
-// Replaces the old Cloudflare Worker edge. It mints internal identity headers
-// for every matched request, then protects the /ledger surface.
+// Mints internal identity headers for matched page requests and protects the
+// /ledger surface. Supabase API routes independently revalidate the session.
 export const config = {
   matcher: ["/", "/ledger", "/ledger/:path*", "/api/:path*", "/auth/:path*"],
 };
@@ -34,11 +34,11 @@ function isLedgerPath(pathname: string): boolean {
   return pathname === "/ledger" || pathname.startsWith("/ledger/");
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const options = serverAuthOptions();
   const mode = resolveAuthMode(options.authMode);
 
-  // Local sign-in is fully handled at the edge, mirroring the previous worker.
+  // Local sign-in is handled here and remains development + loopback only.
   if (
     mode === "local" &&
     request.method === "POST" &&
@@ -111,9 +111,6 @@ function handleLocalSignin(request: Request): Response {
 async function supabaseMiddleware(request: NextRequest): Promise<Response> {
   const headers = new Headers(request.headers);
   stripIdentityHeaders(headers);
-  for (const name of Array.from(headers.keys())) {
-    if (name.startsWith("x-cloudbase-") || name.startsWith("x-wx-")) headers.delete(name);
-  }
   // API/auth handlers verify with Supabase themselves and write refreshed cookies.
   // Do not make a second cross-region Auth request at the edge for each write.
   if (request.nextUrl.pathname.startsWith("/api/") || request.nextUrl.pathname.startsWith("/auth/")) {

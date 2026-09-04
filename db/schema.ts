@@ -396,7 +396,7 @@ export const maintenance = sqliteTable(
   ],
 );
 
-// A commit receipt is written in the same D1 batch as its business writes.
+// A commit receipt is written in the same database batch as its business writes.
 // Retrying the same operationId can therefore return the original acknowledgement
 // without applying the records twice.
 export const syncCommits = sqliteTable(
@@ -416,7 +416,7 @@ export const syncCommits = sqliteTable(
   ],
 );
 
-// Version guards live only for the duration of one D1 batch. A failed CHECK
+// Version guards live only for the duration of one database batch. A failed CHECK
 // aborts the entire batch; successful guard rows are removed before commit.
 export const syncAssertions = sqliteTable(
   "sync_assertions",

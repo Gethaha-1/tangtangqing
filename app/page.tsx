@@ -2,10 +2,7 @@ import { SupabaseLoginForm } from "./supabase-login-form";
 import { headers } from "next/headers";
 import { authLogoutPath } from "../lib/auth/logout";
 import { INTERNAL_AUTH_HEADERS } from "../lib/server/auth";
-import {
-  chatGPTSignInPath,
-  getChatGPTUser,
-} from "./chatgpt-auth";
+import { getCurrentUser } from "./current-user";
 import { AuthPostButton } from "./auth-post-button";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +25,7 @@ function isLocalHost(host: string | null): boolean {
 
 export default async function LoginPage() {
   const [user, requestHeaders] = await Promise.all([
-    getChatGPTUser(),
+    getCurrentUser(),
     headers(),
   ]);
   const authMode =
@@ -39,9 +36,7 @@ export default async function LoginPage() {
     authMode === "local" &&
     process.env.NODE_ENV !== "production" &&
     isLocalHost(requestHeaders.get("host"));
-  const showSitesSignIn = !user && authMode === "sites";
   const showSupabaseSignIn = !user && authMode === "supabase";
-  const showCloudbaseSignIn = !user && authMode === "cloudbase";
 
   return (
     <main className="login-page">
@@ -114,26 +109,6 @@ export default async function LoginPage() {
 
                 <div className="auth-actions">
                   {showSupabaseSignIn ? <SupabaseLoginForm /> : null}
-                  {showSitesSignIn ? (
-                    <a
-                      className="action action-primary"
-                      href={chatGPTSignInPath(LEDGER_PATH)}
-                    >
-                      使用 ChatGPT 登录
-                      <span aria-hidden="true">→</span>
-                    </a>
-                  ) : null}
-
-                  {showCloudbaseSignIn ? (
-                    <a
-                      className="action action-primary"
-                      href="/auth/cloudbase/login?return_to=/ledger"
-                    >
-                      使用微信登录
-                      <span aria-hidden="true">→</span>
-                    </a>
-                  ) : null}
-
                   {showLocalSignIn ? (
                     <div className="local-access">
                       <span>仅本地测试</span>
@@ -146,7 +121,7 @@ export default async function LoginPage() {
                     </div>
                   ) : null}
 
-                  {!showSitesSignIn && !showCloudbaseSignIn && !showLocalSignIn && !showSupabaseSignIn ? (
+                  {!showLocalSignIn && !showSupabaseSignIn ? (
                     <p className="auth-error" role="alert">
                       认证模式尚未配置，账本保持锁定。
                     </p>

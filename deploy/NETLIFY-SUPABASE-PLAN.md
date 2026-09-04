@@ -1,5 +1,7 @@
 # Netlify + Supabase 隔离验证
 
+> 历史方案：这是迁移实施前的隔离验证计划，已经完成，不是当前部署手册。现行步骤见 `deploy/NETLIFY-SUPABASE.md`。
+
 - 分支：`codex/netlify-supabase-validation`
 - 基线：本地 `develop` 已提交的 v1.5.1，`21b57e2`。
 - 未包含原目录正在开发的 workbench 账号文件；不修改、合并或发布原项目。

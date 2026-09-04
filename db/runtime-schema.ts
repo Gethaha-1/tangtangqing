@@ -2,8 +2,8 @@ import { getD1, usesPostgres } from "./index";
 import { assertPostgresSchema } from "./postgres";
 import { INVARIANT_SCHEMA_STATEMENTS } from "./invariants";
 
-// Keep one SQL statement per item. Sites' D1 adapter prepares each item
-// independently; do not concatenate this list into an exec() call.
+// Local SQLite compatibility schema only. Keep one SQL statement per item so
+// the shared database adapter can execute the list as one atomic batch.
 export const RUNTIME_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY NOT NULL,

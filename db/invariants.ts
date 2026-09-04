@@ -1,9 +1,9 @@
 /**
  * Cross-row invariants that SQLite cannot express with a table CHECK.
  *
- * D1 serializes writes. These BEFORE triggers therefore make the decision and
- * mutation part of the same database statement, closing the gap between an
- * application pre-read and a later UPDATE/INSERT.
+ * The local SQLite compatibility adapter serializes its write batch. These
+ * BEFORE triggers keep the decision and mutation in the same statement,
+ * closing the gap between an application pre-read and a later UPDATE/INSERT.
  */
 export const INVARIANT_SCHEMA_STATEMENTS = [
   `CREATE TRIGGER IF NOT EXISTS vehicles_require_active_on_first_insert

@@ -1,5 +1,15 @@
 # 变更记录（CHANGELOG）
 
+> 本文件按发生时间保留历史平台与当时的交付边界；旧条目中的 Sites、CloudBase、Cloudflare D1 或“尚未部署”只描述当时状态，不代表当前架构。当前线上架构以 README、ARCHITECTURE 和 `deploy/NETLIFY-SUPABASE.md` 为准。
+
+## Unreleased · 现行架构清理 · 2026-09-05
+
+- 文档统一为当前 Netlify + Supabase 线上架构：Netlify 运行完整 Next.js，Supabase Auth + PostgreSQL 保存正式账本；
+- 移除已退出运行路径的 Sites/CloudBase 身份入口、CloudBase 路由、容器/CFS 文件和部署说明；生产认证模式收敛为 Supabase，本地只保留 development + loopback 固定测试身份；
+- SQLite、Drizzle 与 D1-shaped 类型明确为本地/兼容回归，线上 schema 以 `deploy/supabase/001_ledger.sql` 及后续 PostgreSQL migration 为准；
+- 移除未使用的 Vinext/Vite 顶层依赖，并将 Next.js 16 已弃用的 `middleware.ts` 约定迁移到 `proxy.ts`；
+- 更新部署标记、环境变量、测试、AI 接手和运维说明；迁移计划与验证报告保留为历史归档。
+
 ## v1.5.1-supabase.0 · 隔离验证分支
 
 - 保留账本界面和严格在线 API；新增 Supabase 邮箱密码登录与 HttpOnly 会话。

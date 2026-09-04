@@ -40,7 +40,7 @@ function mutation(url, init = {}) {
   });
 }
 
-test("Sites adapter 先剥离伪造内部头，再从稳定 Sites subject 重铸 Principal", async () => {
+test("本地适配器先剥离伪造内部头和已退役 provider 头，再铸造固定测试 Principal", async () => {
   const publicRequest = mutation("https://app.example/api/bootstrap", {
     headers: {
       "oai-authenticated-user-id": "usr_123",
@@ -52,36 +52,22 @@ test("Sites adapter 先剥离伪造内部头，再从稳定 Sites subject 重铸
       [INTERNAL_AUTH_HEADERS.subject]: "attacker",
     },
   });
-  const adapted = await adaptAuthenticationAtEdge(publicRequest, {
-    ...authOptions("sites"),
+  const localRequest = mutation("http://localhost:3000/api/bootstrap", {
+    headers: Object.fromEntries(publicRequest.headers),
+  });
+  const adapted = await adaptAuthenticationAtEdge(localRequest, {
+    ...authOptions("local"),
+    localAutoSignIn: true,
   });
   assert.equal(adapted.headers.get("oai-authenticated-user-email"), null);
-  assert.deepEqual(getTrustedPrincipal(adapted, authOptions("sites")), {
-    issuer: "sites",
-    subject: "usr_123",
-    displayName: "车主",
-    email: "owner@example.com",
-    loginName: "owner@example.com",
-  });
-});
-
-test("Sites 缺少可选全名时使用非联系占位名，不把 email 变成业务显示名", async () => {
-  const adapted = await adaptAuthenticationAtEdge(
-    mutation("https://app.example/api/bootstrap", {
-      headers: {
-        "oai-authenticated-user-id": "usr_without_name",
-        "oai-authenticated-user-email": "private@example.com",
-      },
-    }),
-    authOptions("sites"),
+  assert.equal(adapted.headers.get("x-cloudbase-context"), null);
+  assert.deepEqual(
+    getTrustedPrincipal(adapted, authOptions("local")),
+    LOCAL_TEST_PRINCIPAL,
   );
-  const principal = getTrustedPrincipal(adapted, authOptions("sites"));
-  assert.equal(principal.displayName, "车主");
-  assert.equal(principal.email, "private@example.com");
-  assert.notEqual(principal.displayName, principal.email);
 });
 
-test("Sites/local/cloudbase adapter 互斥，非 Sites 模式绝不信任 OAI 头，cloudbase 无身份按未认证处理", async () => {
+test("已退役的 Sites/CloudBase 模式 fail closed，local 不信任其公开身份头", async () => {
   const oai = {
     "oai-authenticated-user-id": "usr_123",
     "oai-authenticated-user-email": "owner@example.com",
@@ -96,28 +82,17 @@ test("Sites/local/cloudbase adapter 互斥，非 Sites 模式绝不信任 OAI �
     AuthenticationError,
   );
 
-  const cloudbase = await adaptAuthenticationAtEdge(
-    mutation("https://app.example/api/bootstrap", { headers: oai }),
-    authOptions("cloudbase", "production"),
-  );
-  assert.equal(cloudbase.headers.get(INTERNAL_AUTH_HEADERS.subject), null);
-  // This migration intentionally removed the `auth_mode_unavailable` throw for
-  // cloudbase with no identity: the edge simply mints no internal identity, so
-  // the downstream principal resolution treats it as `unauthenticated`.
-  assert.throws(
-    () => getTrustedPrincipal(cloudbase, authOptions("cloudbase", "production")),
-    (error) =>
-      error instanceof AuthenticationError && error.code === "unauthenticated",
-  );
-
-  await assert.rejects(
-    adaptAuthenticationAtEdge(
-      mutation("https://app.example/api/bootstrap", { headers: oai }),
-      { ...authOptions("unknown") },
-    ),
-    (error) =>
-      error instanceof AuthenticationError && error.code === "auth_mode_invalid",
-  );
+  for (const retiredMode of ["sites", "cloudbase", "unknown"]) {
+    await assert.rejects(
+      adaptAuthenticationAtEdge(
+        mutation("https://app.example/api/bootstrap", { headers: oai }),
+        { ...authOptions(retiredMode) },
+      ),
+      (error) =>
+        error instanceof AuthenticationError && error.code === "auth_mode_invalid",
+      retiredMode,
+    );
+  }
 });
 
 test("local 只接受显式 development loopback 与固定测试 subject，手机号不作 subject", async () => {
@@ -216,8 +191,8 @@ test("本地自动登录仅由显式服务端选项启用，仍受 development l
 test("直达 Route 的伪造内部身份没有部署 secret proof 时 fail-closed", () => {
   const forged = mutation("https://app.example/api/bootstrap", {
     headers: {
-      [INTERNAL_AUTH_HEADERS.mode]: "sites",
-      [INTERNAL_AUTH_HEADERS.issuer]: "sites",
+      [INTERNAL_AUTH_HEADERS.mode]: "supabase",
+      [INTERNAL_AUTH_HEADERS.issuer]: "supabase",
       [INTERNAL_AUTH_HEADERS.subject]: "attacker",
       [INTERNAL_AUTH_HEADERS.displayName]: "attacker",
       [INTERNAL_AUTH_HEADERS.email]: "-",
@@ -226,14 +201,14 @@ test("直达 Route 的伪造内部身份没有部署 secret proof 时 fail-close
     },
   });
   assert.throws(
-    () => getTrustedPrincipal(forged, authOptions("sites")),
+    () => getTrustedPrincipal(forged, authOptions("supabase")),
     (error) =>
       error instanceof AuthenticationError &&
       error.code === "auth_boundary_invalid",
   );
   assert.throws(
     () => getTrustedPrincipal(forged, {
-      authMode: "sites",
+      authMode: "supabase",
       internalSecret: "",
     }),
     (error) =>
@@ -312,7 +287,7 @@ test("安全响应头 no-store/nosniff/frame deny/no-referrer，HSTS 仅 https",
   assert.equal(httpResponse.headers.get("strict-transport-security"), null);
 });
 
-test("bootstrap/logout 路由 POST-only，middleware 明确接入 adapter 与全响应安全头", () => {
+test("bootstrap/logout 路由 POST-only，Next proxy 明确接入 adapter 与全响应安全头", () => {
   const bootstrap = readFileSync(
     new URL("../app/api/bootstrap/route.ts", import.meta.url),
     "utf8",
@@ -325,8 +300,8 @@ test("bootstrap/logout 路由 POST-only，middleware 明确接入 adapter 与全
     new URL("../app/api/sync/route.ts", import.meta.url),
     "utf8",
   );
-  const middleware = readFileSync(
-    new URL("../middleware.ts", import.meta.url),
+  const proxy = readFileSync(
+    new URL("../proxy.ts", import.meta.url),
     "utf8",
   );
   assert.match(bootstrap, /export async function GET[\s\S]*status: 405/);
@@ -339,12 +314,12 @@ test("bootstrap/logout 路由 POST-only，middleware 明确接入 adapter 与全
   assert.match(sync, /await requestIdentity\(request\)/);
   assert.doesNotMatch(logout, /export function GET/);
   assert.match(logout, /export function POST/);
-  // The edge middleware (replacing the old Cloudflare Worker) must wire up every
-  // auth primitive it depends on.
-  assert.match(middleware, /adaptAuthenticationAtEdge\(request/);
-  assert.match(middleware, /safeAuthReturnTo\(/);
-  assert.match(middleware, /resolveAuthMode\(/);
-  assert.match(middleware, /localAuthCookie\(/);
-  assert.match(middleware, /enforceMutationRequest\(/);
-  assert.match(middleware, /secureJson\(/);
+  // The Next.js proxy must wire up every authentication primitive it depends on.
+  assert.match(proxy, /export async function proxy\(request/);
+  assert.match(proxy, /adaptAuthenticationAtEdge\(request/);
+  assert.match(proxy, /safeAuthReturnTo\(/);
+  assert.match(proxy, /resolveAuthMode\(/);
+  assert.match(proxy, /localAuthCookie\(/);
+  assert.match(proxy, /enforceMutationRequest\(/);
+  assert.match(proxy, /secureJson\(/);
 });

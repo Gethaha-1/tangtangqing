@@ -1,5 +1,7 @@
 # Netlify + Supabase 隔离验证结果
 
+> 归档说明：本文记录 2026-08 至 2026-09 从旧平台迁移到 Netlify + Supabase 时的隔离验证、部署编号和耗时数据。当前架构与操作步骤以 `ARCHITECTURE.md`、`deploy/NETLIFY-SUPABASE.md` 和 `deploy/env-vars.md` 为准；不要把本文的测试站、旧分支或一次性凭据流程当作当前配置。
+
 日期：2026-09-01（America/Los_Angeles）。
 
 ## 结论

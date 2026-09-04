@@ -880,7 +880,7 @@ window.addEventListener('appinstalled', () => {
 });
 
 /*
- * D1 是唯一正式数据源。历史未归属 localStorage 永远不在登录会话中读取；
+ * 服务器确认的数据是唯一正式状态。历史未归属 localStorage 永远不在登录会话中读取；
  * 账号相关的设备状态只能在 bootstrap 返回 fleet.id + membership.id 后按 scope 访问。
  * 每个用户动作只发送一个带 expectedVersion + operationId 的原子批次。
  */

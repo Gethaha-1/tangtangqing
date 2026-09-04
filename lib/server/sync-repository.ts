@@ -306,7 +306,7 @@ export async function applyAtomicSyncBatch(
     hasRejected: false,
     syncedAt,
   };
-  // Authorization is checked again inside the same D1 transaction as the
+  // Authorization is checked again inside the same database transaction as the
   // business writes. A membership revocation/role change racing the preflight
   // therefore aborts the whole batch instead of permitting a stale actor.
   const statements: D1PreparedStatement[] = [

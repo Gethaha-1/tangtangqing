@@ -3,8 +3,8 @@ import type { PrincipalOptions } from "./auth";
 /**
  * Trusted deployment configuration. Never derive these values from Request.
  *
- * Previously sourced from Cloudflare's `env`; now read from the Node process
- * environment so the app runs as a standard Next.js server (CloudBase 云托管).
+ * Read from the trusted Node process environment supplied by Netlify Functions
+ * or the isolated local development launcher.
  */
 export function serverAuthOptions(): PrincipalOptions {
   return {

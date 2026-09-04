@@ -1,10 +1,9 @@
 /**
  * D1-compatible type declarations.
  *
- * Originally derived from Cloudflare Workers types, now kept as ambient globals
- * so the data-access layer can compile against `D1Database` without the
- * Cloudflare runtime. The runtime implementation lives in `db/index.ts` (a
- * node:sqlite-backed compat layer).
+ * Legacy D1-shaped ambient types retained so the shared repository can target
+ * both the production PostgreSQL adapter and the local SQLite compatibility
+ * adapter without importing the retired Cloudflare runtime.
  */
 interface D1Result<T = Record<string, unknown>> {
   results?: T[];

@@ -49,7 +49,7 @@ try {
     for(const stream of [app.stdout,app.stderr]) stream.on('data',chunk=>{const text=String(chunk);logs.push(text);if(text.includes('Ready')){clearTimeout(timer);resolve();}});
     app.once('exit',code=>{clearTimeout(timer);reject(new Error(`Next.js exited ${code}`));});
   });
-  const info=await fetch(origin+'/api/deployment-info'); assert.equal(info.status,200); assert.equal((await info.json()).deployment,'netlify-supabase-validation');
+  const info=await fetch(origin+'/api/deployment-info'); assert.equal(info.status,200); assert.equal((await info.json()).deployment,'netlify-supabase');
   const page=await fetch(origin); assert.equal(page.status,200); assert.match(await page.text(),/login-email/);
   assert.equal((await fetch(origin+'/ledger',{redirect:'manual'})).status,307);
   function browser() {

@@ -8,7 +8,7 @@ export type SupabaseContext = ReturnType<typeof createSupabaseContext>;
 export function supabaseConfiguration(env: NodeJS.ProcessEnv = process.env) {
   const url = env.TTQ_SUPABASE_URL;
   const key = env.TTQ_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new AuthenticationError("auth_mode_unavailable", "Supabase 测试项目尚未配置");
+  if (!url || !key) throw new AuthenticationError("auth_mode_unavailable", "Supabase 项目尚未配置");
   const parsed = new URL(url);
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
   if (parsed.username || parsed.password || parsed.search || parsed.hash ||

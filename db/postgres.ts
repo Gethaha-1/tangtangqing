@@ -112,7 +112,7 @@ function compilePostgresLiteralSql(
 
 export function postgresPoolOptions(env: NodeJS.ProcessEnv = process.env): PoolConfig {
   const value = env.TTQ_DATABASE_URL;
-  if (!value) throw new Error("TTQ_DATABASE_URL 必须配置为独立测试项目的后端连接串");
+  if (!value) throw new Error("TTQ_DATABASE_URL 必须配置为当前 Supabase 项目的后端连接串");
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("TTQ_DATABASE_URL 格式无效（连接串已隐藏）"); }
   if (!["postgres:", "postgresql:"].includes(url.protocol)) throw new Error("数据库连接串协议无效");
@@ -125,7 +125,7 @@ export function postgresPoolOptions(env: NodeJS.ProcessEnv = process.env): PoolC
     const ref = authHost.match(/^([a-z0-9]{16,32})\.supabase\.co$/)?.[1];
     const pooler = url.hostname.endsWith(".pooler.supabase.com") && decodeURIComponent(url.username) === `ttq_app.${ref}`;
     const direct = url.hostname === `db.${ref}.supabase.co` && decodeURIComponent(url.username) === "ttq_app";
-    if (!ref || (!pooler && !direct)) throw new Error("数据库与 Supabase Auth 测试项目不一致，拒绝连接");
+    if (!ref || (!pooler && !direct)) throw new Error("数据库与 Supabase Auth 项目不一致，拒绝连接");
   }
   // node-postgres parses SSL URL parameters after Pool options. Remove them so
   // sslmode=disable/require can never silently override certificate validation.
@@ -139,7 +139,7 @@ export function postgresPoolOptions(env: NodeJS.ProcessEnv = process.env): PoolC
     statement_timeout: 15_000,
     idle_in_transaction_session_timeout: 15_000,
     allowExitOnIdle: true,
-    application_name: "tangtangqing-netlify-validation",
+    application_name: "tangtangqing-netlify",
     // Monetary cents can exceed int4. Preserve the old safe JS-number contract.
     types: { getTypeParser(oid: number, format?: string) {
       if (oid === 20 && format !== "binary") return (value: string) => {
@@ -188,7 +188,7 @@ export class PostgresDatabase implements D1Database {
       });
       if (!owned.length) return [];
       const readOnly = owned.every((statement) => /^\s*SELECT\b/i.test(statement.sql));
-      // Keep D1 batch atomicity while avoiding one trans-oceanic network round
+      // Keep the repository batch atomic while avoiding one trans-oceanic network round
       // trip per statement. All SQL and values originate from this repository;
       // values are escaped by node-postgres before using the simple protocol.
       const sql = [

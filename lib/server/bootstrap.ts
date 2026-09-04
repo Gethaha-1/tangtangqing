@@ -83,8 +83,8 @@ export async function resolveOrCreateActor(
   ];
 
   try {
-    // D1 batch is transactional. Every prepared item above contains one SQL
-    // statement, which keeps runtime initialization Sites-compatible.
+    // The shared database batch is transactional. Keeping one SQL statement
+    // per prepared item works for both PostgreSQL and the local compatibility adapter.
     await d1.batch(statements);
   } catch (error) {
     // Two first requests can race. The provider/subject unique constraint lets

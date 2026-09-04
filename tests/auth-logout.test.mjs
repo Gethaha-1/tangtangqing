@@ -5,7 +5,6 @@ import {
   authLogoutPath,
   handleLogout,
   safeAuthReturnTo,
-  sitesLogoutProvider,
 } from "../lib/auth/logout.ts";
 
 function securePost(url, init = {}) {
@@ -33,34 +32,14 @@ test("return_to 只接受同源相对路径，并拒绝认证循环与控制字�
   assert.equal(safeAuthReturnTo("/%0d%0aLocation:https://evil.test"), "/");
   assert.equal(safeAuthReturnTo("/auth/logout"), "/");
   assert.equal(safeAuthReturnTo("/api/local-auth/signin"), "/");
-  assert.equal(safeAuthReturnTo("/signin-with-chatgpt"), "/");
 });
 
-test("认证 UI 使用稳定通用退出入口，provider 只在服务端适配", () => {
+test("认证 UI 使用稳定通用退出入口", () => {
   assert.equal(AUTH_LOGOUT_PATH, "/auth/logout");
   assert.equal(
     authLogoutPath("/ledger?tab=more"),
     "/auth/logout?return_to=%2Fledger%3Ftab%3Dmore",
   );
-  assert.equal(
-    sitesLogoutProvider.signOutLocation("/ledger"),
-    "/signout-with-chatgpt?return_to=%2Fledger",
-  );
-});
-
-test("Sites 退出通过同源 POST 返回 dispatcher 目标且禁止缓存", async () => {
-  const response = await handleLogout(
-    securePost("https://tangtangqing.example/auth/logout?return_to=%2Fledger"),
-    { authMode: "sites" },
-  );
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    location: "/signout-with-chatgpt?return_to=%2Fledger",
-  });
-  assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
-  assert.equal(response.headers.get("strict-transport-security"), "max-age=31536000");
-  assert.equal(response.headers.get("set-cookie"), null);
 });
 
 test("local 退出仅在显式 development loopback 模式清 cookie", async () => {
@@ -94,21 +73,21 @@ test("local 退出仅在显式 development loopback 模式清 cookie", async () 
   }
 });
 
-test("logout 拒绝跨源、缺标记请求与未知模式", async () => {
+test("本地 logout 拒绝跨源、缺标记请求与未知模式", async () => {
   const crossOrigin = await handleLogout(
-    securePost("https://app.example/auth/logout", {
+    securePost("http://localhost:3000/auth/logout", {
       headers: { origin: "https://evil.example" },
     }),
-    { authMode: "sites" },
+    { authMode: "local", nodeEnv: "development" },
   );
   assert.equal(crossOrigin.status, 403);
   assert.equal((await crossOrigin.json()).error.code, "origin_not_allowed");
 
   const missingMarker = await handleLogout(
-    securePost("https://app.example/auth/logout", {
+    securePost("http://localhost:3000/auth/logout", {
       headers: { "x-ttq-request": "" },
     }),
-    { authMode: "sites" },
+    { authMode: "local", nodeEnv: "development" },
   );
   assert.equal(missingMarker.status, 403);
 

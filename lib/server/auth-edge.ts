@@ -6,17 +6,11 @@ import {
   resolveAuthMode,
   resolveInternalAuthSecret,
   resolveNodeEnv,
-  SITES_AUTH_HEADERS,
   type AuthMode,
   type PrincipalIssuer,
 } from "./auth.ts";
 import { LOCAL_AUTH_COOKIE } from "../auth/logout.ts";
-import {
-  CLOUDBASE_GATEWAY_HEADERS,
-  verifyCloudbaseIdentity,
-} from "./cloudbase-auth.ts";
 
-const SITES_NAME_ENCODING = "percent-encoded-utf-8";
 const LOCAL_COOKIE_VALUE = "local-test-owner-v1";
 
 export type EdgeAuthOptions = {
@@ -27,9 +21,8 @@ export type EdgeAuthOptions = {
 };
 
 /**
- * Converts one trusted provider assertion into internal headers. Every public
- * identity header is removed first, including headers that imitate our
- * internal boundary.
+ * Mints the strictly local development identity after removing every public
+ * identity header, including headers left over from retired providers.
  */
 export async function adaptAuthenticationAtEdge(
   request: Request,
@@ -45,41 +38,13 @@ export async function adaptAuthenticationAtEdge(
   headers.set(INTERNAL_AUTH_HEADERS.mode, mode);
   headers.set(INTERNAL_AUTH_HEADERS.proof, internalSecret);
 
-  if (mode === "sites") {
-    mintSitesHeaders(publicHeaders, headers);
-  } else if (
+  if (
     mode === "local" &&
     (options.localAutoSignIn === true ||
       cookieValue(publicHeaders.get("cookie"), LOCAL_AUTH_COOKIE) ===
         LOCAL_COOKIE_VALUE)
   ) {
     mintInternalHeaders(headers, LOCAL_TEST_PRINCIPAL);
-  } else if (mode === "cloudbase") {
-    // Trust the CloudBase gateway-injected identity (x-cloudbase-context) and
-    // mint an internal identity. Any failure is swallowed on purpose: the
-    // request simply carries no identity, so getTrustedPrincipal treats it as
-    // unauthenticated (fail-closed).
-    try {
-      const identity = await verifyCloudbaseIdentity(request, {
-        authMode: options.authMode,
-        nodeEnv: options.nodeEnv,
-        internalSecret: options.internalSecret,
-      });
-      mintInternalHeaders(headers, {
-        issuer: "cloudbase",
-        subject: identity.uid,
-        displayName: identity.nickName || identity.uid,
-        email: identity.email,
-        loginName: identity.email,
-      });
-    } catch {
-      // No identity minted.
-    }
-    // Defense in depth: drop the raw gateway assertion so it can never be
-    // forwarded to internal services or replayed by a downstream handler.
-    for (const name of Object.values(CLOUDBASE_GATEWAY_HEADERS)) {
-      headers.delete(name);
-    }
   }
 
   return new Request(request, { headers });
@@ -118,33 +83,15 @@ export function stripIdentityHeaders(headers: Headers): void {
   for (const name of Object.values(INTERNAL_AUTH_HEADERS)) {
     headers.delete(name);
   }
-  for (const name of Object.values(SITES_AUTH_HEADERS)) {
-    headers.delete(name);
+  for (const name of Array.from(headers.keys())) {
+    if (
+      name.startsWith("oai-authenticated-") ||
+      name.startsWith("x-cloudbase-") ||
+      name.startsWith("x-wx-")
+    ) {
+      headers.delete(name);
+    }
   }
-}
-
-function mintSitesHeaders(source: Headers, destination: Headers): void {
-  const email = source.get(SITES_AUTH_HEADERS.email)?.trim().toLowerCase();
-  const stableId = source.get(SITES_AUTH_HEADERS.subject)?.trim();
-  if (!email || !stableId || invalidClaim(email) || invalidClaim(stableId)) {
-    return;
-  }
-
-  const encodedName = source.get(SITES_AUTH_HEADERS.displayName)?.trim();
-  const name =
-    encodedName &&
-    source.get(SITES_AUTH_HEADERS.displayNameEncoding) === SITES_NAME_ENCODING
-      ? safeDecode(encodedName)
-      : null;
-  mintInternalHeaders(destination, {
-    issuer: "sites",
-    subject: stableId,
-    // Email remains a request-only login hint. Missing optional profile names
-    // must never make an email flow into users.display_name or fleet.name.
-    displayName: name || "车主",
-    email,
-    loginName: email,
-  });
 }
 
 function mintInternalHeaders(
@@ -179,17 +126,4 @@ function cookieValue(cookie: string | null, name: string): string | null {
     }
   }
   return null;
-}
-
-function safeDecode(value: string): string | null {
-  try {
-    const decoded = decodeURIComponent(value).trim();
-    return decoded && !invalidClaim(decoded) ? decoded : null;
-  } catch {
-    return null;
-  }
-}
-
-function invalidClaim(value: string): boolean {
-  return value.length > 320 || /[\r\n\u0000]/u.test(value);
 }

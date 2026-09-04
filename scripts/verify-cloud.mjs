@@ -9,7 +9,7 @@ const url = new URL(origin);
 if (url.protocol !== 'https:' || url.hostname !== `${site}.netlify.app` || url.origin !== origin) throw new Error('只允许指定的新 Netlify 测试站，不接受原站或任意转发地址。');
 if (process.env.TTQ_SUPABASE_URL !== `https://${ref}.supabase.co`) throw new Error('Supabase 项目标识不一致，拒绝测试写入。');
 const credentials = ['A', 'B'].map(id => ({ email: process.env[`TTQ_TEST_USER_${id}_EMAIL`], password: process.env[`TTQ_TEST_USER_${id}_PASSWORD`] }));
-if (credentials.some(item => !item.email || !item.password) || credentials[0].email === credentials[1].email) throw new Error('请在全新 Supabase 项目创建两个独立的已验证测试账号。');
+if (credentials.some(item => !item.email || !item.password) || credentials[0].email === credentials[1].email) throw new Error('请在隔离的空 Supabase 验收项目创建两个独立且已验证的测试账号。');
 
 function browser() {
   const cookies = new Map();
@@ -23,9 +23,9 @@ function browser() {
   };
 }
 const infoResponse = await fetch(origin+'/api/deployment-info', { redirect: 'manual', signal: AbortSignal.timeout(15000) });
-assert.equal(infoResponse.status, 200, '目标不是已配置的独立实验站');
+assert.equal(infoResponse.status, 200, '目标不是已配置的 Netlify + Supabase 验收站');
 const info = await infoResponse.json();
-assert.equal(info.deployment, 'netlify-supabase-validation');
+assert.equal(info.deployment, 'netlify-supabase');
 assert.equal(info.supabaseProjectRef, ref, '站点实际使用的项目与测试项目不一致，拒绝写入');
 const a = browser(), b = browser();
 assert.equal((await a('/auth/supabase/signin', credentials[0])).status, 200);

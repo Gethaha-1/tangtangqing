@@ -1,7 +1,7 @@
 export const AUTH_MODE_ENV = "TTQ_AUTH_MODE";
 export const INTERNAL_AUTH_SECRET_ENV = "TTQ_INTERNAL_AUTH_SECRET";
 
-export type AuthMode = "sites" | "local" | "cloudbase" | "supabase";
+export type AuthMode = "local" | "supabase";
 export type PrincipalIssuer = AuthMode;
 
 /**
@@ -29,13 +29,6 @@ export const INTERNAL_AUTH_HEADERS = {
   displayName: "x-ttq-auth-display-name",
   email: "x-ttq-auth-email",
   loginName: "x-ttq-auth-login-name",
-} as const;
-
-export const SITES_AUTH_HEADERS = {
-  subject: "oai-authenticated-user-id",
-  email: "oai-authenticated-user-email",
-  displayName: "oai-authenticated-user-full-name",
-  displayNameEncoding: "oai-authenticated-user-full-name-encoding",
 } as const;
 
 export const LOCAL_TEST_PRINCIPAL = {
@@ -74,8 +67,8 @@ export type PrincipalOptions = {
 };
 
 /**
- * Reads only worker-minted internal assertions. The edge worker removes these
- * headers from the public request before a provider adapter can mint them.
+ * Reads only server-minted internal assertions. Middleware removes public
+ * identity headers before the selected authentication path can mint them.
  */
 export function getTrustedPrincipal(
   request: Request,
@@ -158,9 +151,7 @@ export function resolveAuthMode(value?: string | null): AuthMode {
     );
   }
   if (
-    configured !== "sites" &&
     configured !== "local" &&
-    configured !== "cloudbase" &&
     configured !== "supabase"
   ) {
     throw new AuthenticationError(
@@ -169,7 +160,7 @@ export function resolveAuthMode(value?: string | null): AuthMode {
     );
   }
   if (typeof process !== "undefined" && (process.env.NETLIFY === "true" || process.env.NODE_ENV === "production") && configured !== "supabase") {
-    throw new AuthenticationError("auth_mode_unavailable", "本实验分支的生产运行只允许 Supabase 认证");
+    throw new AuthenticationError("auth_mode_unavailable", "生产运行只允许 Supabase 认证");
   }
   return configured;
 }

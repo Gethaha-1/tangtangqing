@@ -9,7 +9,7 @@ import { drizzle } from "drizzle-orm/sqlite-proxy";
 import * as schema from "./schema";
 
 /**
- * SQLite engine for self-hosted (Tencent CloudBase 云托管) deployments.
+ * SQLite engine for local development and compatibility tests only.
  *
  * The original Cloudflare D1 binding is replaced by Node's built-in
  * `node:sqlite` (available since Node 22.13). A thin D1-compatible wrapper
@@ -17,8 +17,8 @@ import * as schema from "./schema";
  * source-compatible so the strict-online + idempotent-receipt invariants are
  * preserved without a rewrite.
  *
- * The database file lives on a persistent volume (CFS) in production via
- * TTQ_SQLITE_PATH; locally it defaults to ./data/tangtangqing.db.
+ * Production is required to use Supabase PostgreSQL. Local data defaults to
+ * ./data/tangtangqing.db and must never be treated as the online ledger.
  */
 const DEFAULT_DB_PATH = process.env.TTQ_SQLITE_PATH ?? "data/tangtangqing.db";
 

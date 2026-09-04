@@ -3,11 +3,7 @@ import {
   isLoopbackHostname,
   resolveAuthMode,
   resolveNodeEnv,
-  type AuthMode,
 } from "../server/auth.ts";
-import {
-  clearCloudbaseAuthCookie,
-} from "../server/cloudbase-auth.ts";
 import {
   enforceMutationRequest,
   readJsonWithinLimit,
@@ -19,33 +15,11 @@ export const AUTH_LOGOUT_PATH = "/auth/logout";
 export const LOCAL_AUTH_COOKIE = "ttq_local_auth";
 
 const APP_ORIGIN = "https://app.local";
-const SITES_SIGN_OUT_PATH = "/signout-with-chatgpt";
 const RESERVED_AUTH_PATHS = new Set([
   AUTH_LOGOUT_PATH,
-  "/callback",
-  "/signin-with-chatgpt",
-  SITES_SIGN_OUT_PATH,
   "/api/local-auth/signin",
   "/auth/supabase/signin",
-  "/auth/cloudbase/login",
-  "/auth/cloudbase/callback",
 ]);
-
-export type LogoutProvider = {
-  readonly id: AuthMode;
-  signOutLocation(returnTo: string): string;
-};
-
-export const sitesLogoutProvider: LogoutProvider = {
-  id: "sites",
-  signOutLocation(returnTo) {
-    return `${SITES_SIGN_OUT_PATH}?return_to=${encodeURIComponent(returnTo)}`;
-  },
-};
-
-// Compatibility export for existing UI imports; provider selection itself is
-// now based on TTQ_AUTH_MODE rather than this name.
-export const chatGPTLogoutProvider = sitesLogoutProvider;
 
 export function authLogoutPath(returnTo = "/"): string {
   return `${AUTH_LOGOUT_PATH}?return_to=${encodeURIComponent(
@@ -108,13 +82,11 @@ export function clearLocalAuthCookie(request?: Request): string {
 export type LogoutOptions = {
   authMode?: string | null;
   nodeEnv?: string | null;
-  sitesProvider?: LogoutProvider;
 };
 
 /**
- * POST-only application boundary. It returns a sanitized navigation target;
- * the client deliberately performs any provider-owned GET navigation after
- * this same-origin request succeeds.
+ * POST-only local-development boundary. Production Supabase logout is handled
+ * by handleSupabaseAction in the route before this function is called.
  */
 export async function handleLogout(
   request: Request,
@@ -126,20 +98,6 @@ export async function handleLogout(
     const mode = resolveAuthMode(options.authMode);
     const url = new URL(request.url);
     const returnTo = safeAuthReturnTo(url.searchParams.get("return_to"));
-
-    if (mode === "cloudbase") {
-      // Clear the local session cookie we issued (our ttq_cb_token), then let
-      // the client navigate to returnTo. In production with CloudBase gateway
-      // auth you may also redirect to the CloudBase sign-out endpoint; for the
-      // custom-token path clearing our cookie is sufficient and fail-safe.
-      const response = secureJson(request, { location: returnTo }, 200);
-      const headers = new Headers(response.headers);
-      headers.append("set-cookie", clearCloudbaseAuthCookie(request));
-      return new Response(response.body, {
-        status: response.status,
-        headers,
-      });
-    }
 
     if (mode === "local") {
       if (
@@ -159,12 +117,9 @@ export async function handleLogout(
         headers,
       });
     }
-
-    const provider = options.sitesProvider ?? sitesLogoutProvider;
-    return secureJson(
-      request,
-      { location: provider.signOutLocation(returnTo) },
-      200,
+    throw new AuthenticationError(
+      "auth_mode_unavailable",
+      "此退出处理器只用于本地测试认证",
     );
   } catch (error) {
     if (error instanceof RequestSecurityError) {

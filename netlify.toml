@@ -9,6 +9,5 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Runtime variables must be set with Functions scope in the NEW test site's
-# environment settings. Never link/deploy this branch to the original site.
-# Keep Next.js API routes: do not upload public/ledger as a static-only site.
+# Runtime variables must be available to Functions in the target site.
+# Keep Next.js API routes: never upload public/ledger as a static-only site.
