@@ -27,6 +27,7 @@ browser
 | 账本 UI | `legacy/ledger.html` | 浏览、批量快记、fuel、收车、报告与 JSON 交互 |
 | 业务规则 | `src/domain.js` | schema v3、金额/fuel、账期、趟号和报告摘要 |
 | 同步规划 | `src/cloud-sync.js` | 状态↔记录、diff、守恒、回执与严格在线状态机 |
+| 本机恢复 | `src/draft-store.js`、`src/recovery-client.js` | IndexedDB scope/CAS、原请求日志、恢复分块与 SHA-256 |
 | API | `app/api/bootstrap`、`app/api/sync`、`app/auth/*` | POST 边界、身份核验、原子写入与退出 |
 | 服务端业务 | `lib/server/bootstrap.ts`、`lib/server/sync-repository.ts` | fleet/role/assignment 授权、校验、幂等与并发控制 |
 | 线上持久化 | `db/postgres.ts`、`deploy/supabase/001_ledger.sql` | PostgreSQL 参数适配、SERIALIZABLE 事务、正式 schema |
@@ -73,7 +74,7 @@ confirmed S → clone proposal → plan operations(expectedVersion)
             → one operationId-bound SERIALIZABLE transaction
             → validate complete acknowledgement → replace S
 
-network/server failure → keep old S + readonly + in-memory retry token
+network/server failure → keep old S + readonly + scoped IndexedDB request journal
 409 conflict           → keep old S + reload/review
 400/422 rejection      → keep old S + keep form for correction
 401/session signal     → lock and hide business state
@@ -81,13 +82,18 @@ network/server failure → keep old S + readonly + in-memory retry token
 
 - 同 fleet + operationId + payload hash 可安全回放；同 ID 不同 payload 返回冲突。
 - membership、assignment、父记录、版本与业务写在同一事务内守卫；任何一步失败整批回滚。
-- 批量快记清单只存在页面内存；“保存全部”才生成一次原子请求，完整回执后才清空。
-- 单次 JSON 完整恢复最多 500 operations，不能拆成可能部分成功的客户端分批写入。
+- 批量快记与当前未加入的输入暂存本机 IndexedDB；“保存全部”才生成一次原子请求。原请求和对应快记存于同一条本机记录，确认后整体清除，避免清请求/清草稿之间崩溃导致重复记账。
+- `/api/sync/status` 只返回当前 fleet 对应 ID/hash 是否已有回执，不暴露历史记录内容；司机分配变化后也不会因此泄露旧回执中的账目。
+- JSON 恢复走 `/api/restore`：start/chunk/status/commit/cancel/list。临时 `restore_jobs`/`restore_chunks` 与正式业务表隔离，owner-only，一车队一个活动任务，7 天有效期，按访问清理过期临时区；无后台定时清理器。
+- SHA-256 绑定不可变分块，序号唯一；单块 128 KiB/250 条，总 20 MiB/30000 条/256 块。普通 sync 仍为 500 条。恢复七类记录的预检采用按表集合读取，最终复用原业务校验、版本/权限守卫和一个 SERIALIZABLE 写事务。
+- 数据库 trigger 使 `fleets.version` 同时充当全账本单调 revision。bootstrap 在读取记录的同一快照内读取 revision；最终恢复检查预览 revision，能识别别的设备新增记录。任务 complete、正式写入、幂等回执、清理已提交临时块在同一事务内。
+- 本轮复用 Next.js Node 路由（maxDuration 60 秒），不新增 Netlify Background Function。上传随页面关闭而暂停；服务端请求也可能被平台终止。重新打开查原任务并续传/重试，不承诺关页后无限后台运行，不以 202 或分块回执显示恢复成功。
 
 ## 7. 客户端存储与备份
 
 - 全设备键只保存主题；账号相关偏好必须在 bootstrap 返回 `fleet.id + membership.id` 后按 scope 保存。
 - 未归属旧 localStorage 不自动读取或迁移，避免前一个账号的数据进入后一个账号。
+- IndexedDB 草稿只在 bootstrap 核验后按 fleet+membership 读取；记录 ID 区分不同输入，revision CAS 防同一草稿多标签覆盖。401/BFCache/退出清内存并锁库句柄，但保留磁盘暂存；无跨设备恢复、无浏览器清理后的恢复保证。
 - JSON 导出只由 owner 生成可完整恢复文件；driver 裁剪视图标记为不可完整恢复。
 - schema v3 导入在清洗、提交和服务器回读阶段核对记录数、整数分和 fuel 守恒。
 
@@ -105,4 +111,4 @@ network/server failure → keep old S + readonly + in-memory retry token
 - 迁移期实测数据：`deploy/VALIDATION-RESULTS.md`（历史记录，不是当前配置来源）
 - 迁移方案草案：`deploy/NETLIFY-SUPABASE-PLAN.md`（历史记录）
 
-Sites、CloudBase、Cloudflare D1 与容器/CFS 部署已退出当前代码路径；如未来重新引入，必须作为新方案单独设计、测试和授权。
+Sites/Cloudflare D1 已退出本主线，独立 Sites 1.6.1 分支/站点保留归档；CloudBase 与容器/CFS 不属于现行部署。两平台边界以 `PLATFORM-MAINTENANCE.md` 为准。

@@ -248,12 +248,13 @@ test('sync 迟到成功回执不能在锁定后恢复 baseline 或 online', asyn
     localStorage: memoryStorage(),
     invalidateSession() {},
     defaultData: () => ({}),
+    TTQDraftStore: { createVault: scope => ({ scope, list: async () => [], save: async (id, kind, value) => ({ id, kind, value, revision: 1 }), remove: async () => {}, lock() {} }) },
     TTQAuthClient: {
       createHttpClient: () => ({
         bootstrap: async () => ({
           fleet: { id: 'fleet-a' }, membership: { id: 'member-a' }, records: []
         }),
-        sync: () => syncResult.promise,
+        sync: () => { syncResult.started = true; return syncResult.promise; },
         logout: async () => ({ location: '/' }),
         abortAll() {}
       }),
@@ -271,6 +272,7 @@ test('sync 迟到成功回执不能在锁定后恢复 baseline 或 online', asyn
   new vm.Script(`${storeSource}; this.Store = Store;`).runInContext(context);
   const opened = await context.Store.open();
   const commit = context.Store.commit({ vehicles: [] }, { kind: 'test' });
+  while (!syncResult.started) await new Promise(resolve => setImmediate(resolve));
   context.Store.lockSensitive({ clearScope: true });
   assert.throws(
     () => context.Store.useRemote(opened.remote, opened.generation),
@@ -290,6 +292,33 @@ test('sync 迟到成功回执不能在锁定后恢复 baseline 或 online', asyn
   );
 });
 
+test('重连检测到不同账号 scope 时锁定，不能重放旧账号原请求', async () => {
+  let account = 'a', sent = false, invalidated = false, vaultLocked = false;
+  const context = vm.createContext({
+    console, location: { origin: 'https://ledger.example' }, localStorage: memoryStorage(),
+    invalidateSession() { invalidated = true; }, defaultData: () => ({}),
+    TTQDraftStore: { createVault: scope => ({ scope, list: async () => [], lock() { vaultLocked = true; } }) },
+    TTQAuthClient: {
+      createHttpClient: () => ({
+        bootstrap: async () => ({ fleet: { id: account }, membership: { id: account }, records: [] }),
+        requestJSON: async () => { sent = true; return {}; }, sync: async () => { sent = true; return {}; }
+      }),
+      createStorageScope: (storage, fleet) => ({ id: fleet.id, read: () => null })
+    },
+    TTQCloudSync: { hydrateState: () => ({}) }
+  });
+  new vm.Script(`${storeSource}; this.Store = Store;`).runInContext(context);
+  await context.Store.open();
+  context.Store.adoptPending({ kind: 'pending', value: { request: { operationId: 'old-account-request', operations: [] } } });
+  account = 'b';
+  const result = await context.Store.reconnect();
+  assert.equal(result.unauthenticated, true);
+  assert.equal(context.Store.state, 'locked');
+  assert.equal(sent, false);
+  assert.equal(invalidated, true);
+  assert.equal(vaultLocked, true);
+});
+
 test('退出等待在途保存失败时只 settle，不会把 click handler 提前 reject', async () => {
   const syncResult = deferred();
   const scope = {
@@ -302,6 +331,7 @@ test('退出等待在途保存失败时只 settle，不会把 click handler 提�
     localStorage: memoryStorage(),
     invalidateSession() {},
     defaultData: () => ({}),
+    TTQDraftStore: { createVault: scope => ({ scope, list: async () => [], save: async (id, kind, value) => ({ id, kind, value, revision: 1 }), remove: async () => {}, lock() {} }) },
     TTQAuthClient: {
       createHttpClient: () => ({
         bootstrap: async () => ({
@@ -335,7 +365,7 @@ test('退出等待在途保存失败时只 settle，不会把 click handler 提�
   assert.equal(settled.ok, false);
   assert.equal(result.ok, false);
   assert.equal(context.Store.hasPending, true);
-  assert.match(ledgerSource, /await Store\.whenIdle\(\);[\s\S]{0,220}if \(Store\.hasPending\)/);
+  assert.match(ledgerSource, /await Store\.whenIdle\(\);[\s\S]{0,600}if \(Store\.hasPending\)/);
 });
 
 test('logout 请求失败后仍保持锁定，且只提供受保护的 POST 重试', async () => {

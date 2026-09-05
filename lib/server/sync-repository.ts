@@ -133,6 +133,17 @@ type BatchReadSnapshot = {
   assignedVehicles: Set<string>;
 };
 
+const BULK_TABLES: [SyncType, string][] = [
+  ['fleet_settings', 'fleet_settings'], ['category', 'categories'], ['vehicle', 'vehicles'],
+  ['trip', 'trips'], ['trip_expense', 'trip_expenses'], ['trip_income', 'trip_incomes'], ['maintenance', 'maintenance'],
+];
+function bulkRowId(type: SyncType, row: RawRow): string {
+  if (type === 'fleet_settings') return 'settings';
+  if (type === 'category') return `${row.kind}:${row.id}`;
+  if (type === 'trip_expense' || type === 'trip_income') return `${row.trip_id}:${row.id}`;
+  return String(row.id);
+}
+
 // Request-scoped, fleet-filtered preflight only. Transaction-time membership,
 // assignment, parent and version guards still read the live database.
 function relatedReadStatements(d1: D1Database, actor: Actor, operations: SyncOperation[]) {
@@ -166,14 +177,15 @@ export async function applyAtomicSyncBatch(
   requestHash: string,
   operations: SyncOperation[],
   finalize: boolean,
+  restore?: { jobId: string; baseVersion: number },
 ): Promise<AtomicSyncResponse> {
+  if (restore) requireOwner(actor);
   const preflight = await d1.batch([
     activeMembershipStatement(d1, actor),
     syncCommitStatement(d1, actor.fleetId, operationId),
-    ...operations.map((operation) =>
-      currentStatement(d1, actor.fleetId, operation),
-    ),
-    ...relatedReadStatements(d1, actor, operations),
+    ...(restore
+      ? BULK_TABLES.map(([, table]) => d1.prepare(`SELECT * FROM ${table} WHERE fleet_id = ?`).bind(actor.fleetId))
+      : [...operations.map(operation => currentStatement(d1, actor.fleetId, operation)), ...relatedReadStatements(d1, actor, operations)]),
   ]);
   assertActiveMembership(
     actor,
@@ -185,7 +197,7 @@ export async function applyAtomicSyncBatch(
       response_json: string;
     } | undefined) ?? null;
   if (replay) return replaySyncCommit(replay, requestHash);
-  const currentRows = preflight.slice(2, 2 + operations.length).map(
+  let currentRows = preflight.slice(2, 2 + operations.length).map(
     (result) => (result.results?.[0] as RawRow | undefined) ?? null,
   );
 
@@ -198,6 +210,24 @@ export async function applyAtomicSyncBatch(
     categories: new Set(rows(2).map(row => `${row.kind}:${row.id}`)),
     assignedVehicles: new Set(rows(3).map(row => String(row.vehicle_id))),
   };
+  if (restore) {
+    // Seven set-based reads, not ten thousand point SELECTs. The atomic write
+    // path below still uses the same validated operations and live guards.
+    const index = new Map<string, RawRow>();
+    const tableRows = new Map<SyncType, RawRow[]>();
+    BULK_TABLES.forEach(([type], ordinal) => {
+      const records = (preflight[2 + ordinal]?.results || []) as RawRow[];
+      tableRows.set(type, records);
+      records.forEach(row => index.set(`${type}\u0000${bulkRowId(type, row)}`, row));
+    });
+    currentRows = operations.map(operation => index.get(batchRecordKey(operation)) || null);
+    projection.snapshot = {
+      vehicles: new Map((tableRows.get('vehicle') || []).map(row => [String(row.id), row])),
+      trips: new Map((tableRows.get('trip') || []).map(row => [String(row.id), row])),
+      categories: new Set((tableRows.get('category') || []).map(row => `${row.kind}:${row.id}`)),
+      assignedVehicles: new Set(), // Restore is owner-only.
+    };
+  }
   const entries: AtomicEntry[] = [];
   const failures: SyncResult[] = [];
 
@@ -348,6 +378,19 @@ export async function applyAtomicSyncBatch(
   const statements: D1PreparedStatement[] = [
     prepareActorGuard(d1, actor, operationId),
   ];
+  if (restore) {
+    // This guard and the task receipt share the business transaction. A new
+    // record on another device (not present in operations) also invalidates a
+    // full replacement; per-record expectedVersion alone cannot detect it.
+    requireOwner(actor);
+    statements.push(d1.prepare(`INSERT INTO sync_assertions (fleet_id, operation_id, ordinal, ok)
+      VALUES (?, ?, -2147483648, CASE WHEN EXISTS (
+        SELECT 1 FROM fleets f JOIN restore_jobs j ON j.fleet_id = f.id
+        WHERE f.id = ? AND f.version = ? AND j.id = ? AND j.status = 'ready'
+          AND j.membership_id = ? AND j.user_id = ? AND j.expires_at > ?
+      ) THEN 1 ELSE 0 END)`).bind(actor.fleetId, operationId, actor.fleetId,
+        restore.baseVersion, restore.jobId, actor.membershipId, actor.userId, syncedAt));
+  }
   const assignmentVehicleIds = assignmentGuardVehicleIds(
     actor.role,
     entries,
@@ -419,6 +462,13 @@ export async function applyAtomicSyncBatch(
         syncedAt,
       ),
   );
+
+  if (restore) {
+    statements.push(d1.prepare("UPDATE restore_jobs SET status = 'complete' WHERE fleet_id = ? AND id = ?")
+      .bind(actor.fleetId, restore.jobId));
+    statements.push(d1.prepare("DELETE FROM restore_chunks WHERE fleet_id = ? AND job_id = ?")
+      .bind(actor.fleetId, restore.jobId));
+  }
 
   try {
     await d1.batch(statements);

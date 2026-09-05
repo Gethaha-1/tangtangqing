@@ -1,6 +1,6 @@
 # 测试
 
-适用版本：**v1.6.1 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
+适用版本：**v1.7.0 开发中 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
 
 ## 1. 自动化与构建
 
@@ -9,6 +9,7 @@
 ```bash
 npm install
 npm test
+npm run test:browser
 npm run lint
 npx tsc --noEmit
 npm run build
@@ -28,8 +29,13 @@ git diff --check
 | `tests/server-api.test.mjs` | ownership、fuel repository/bootstrap、原子 guard、本地兼容 constraints/migrations |
 | `tests/auth-logout.test.mjs` | Supabase/本地 POST 退出、本地 cookie、安全 `return_to` |
 | `tests/legacy-xss.test.mjs` | 恶意备份、fuel/报告新增渲染 sink 的持久化 XSS |
+| `tests/draft-recovery.test.mjs` | scope 隔离、原子草稿 CAS、锁定与上传续传 |
+| `tests/restore-integration.test.mjs` | 旧版本超过 500 条、万条费用守恒、整批回滚、过期、权限、并发版本保护 |
+| `tests/browser/recovery.spec.mjs` | 真实 IndexedDB、刷新恢复、回执丢失不重复、分块中断续传、跨标签冲突 |
 
-本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；检查 `0002_lonely_shriek.sql` 只做两列原位增加和 fuel 触发器，不重建旧表。线上 PostgreSQL schema 必须新增并审核独立 SQL migration，不能用该命令的 SQLite 输出替代。
+`test:browser` 使用已安装的 Google Chrome、390×844 视口、独立 loopback 3107 和自动清理的临时 SQLite，不读真实 Supabase。3107 必须空闲；不复用用户开发服务器。测试脚本仅在该隔离进程设置精确 `TTQ_ALLOWED_ORIGINS=http://127.0.0.1:3107`，不要复制到生产。浏览器失败产物在 gitignored `test-results/`；模拟断网用例出现预期网络错误日志不代表验收失败。
+
+本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；历史 `0002_lonely_shriek.sql` 保留原位 fuel 升级，新增 `0003_tranquil_lockjaw.sql` 只增加临时恢复表/索引和 revision triggers，不重建旧表。`recovery-schema.test.mjs` 对 migration/runtime 双路径验证旧行守恒、触发器幂等与事务回滚。线上 PostgreSQL 使用独立 `supabase/migrations/20260905164507_ledger_recovery.sql`，不能用 SQLite 输出替代。
 
 ## 2. 本地认证、POST 与退出
 
@@ -94,7 +100,11 @@ npm run dev:local
 - 多条保存只调用一次 `submitBusinessMutation()`，计划结果为同一请求内的多条 `trip_expense put`，不产生无关 trip 更新；
 - 200 完整回执后才清空并关闭快记两层；400/422 保留且可改，网络失败/409 保留并锁定，重连用原请求核对；
 - 最终保存防连点、按钮/层有 `aria-busy` 与 live 状态；清单合计按整数分，顶部计数、修改、移除和底部安全区按钮在日夜主题及窄屏可用；
-- 未提交返回、Escape、系统返回、左缘滑动和下拉都要求明确丢弃确认；会话锁定清除草稿且不写入浏览器存储。
+- 未提交退出需确认暂存；刷新后清单、表达式、备注、fuel、记录 ID 保持一致，未加入清单的输入不能被“保存全部”静默删除；
+- 401/退出锁定并清内存，但不删除该 scope 的 IndexedDB 草稿或待核对原请求；重新核验同一身份后才显示，其他账号不可见；
+- 存储不可用/配额不足不显示“已暂存”，跨标签 CAS 失败保留新版本并提醒旧页面；
+- bootstrap 重连 scope 变化必须锁定旧页面，不向新身份重放旧账号请求；会话锁同时清内存恢复列表和 DOM，但不删除本机持久记录；
+- 云端已提交但回执丢失时，刷新后核对原 ID，不产生第二笔；待核对仍可看已核验正式账本，不能继续业务写入。
 
 ## 5. 净利润与报告范围
 
@@ -137,9 +147,12 @@ npm run dev:local
 5. 合法账期经确认恢复；缺失、伪日期、倒序或超过 366 天时保留当前账期。
 6. driver 裁剪视图不能导出可完整恢复的车队备份；带 `_ownerRecordsWritable:false`、`driver-visible-partial` 或 `restorable:false` 的文件在迁移/差异规划前拒绝，owner 不能因此删除其他车辆账目。
 7. 取消、服务器不可达、400/422/409 时正式状态不变；相同文件重复导入可安全再次执行，同一次失败重试复用原 operationId。
-8. 超过 500 operations 明确拒绝且零部分写入。
+8. 普通 `/api/sync` 仍拒绝超过 500 operations。JSON 恢复通过专用暂存任务处理：每块最多 250 条/128 KiB，最多 256 块、30000 条变更、20 MiB；超限在正式写入前拒绝，不拆成多个正式提交。
 9. `postgres-integration.test.mjs` 对 v1/v2/v3 的 200 笔混合账目验证首次恢复、再次恢复、幂等回放和服务器回读金额/fuel 守恒；断言预检没有逐记录数据库调用。
 10. HTTP 客户端区分网络中断、500/504、完整回执读取超时；未知回执不得提前提交 UI，重试复用原 operationId。
+11. 分块中断、错误指纹、缺块、权限撤销、预览后新增记录、约束失败均不部分替换；重新打开沿用原任务，仅补传缺块。取消/未完成任务过期只清暂存，成功任务只保留幂等元信息，分块随提交清理。
+12. 万条费用性能结果只代表本机 PostgreSQL；上线前需用隔离账号复测真实手机、平台执行时限与目标容量。20 MiB 是安全上限，不是生产性能承诺，也不是后台无人值守任务。
+13. 完成恢复后若另一设备又记账，摘要不同不重复覆盖；“核对已完成结果”须用户确认并验证服务器 complete，再接受当前正式数据，保留后续新账。
 
 只读核对真实备份：
 

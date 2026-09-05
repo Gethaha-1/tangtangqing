@@ -146,6 +146,7 @@ export async function loadBootstrap(d1: D1Database, actor: Actor) {
         "SELECT vehicle_id FROM vehicle_assignments WHERE fleet_id = ? AND user_id = ? AND active = 1 AND datetime(starts_at) <= CURRENT_TIMESTAMP AND (ends_at IS NULL OR datetime(ends_at) > CURRENT_TIMESTAMP)",
       )
       .bind(actor.fleetId, actor.userId),
+    d1.prepare("SELECT version FROM fleets WHERE id = ?").bind(actor.fleetId),
   ]);
 
   const [
@@ -255,7 +256,8 @@ export async function loadBootstrap(d1: D1Database, actor: Actor) {
     fleet: {
       id: actor.fleetId,
       name: actor.fleetName,
-      version: actor.fleetVersion,
+      // Same read transaction as records, never the earlier identity lookup.
+      version: Number(rows(results[8])[0]?.version ?? actor.fleetVersion),
     },
     membership: {
       id: actor.membershipId,

@@ -20,14 +20,14 @@
 - Netlify 托管完整 Next.js 应用；不能只上传 `public/ledger`。
 - Supabase Auth 与 PostgreSQL 必须属于同一项目；浏览器不直连 `ttq` 私有 schema。
 - 本地 UI 使用 `npm run dev:local`、固定测试 Principal 和 SQLite；禁止用真实账号或真实账本做回归。
-- Sites、CloudBase、Cloudflare D1 和容器/CFS 已退出当前代码路径。历史细节只在 `CHANGELOG.md` 与归档验证资料中查阅，不得照旧文档发布。
+- Sites/Cloudflare D1 已退出 `develop` 的代码路径，但 `stable/sites-1.6.1` 仍作为独立归档站保留；它不是同步开发分支。CloudBase 和容器/CFS 已退出现行方案。先读 `PLATFORM-MAINTENANCE.md`，不得跨平台复制认证、数据库或部署配置。
 
 ## 红线
 
 1. Supabase PostgreSQL 是线上唯一正式业务状态；不得把 localStorage、SQLite 或内存快照变成线上权威账本。
 2. 离线或服务器不可达时只读。`navigator.onLine` 不能作为保存成功或恢复可写的证据。
 3. 所有业务写入使用 proposal → atomic API → acknowledgement → UI commit，不得先修改正式 `S`。
-4. 一个用户动作只发一个原子事务；收车+收入、删除趟次+子账、批量快记、JSON 替换必须全成或全不成。
+4. 一个用户动作的正式业务变更只在一个原子事务内生效；收车+收入、删除趟次+子账、批量快记、JSON 替换必须全成或全不成。恢复分块只允许写隔离临时区。
 5. 每批携带完整 `expectedVersion` 和稳定 `operationId`；响应丢失时只可重放同 ID、同 payload。
 6. 401 锁定会话；409 保持只读并重新加载；400/422 保留表单且不得显示成功。
 7. 身份、车队、角色和车辆分配只由服务端 Auth 核验与数据库决定；客户端 ownership 字段一律拒绝。
@@ -35,7 +35,7 @@
 9. Supabase secret/service-role key、数据库连接串、迁移管理员连接和测试密码不得进入浏览器、仓库或日志。
 10. 远程 PostgreSQL 必须校验 TLS，不得设置 `rejectUnauthorized:false`。
 11. 线上 schema 变更先审查 `deploy/supabase/001_ledger.sql` 的后续迁移方案、约束、角色、RLS、测试和回滚；不能只改本地 Drizzle/SQLite 文件。
-12. 快记清单只在当前页面内存，不持久化为离线队列、不逐条上传；未知回执期间不得修改待重放 payload。
+12. 快记清单、未加入输入和待核对请求可按 bootstrap scope 存入 IndexedDB；不是正式账本或自动离线队列。先完成本机事务再发请求，未知回执期间不得改 payload；恢复先查原回执，确认前不得删除关联草稿。多标签使用 revision CAS，不能覆盖较新草稿。
 13. 恶意备份字段分别经过 `esc()`、`attrEsc()`、`safeIconText()`。
 14. `public/ledger/`、`.next/`、`.netlify/`、`dist/`、`node_modules/` 和本地数据库是生成物，不提交。
 15. 任何发布、环境变量更新或真实数据操作都需要用户明确授权，并先核对目标站点和 Supabase project ref。
@@ -60,6 +60,7 @@
 - client normalize、recordsToState、planSync；
 - preflight 与事务内 membership/assignment/parent/version guard；
 - PostgreSQL schema/约束/RLS/最小权限角色；
+- `supabase/migrations/` 的增量迁移、整车队 revision triggers 与恢复任务的事务内状态守卫；
 - SQLite 兼容约束是否仍与线上语义一致；
 - `sync_commits` 幂等回执和 SERIALIZABLE 冲突；
 - 部署迁移与回滚说明。
@@ -80,6 +81,7 @@ npm test
 → npx tsc --noEmit
 → npm run build
 → npm run build:netlify
+→ npm run test:browser（独立临时 SQLite、固定 loopback，不用真实账本）
 → npm run dev:local + /ledger#test
 → TESTING.md 的认证、在线/失败/离线/恢复/401/409/JSON 冒烟
 → git diff --check

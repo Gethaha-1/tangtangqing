@@ -167,6 +167,9 @@ test("快记先加入内存清单，编辑保留条目 id，最终只发一个�
   const staged = [];
   const stageContext = compileWithContext(["stageQuickDraft"], {
     QUICK_BATCH_MAX: 500,
+    quickBatchSubmitting: false,
+    quickBatchAwaitingConfirmation: false,
+    persistQuickDraft() {},
     quickDrafts: staged,
     quickEditingId: null,
     uid: () => "draft-stable-id",
@@ -202,6 +205,11 @@ test("快记先加入内存清单，编辑保留条目 id，最终只发一个�
       quickDrafts: JSON.parse(JSON.stringify(draftEntries)),
       quickTripId: "trip-1",
       guardOnce: () => true,
+      S: { categories: { expense: [{ id: 'fuel', active: true }, { id: 'toll', active: true }] } },
+      persistQuickDraft: async () => {},
+      quickDraftStorageError: null,
+      quickDraftSnapshot: () => null,
+      refreshRecoveryPanel: async () => {},
       $: elements.get,
       renderQuickBatch() {},
       submitBusinessMutation: async (mutator, options) => {
@@ -257,7 +265,8 @@ test("快记先加入内存清单，编辑保留条目 id，最终只发一个�
 });
 
 test("快记清单退出、重连和会话锁定都遵守草稿边界", () => {
-  assert.match(extractFunction("requestSheetClose"), /退出会丢掉这些草稿/);
+  assert.match(extractFunction("requestSheetClose"), /暂存并退出/);
+  assert.match(extractFunction("requestSheetClose"), /await persistQuickDraft\(\)/);
   assert.match(extractFunction("requestSheetClose"), /history\.pushState/);
   assert.match(extractFunction("reconcileQuickBatchAfterReconnect"), /confirmedIds\.has\(entry\.id\)/);
   assert.match(extractFunction("clearSensitiveClientState"), /clearQuickBatch\(\)/);

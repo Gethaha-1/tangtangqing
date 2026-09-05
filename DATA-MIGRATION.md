@@ -1,6 +1,6 @@
 # 数据迁移与恢复
 
-适用版本：**v1.6.1**。页面快照和云同步使用 `schemaVersion = 3`；线上 PostgreSQL 保存独立的 fleet-scoped records。
+适用版本：**v1.7.0**。页面快照和云同步仍为 `schemaVersion = 3`；数据库内部 marker 2 仅表示恢复任务增量迁移，不是 JSON schema 降级。
 
 ## v1 / v2 → schema v3
 
@@ -73,10 +73,14 @@ fingerprint 只用于机器守恒比较，不作为业务内容展示。导出�
 4. 显示当前与目标车辆、趟次、收入、支出、维修及结构化/旧油费摘要；
 5. 提示来源 fleet 可能不同，明确登录身份不会改变；
 6. 用户确认“完整替换当前账本”；
-7. 用内容 fingerprint 与每次确认的随机标识生成 operation ID，以一个原子 API 批次提交；同次失败重试保留原 ID 和 payload；
+7. 用内容 fingerprint 与每次确认的随机标识生成 operation ID；先在当前账号临时区按 manifest/SHA-256 上传，最后在一个原子事务中提交正式业务、幂等回执和任务完成状态；同次失败重试保留原 ID 和 payload；
 8. 完整服务器回执后再次比较正式状态守恒，通过后才显示恢复成功。
 
-相同文件重复导入不会重复记账。version 冲突返回 409，不覆盖新云端数据。当前单次上限为 500 operations；超过上限在客户端拒绝，不拆成可能部分成功的批次。
+相同文件重复导入不会重复记账。record version 和整车队 revision 冲突返回 409，不覆盖新云端数据。普通 sync 仍限 500 operations；专用恢复限 20 MiB、30000 operations、256 块，每块 128 KiB/250 条，分块仅写临时区。关闭页面后从本机任务或重新选择指纹一致的原文件续传，7 天内的临时任务可查询；过期不改变正式账本。
+
+增量文件为 `supabase/migrations/20260905164507_ledger_recovery.sql`，需先验证再按用户授权应用；详见 `deploy/RECOVERY-MIGRATION.md`。SQLite 的恢复表和 revision triggers 在 `db/recovery-schema.ts`，不能拿它代替 PostgreSQL migration。
+
+本机 IndexedDB 草稿保持账号隔离，不能直接当 JSON 完整备份导入。未归属的旧 localStorage 仍不自动读取或上传。第二轮新业务和备份 schema v4 尚未授权、未实施。
 
 ## 只读验证
 

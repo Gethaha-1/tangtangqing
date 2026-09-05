@@ -5,6 +5,7 @@ const TABLES = new Set([
   "users", "identities", "fleets", "fleet_members", "vehicles",
   "vehicle_assignments", "categories", "fleet_settings", "trips",
   "trip_expenses", "trip_incomes", "maintenance", "sync_commits", "sync_assertions",
+  "restore_jobs", "restore_chunks",
 ]);
 
 function compileControlledSql(
@@ -229,9 +230,9 @@ export function getPostgresDatabase(): PostgresDatabase {
 
 export async function assertPostgresSchema(): Promise<void> {
   const { rows } = await getPostgresDatabase().pool.query(
-    "SELECT version, current_user AS role FROM ttq.schema_versions WHERE version = 1",
+    "SELECT version, current_user AS role FROM ttq.schema_versions WHERE version IN (1, 2)",
   );
-  if (rows.length !== 1 || rows[0].role !== "ttq_app") {
-    throw new Error("请先执行独立测试库迁移，并使用 ttq_app 最小权限连接");
+  if (rows.length !== 2 || rows.some(row => row.role !== "ttq_app")) {
+    throw new Error("请先验证并应用 ledger_recovery 增量迁移，使用 ttq_app 最小权限连接；不能重跑初始化脚本");
   }
 }

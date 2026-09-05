@@ -37,6 +37,7 @@ export async function startTestPostgres() {
     await admin.query(migration);
     // Verify migration idempotence in the real engine.
     await admin.query(migration);
+    await admin.query(await readFile(new URL('../../supabase/migrations/20260905164507_ledger_recovery.sql', import.meta.url), 'utf8'));
     await admin.query(`ALTER ROLE ttq_app LOGIN PASSWORD '${password}'`);
     return { admin, port, databaseUrl: `postgresql://ttq_app:${password}@127.0.0.1:${port}/postgres`, async stop() {
       await admin.end(); await database.stop(); await rm(directory, { recursive: true, force: true });

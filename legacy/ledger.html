@@ -430,6 +430,11 @@ if (location.protocol === 'file:') {
       <button class="icon-btn" id="themeBtn" title="切换日/夜"></button>
     </div>
     <div id="homeBanner"></div>
+    <section class="panel" id="recoveryPanel" hidden style="margin:12px 0" aria-label="草稿与恢复任务">
+      <h3 style="margin:0 0 8px">草稿与恢复任务</h3>
+      <p id="recoveryMessage" role="status" style="font-size:14px;color:var(--sub)"></p>
+      <div id="recoveryList"></div>
+    </section>
     <div class="scope-row" id="homeVehicleScope"></div>
     <div class="panel hero" style="margin-top:10px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
@@ -606,15 +611,16 @@ if (location.protocol === 'file:') {
         <input type="date" id="quickDate">
       </div>
       <div class="pad" id="quickPad"></div>
+      <p id="quickDraftStatus" role="status" aria-live="polite" style="font-size:14px;color:var(--sub);margin:10px 0 0"></p>
     </div>
   </div>
 </div>
 
-<!-- 待保存清单：只存在当前页面内，最终一次提交到云端 -->
+<!-- 待保存清单：账号隔离的本机草稿，最终一次提交到云端 -->
 <div class="sheet" id="sheet-quick-batch" role="dialog" aria-modal="true" aria-labelledby="quickBatchTitle">
   <div class="shead"><button type="button" class="back" data-close aria-label="返回继续添加">‹</button><h3 id="quickBatchTitle">待保存清单</h3></div>
   <div class="sbody">
-    <p class="quick-batch-intro">这些只是当前页面里的待保存草稿，还没有进入正式账本。可返回继续添加，也可先修改或移除。</p>
+    <p class="quick-batch-intro">这些是待保存草稿，还没有进入正式账本。可返回继续添加，也可修改或移除；本机暂存不等于云端保存。</p>
     <div class="panel quick-batch-list" id="quickBatchList" role="list" aria-label="待保存记录"></div>
     <div class="panel quick-batch-total">
       <div class="total-line"><span>共 <b class="num" id="quickBatchCount">0</b> 笔</span><b class="big num display" id="quickBatchTotal">¥0</b></div>
@@ -824,10 +830,12 @@ if (location.protocol === 'file:') {
 <script src="/ledger/domain.js"></script>
 <script src="/ledger/cloud-sync.js"></script>
 <script src="/ledger/ui-transition.js"></script>
+<script src="/ledger/draft-store.js"></script>
+<script src="/ledger/recovery-client.js"></script>
 <script>
 if (location.protocol !== 'file:') {
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.6.1';
+const APP_VER = '1.7.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 let installPromptEvent = null;
@@ -892,6 +900,7 @@ const Store = (() => {
   let inFlight = null;
   let pendingAction = null;
   let sessionGeneration = 1;
+  let draftVault = null;
 
   const clone = value => JSON.parse(JSON.stringify(value));
   const http = TTQAuthClient.createHttpClient({
@@ -910,11 +919,26 @@ const Store = (() => {
   function bindStorageScope(remote) {
     if (!remote || !remote.fleet || !remote.membership)
       throw new Error('云端没有返回完整的车队成员归属');
-    storageScope = TTQAuthClient.createStorageScope(
+    const nextScope = TTQAuthClient.createStorageScope(
       localStorage,
       remote.fleet,
       remote.membership
     );
+    if (storageScope && storageScope.id !== nextScope.id) {
+      // Never replay the previous account's journal under a newly verified actor.
+      if (draftVault) draftVault.lock();
+      connection = 'locked';
+      sessionGeneration++;
+      invalidateSession('session-changed', { broadcast: true, navigate: true });
+      const error = new Error('账号或车队归属已变化，请重新打开账本核对');
+      error.sessionLocked = true;
+      throw error;
+    }
+    storageScope = nextScope;
+    if (!draftVault || draftVault.scope !== storageScope.id) {
+      if (draftVault) draftVault.lock();
+      draftVault = TTQDraftStore.createVault(storageScope.id);
+    }
   }
 
   async function refreshBaseline() {
@@ -938,6 +962,18 @@ const Store = (() => {
   }
 
   async function postAction(action) {
+    if (action.task) {
+      await TTQRecovery.resume(http.requestJSON, action.task, updateCloudModeUI, () => assertActiveGeneration(action.generation));
+      await refreshBaseline();
+      assertActiveGeneration(action.generation);
+      const state = stateFromBaseline();
+      if (!TTQCloudSync.compareConservation(action.summary, state).equal)
+        throw new Error('云端恢复已响应，但回读守恒不一致；请停止记账并核对');
+      await finishJournal(action);
+      pendingAction = null;
+      connection = 'online';
+      return { ok: true, state, operationId: action.task.id, generation: action.generation };
+    }
     const result = await http.sync(action.request);
     assertActiveGeneration(action.generation);
     if (result.operationId && result.operationId !== action.request.operationId)
@@ -949,6 +985,7 @@ const Store = (() => {
       action.request.operations,
       result.results
     );
+    await finishJournal(action);
     pendingAction = null;
     connection = 'online';
     return {
@@ -958,6 +995,27 @@ const Store = (() => {
       replayed: result.replayed === true,
       generation: action.generation
     };
+  }
+
+  async function finishJournal(action) {
+    if (action.journal) await draftVault.remove(action.journal.id, action.journal.revision);
+    assertActiveGeneration(action.generation);
+    if (action.task) serverRestoreJobs = serverRestoreJobs.filter(job => job.id !== action.task.id);
+  }
+
+  async function rejectJournal(action) {
+    if (!action.journal) return;
+    if (action.journal.kind === 'quick') {
+      const value = Object.assign({}, action.journal.value, { pending: null });
+      const saved = await draftVault.save(action.journal.id, 'quick', value, action.journal.revision);
+      assertActiveGeneration(action.generation);
+      if (quickDraftRecord && quickDraftRecord.id === saved.id) quickDraftRecord = saved;
+      if (quickDraftContext && quickDraftContext.id === saved.id) {
+        quickDraftContext.record = saved;
+        quickDraftContext.nextRevision = saved.revision;
+        quickDraftContext.lastPayload = null;
+      }
+    } else await finishJournal(action);
   }
 
   async function commitProposal(state, options) {
@@ -983,11 +1041,12 @@ const Store = (() => {
         generation: sessionGeneration
       };
     }
-    if (operations.length > 500) {
+    const isImport = options && options.kind === 'json-import';
+    if (operations.length > 500 && !isImport) {
       return {
         ok: false,
         validation: true,
-        error: new Error('这次恢复包含超过 500 条变更，未发送也未覆盖云端；请联系管理员安全处理')
+        error: new Error('普通记账一次最多 500 条变更，请缩小本次清单')
       };
     }
     const action = {
@@ -1001,16 +1060,57 @@ const Store = (() => {
       generation: sessionGeneration
     };
     connection = 'saving';
-    inFlight = postAction(action);
+    inFlight = (async () => {
+      const journalId = 'pending:' + action.request.operationId;
+      if (isImport) {
+        const prepared = await TTQRecovery.prepare(operations);
+        assertActiveGeneration(action.generation);
+        action.task = Object.assign({ id: action.request.operationId, baseVersion: options.baseVersion }, prepared);
+        const active = await http.requestJSON('/api/restore', { action: 'list' });
+        assertActiveGeneration(action.generation);
+        if (active.jobs && active.jobs.length) {
+          const existing = await http.requestJSON('/api/restore', { action: 'status', id: active.jobs[0].id });
+          assertActiveGeneration(action.generation);
+          if (existing.baseVersion !== action.task.baseVersion || JSON.stringify(existing.manifest) !== JSON.stringify(prepared.manifest))
+            throw new Error('云端有另一份恢复任务，请在首页取消旧任务后重新选择备份');
+          action.task.id = existing.id;
+        }
+        action.summary = TTQCloudSync.summarizeState(proposal);
+        action.journal = await draftVault.save(journalId, 'restore', { task: action.task, summary: action.summary }, 0);
+      } else if (options && options.kind === 'trip-expense-batch') {
+        await quickDraftQueue;
+        if (quickDraftStorageError) throw quickDraftStorageError;
+        const record = quickDraftRecord;
+        if (!record) throw new Error('草稿尚未暂存，本次没有发送；请保持页面打开');
+        action.journal = await draftVault.save(record.id, 'quick', Object.assign({}, record.value, { pending: { request: action.request } }), record.revision);
+        assertActiveGeneration(action.generation);
+        quickDraftRecord = action.journal;
+        if (quickDraftContext) quickDraftContext.record = action.journal;
+      } else {
+        action.journal = await draftVault.save(journalId, 'pending', { request: action.request }, 0);
+      }
+      assertActiveGeneration(action.generation);
+      action.sent = true;
+      return postAction(action);
+    })();
     try {
       return await inFlight;
     } catch (error) {
       console.error('云端保存失败', error);
       if (connection === 'locked' || error.status === 401 || error.sessionLocked)
         return { ok: false, readonly: true, unauthenticated: true, error };
-      if (error.status === 422 || error.status === 400 || error.status === 413) {
-        connection = 'online';
-        return { ok: false, validation: true, error };
+      if (!action.sent || (!action.task && [400, 409, 413, 422].includes(error.status))) {
+        if (action.journal) {
+          try { await rejectJournal(action); }
+          catch (storageError) {
+            pendingAction = action;
+            connection = 'offline';
+            return { ok: false, readonly: true, error: storageError };
+          }
+        }
+        pendingAction = null;
+        connection = error.status === 409 ? 'conflict' : 'online';
+        return { ok: false, validation: error.status !== 409, conflict: error.status === 409, error };
       }
       pendingAction = action;
       connection = error.status === 409 ? 'conflict' : 'offline';
@@ -1031,10 +1131,11 @@ const Store = (() => {
     get state() { return connection; },
     get saving() { return Boolean(inFlight); },
     get hasPending() { return Boolean(pendingAction); },
-    get pendingState() { return pendingAction ? clone(pendingAction.proposal) : null; },
+    get pendingState() { return pendingAction && pendingAction.proposal ? clone(pendingAction.proposal) : null; },
     get fleet() { return bootstrapInfo && bootstrapInfo.fleet || null; },
     get membership() { return bootstrapInfo && bootstrapInfo.membership || null; },
     get storageScope() { return storageScope; },
+    get draftVault() { return draftVault; },
     get generation() { return sessionGeneration; },
     whenIdle() {
       return inFlight
@@ -1070,8 +1171,11 @@ const Store = (() => {
     },
     async open() {
       const remote = await refreshBaseline();
+      let recovery = [];
+      try { recovery = await draftVault.list(); } catch { /* Read-only browsing remains possible. */ }
       return {
         remote,
+        recoveryPending: recovery.some(record => record.kind === 'pending' || record.kind === 'restore' || record.value.pending),
         cache: storageScope && storageScope.read('cache'),
         generation: sessionGeneration,
         offline: false
@@ -1079,6 +1183,39 @@ const Store = (() => {
     },
     commit(data, options) {
       return commitProposal(data, options);
+    },
+    requestJSON(path, payload) { return http.requestJSON(path, payload); },
+    adoptPending(record) {
+      pendingAction = Object.assign({}, record.kind === 'quick' ? record.value.pending : record.value, {
+        journal: record, generation: sessionGeneration, sent: true
+      });
+      connection = 'offline';
+    },
+    async abandonRestore(record) {
+      const generation = sessionGeneration;
+      const result = await http.requestJSON('/api/restore', { action: 'cancel', id: record.value.task.id });
+      assertActiveGeneration(generation);
+      if (result.status !== 'cancelled' && result.status !== 'expired') throw new Error('恢复任务尚未取消，请先核对服务器');
+      await draftVault.remove(record.id, record.revision);
+      serverRestoreJobs = serverRestoreJobs.filter(job => job.id !== record.value.task.id);
+      pendingAction = null;
+      await refreshBaseline();
+    },
+    async acceptCompletedRestore(record) {
+      const generation = sessionGeneration;
+      try {
+        const result = await http.requestJSON('/api/restore', { action: 'status', id: record.value.task.id });
+        assertActiveGeneration(generation);
+        if (result.status !== 'complete') throw new Error('服务器尚未完成恢复，不能结束核对');
+        await refreshBaseline();
+        assertActiveGeneration(generation);
+        await finishJournal({ journal: record, task: record.value.task, generation });
+        pendingAction = null;
+        return { state: stateFromBaseline(), generation };
+      } catch (error) {
+        if (connection !== 'locked') connection = 'offline';
+        throw error;
+      }
     },
     async uploadInitial(data) {
       const generation = sessionGeneration;
@@ -1130,20 +1267,22 @@ const Store = (() => {
           connection = 'online';
           return { ok: true, state: stateFromBaseline(), reloaded: true, generation };
         }
-        const pendingCheck = TTQCloudSync.inspectPendingCache({
-          state: pendingAction.proposal,
-          baselineRecords: pendingAction.baselineRecords
-        }, remote);
-        if (pendingCheck.status === 'conflict') {
-          baselineRecords = remoteRecords;
-          connection = 'conflict';
-          return {
-            ok: false,
-            conflict: true,
-            readonly: true,
-            error: new Error('云端记录有新改动，未确认的本次输入没有覆盖云端')
-          };
+        if (pendingAction.task) {
+          connection = 'saving';
+          inFlight = postAction(pendingAction);
+          return Object.assign({}, await inFlight, { resumed: true });
         }
+        const receipt = await http.requestJSON('/api/sync/status', pendingAction.request);
+        assertActiveGeneration(generation);
+        if (receipt.committed === true) {
+          await refreshBaseline();
+          await finishJournal(pendingAction);
+          pendingAction = null;
+          connection = 'online';
+          return { ok: true, state: stateFromBaseline(), resumed: true, generation };
+        }
+        // Replaying this exact id/payload lets the server resolve a receipt race
+        // before checking expectedVersion. Never create a replacement request.
         baselineRecords = remoteRecords;
         connection = 'saving';
         inFlight = postAction(pendingAction);
@@ -1152,7 +1291,12 @@ const Store = (() => {
       } catch (error) {
         if (connection === 'locked' || error.status === 401 || error.sessionLocked)
           return { ok: false, readonly: true, unauthenticated: true, error };
-        if (error.status === 400 || error.status === 422) {
+        if (pendingAction && !pendingAction.task && (error.status === 400 || error.status === 422 || error.status === 409)) {
+          try { await rejectJournal(pendingAction); }
+          catch (storageError) {
+            connection = 'offline';
+            return { ok: false, readonly: true, error: storageError };
+          }
           pendingAction = null;
           connection = 'online';
           return { ok: false, validation: true, error };
@@ -1172,6 +1316,7 @@ const Store = (() => {
     logout() { return http.logout(); },
     lockSensitive(options) {
       http.abortAll();
+      if (draftVault) draftVault.lock();
       if (storageScope) {
         storageScope.remove('cache');
         storageScope.remove('conflict');
@@ -1182,6 +1327,7 @@ const Store = (() => {
       pendingAction = null;
       inFlight = null;
       storageScope = null;
+      draftVault = null;
       connection = 'locked';
       sessionGeneration++;
     }
@@ -1294,7 +1440,8 @@ function showSessionLock(options) {
 }
 
 function unlockSession() {
-  if (sessionLockedPermanently || !S || !Store.online) return false;
+  // A verified bootstrap with a pending journal is readable, but still cannot write.
+  if (sessionLockedPermanently || !S || (!Store.online && !Store.hasPending)) return false;
   document.body.classList.remove('session-locked');
   const overlay = document.getElementById('sessionLock');
   if (overlay) overlay.hidden = true;
@@ -1305,6 +1452,12 @@ function clearSensitiveClientState(options) {
   const config = options || {};
   sessionLockedPermanently = true;
   clearQuickBatch();
+  recoveryRecords = [];
+  serverRestoreJobs = [];
+  const recoveryList = document.getElementById('recoveryList');
+  if (recoveryList) recoveryList.replaceChildren();
+  const recoveryPanel = document.getElementById('recoveryPanel');
+  if (recoveryPanel) recoveryPanel.hidden = true;
   try { closeAllSheets({ skipHistory: true }); } catch (error) {}
   ['confirmMask', 'migrationMask'].forEach(id => {
     const element = document.getElementById(id);
@@ -1418,7 +1571,8 @@ async function submitBusinessMutation(mutator, options) {
   updateCloudModeUI(options && options.savingText);
   const result = await Store.commit(proposal, {
     kind: options && options.kind,
-    operationId: options && options.operationId
+    operationId: options && options.operationId,
+    baseVersion: options && options.baseVersion
   });
   businessBusy = false;
   if (result.ok && (result.generation !== Store.generation || !Store.online))
@@ -1455,6 +1609,7 @@ async function reconnectCloud() {
     applyTheme();
     const resumedQuickCount = result.resumed ? reconcileQuickBatchAfterReconnect() : 0;
     renderCurrent();
+    await initializeRecovery();
     if (result.resumed) closeAllSheets();
     updateCloudModeUI(result.resumed ? '云端已确认刚才的保存' : '已重新连接云端');
     toast(result.resumed
@@ -2517,6 +2672,7 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk, options) {
     dispEl.classList.toggle('empty', !expr);
     const v = evalExpr(expr);
     eqEl.textContent = (expr.includes('+') && !isNaN(v)) ? '= 合计 ' + fmt(v) : '';
+    if (options && options.onChange) queueMicrotask(options.onChange);
   }
   padEl.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -2531,6 +2687,7 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk, options) {
   paint();
   const okBtn = padEl.querySelector('[data-k="ok"]');
   return {
+    getValue() { return expr; },
     reset(v) { expr = v ? String(v) : ''; paint(); },
     setOk(label) { if (okBtn) okBtn.textContent = label || okLabel; }
   };
@@ -2541,7 +2698,118 @@ const QUICK_BATCH_MAX = 500;
 let quickTripId = null, quickCatId = 'fuel', quickPadCtl = null;
 let quickDrafts = [], quickEditingId = null, quickBatchSubmitting = false;
 let quickBatchAwaitingConfirmation = false, quickExitPromptOpen = false;
+let quickDraftRecord = null, quickDraftContext = null, quickDraftStorageError = null;
+let quickDraftQueue = Promise.resolve(), recoveryRecords = [], serverRestoreJobs = [];
+
+function quickDraftSnapshot() {
+  const trip = S && S.trips.find(item => item.id === quickTripId);
+  if (!trip || !quickPadCtl) return null;
+  return {
+    tripId: quickTripId, vehicleId: trip.vehicleId, tripStatus: trip.status,
+    entries: quickDrafts, editingId: quickEditingId, categoryId: quickCatId,
+    date: $('#quickDate').value, note: $('#quickNote').value,
+    expression: quickPadCtl.getValue(), fuel: fuelFormValues($('#quickFuelForm'))
+  };
+}
+function hasQuickInput() {
+  const value = quickDraftSnapshot();
+  return Boolean(value && (value.entries.length || value.expression || value.note || value.editingId ||
+    Object.values(value.fuel).some(field => String(field || '').trim())));
+}
+function persistQuickDraft() {
+  const vault = Store.draftVault, context = quickDraftContext, generation = Store.generation;
+  if (!vault || !context || quickBatchSubmitting || quickBatchAwaitingConfirmation || sessionLockedPermanently) return quickDraftQueue;
+  const value = quickDraftSnapshot();
+  if (!value || (!hasQuickInput() && !context.record && !context.nextRevision)) return quickDraftQueue;
+  const encoded = JSON.stringify(value);
+  if (context.lastPayload === encoded || context.error || context.record && context.record.value.pending) return quickDraftQueue;
+  const snapshot = JSON.parse(encoded);
+  context.lastPayload = encoded;
+  const expected = context.nextRevision === undefined ? context.record && context.record.revision || 0 : context.nextRevision;
+  context.nextRevision = expected + 1;
+  const status = $('#quickDraftStatus');
+  if (status) status.textContent = '正在暂存本机草稿…';
+  // Enqueue before yielding, so pagehide/session locking cannot drop an already
+  // captured edit. The vault serializes and acknowledges the IndexedDB commit.
+  context.queue = vault.save(context.id, 'quick', snapshot, expected).then(saved => {
+    context.record = saved;
+    if (quickDraftContext !== context || Store.generation !== generation) return;
+    quickDraftRecord = saved;
+    quickDraftStorageError = null;
+    if (status) status.textContent = '草稿已暂存本机，尚未上传';
+  }).catch(error => {
+    context.error = error;
+    if (quickDraftContext !== context || Store.generation !== generation) return;
+    quickDraftStorageError = error;
+    if (status) status.textContent = error.message + '；未能确认暂存，请勿关闭页面';
+  });
+  quickDraftQueue = context.queue;
+  return quickDraftQueue;
+}
+async function refreshRecoveryPanel() {
+  const vault = Store.draftVault, generation = Store.generation;
+  if (!vault || !S) return;
+  const panel = $('#recoveryPanel'), list = $('#recoveryList'), message = $('#recoveryMessage');
+  try {
+    const records = await vault.list();
+    if (Store.generation !== generation) return;
+    recoveryRecords = records;
+    panel.hidden = !records.length && !serverRestoreJobs.length;
+    message.textContent = '本机草稿仅属于当前账号，不是云端备份。待核对的提交请先查询服务器，勿重复记账。';
+    list.innerHTML = records.map(record => {
+      const pending = record.kind !== 'quick' || record.value.pending;
+      const label = record.kind === 'restore' ? '备份恢复尚待完成' : pending ? '提交结果尚待核对'
+        : '未提交草稿 · ' + (record.value.entries || []).length + ' 笔' + (record.value.expression || record.value.note ? ' · 含未加入清单的输入' : '');
+      return '<div style="padding:10px 0;border-top:1px solid var(--line)"><p style="margin:0 0 8px">' + esc(label) + '</p>'
+        + '<button class="pill" data-recovery-resume="' + attrEsc(record.id) + '">' + (pending ? '核对并继续' : '继续填写') + '</button> '
+        + '<button class="pill" data-recovery-export="' + attrEsc(record.id) + '">导出核对内容</button> '
+        + (record.kind === 'restore' ? '<button class="pill" data-recovery-accept="' + attrEsc(record.id) + '">核对已完成结果</button> ' : '')
+        + ((!pending || record.kind === 'restore') ? '<button class="pill" data-recovery-discard="' + attrEsc(record.id) + '">' + (pending ? '取消恢复' : '丢弃草稿') + '</button>' : '')
+        + '</div>';
+    }).join('');
+    serverRestoreJobs.filter(job => !records.some(record => record.value.task && record.value.task.id === job.id)).forEach(job => {
+      list.innerHTML += '<div style="padding-top:10px">云端保留了一个恢复任务。请选择原备份继续核对，或取消后重新导入。<br><button class="pill" data-recovery-server="' + attrEsc(job.id) + '">核对云端任务</button></div>';
+    });
+  } catch (error) {
+    if (Store.generation !== generation) return;
+    panel.hidden = false;
+    message.textContent = '本机暂存不可用：' + error.message;
+  }
+}
+async function recoverQuickDraft(record) {
+  if (!canStartBusinessWrite()) return;
+  const data = record.value;
+  const trip = S.trips.find(item => item.id === data.tripId);
+  if (!trip || trip.vehicleId !== data.vehicleId) { toast('原趟次已删除或车辆归属变化，请先导出草稿核对；不会自动记到其他趟'); return; }
+  if (quickFlowActive()) { toast('请先暂存退出当前输入，再恢复另一份草稿'); return; }
+  openQuick(trip.id);
+  quickDraftContext = { id: record.id, record, queue: Promise.resolve() };
+  quickDraftRecord = record;
+  quickDrafts = JSON.parse(JSON.stringify(data.entries || []));
+  quickEditingId = data.editingId || null;
+  quickCatId = data.categoryId;
+  $('#quickDate').value = data.date || quickDefaultDate(trip);
+  $('#quickNote').value = data.note || '';
+  $('#quickNoteWrap').style.display = data.note ? '' : 'none';
+  quickPadCtl.reset(data.expression || '');
+  resetFuelForm($('#quickFuelForm'), data.fuel || {}, false);
+  updateQuickDateBtn();
+  renderQuickChips();
+  if (trip.status !== data.tripStatus) toast('趟次状态已变化，请核对日期和清单后再保存');
+  if (quickDrafts.some(entry => !S.categories.expense.some(cat => cat.id === entry.catId && cat.active)))
+    toast('部分科目已停用，请修改相关草稿的科目后再保存');
+}
+async function initializeRecovery() {
+  await refreshRecoveryPanel();
+  if (!S || !Store.draftVault) return;
+  const pending = recoveryRecords.find(record => record.kind !== 'quick' || record.value.pending);
+  if (pending) { Store.adoptPending(pending); updateCloudModeUI('发现尚待核对的提交，请在首页“草稿与恢复任务”继续'); }
+}
 function clearQuickBatch() {
+  quickDraftRecord = null;
+  quickDraftContext = null;
+  quickDraftStorageError = null;
+  quickDraftQueue = Promise.resolve();
   quickDrafts = [];
   quickEditingId = null;
   quickBatchSubmitting = false;
@@ -2587,6 +2855,7 @@ function openQuick(tripId, origin) {
   const t = S.trips.find(x => x.id === tripId); if (!t) { toast('先发车，才能记账'); return; }
   clearQuickBatch();
   quickTripId = tripId;
+  quickDraftContext = { id: 'quick:' + TTQCloudSync.createOperationId(), record: null, queue: Promise.resolve() };
   const act = S.categories.expense.filter(c => c.active);
   if (!act.find(c => c.id === quickCatId)) quickCatId = act.length ? act[0].id : 'other';
   const seq = tripSeq(t);
@@ -2623,6 +2892,7 @@ function quickEntryDate(trip) {
   return $('#quickDate').value || quickDefaultDate(trip);
 }
 function stageQuickDraft(entry) {
+  if (quickBatchSubmitting || quickBatchAwaitingConfirmation) { toast('这批正在等待云端核对，不能修改'); return false; }
   const editingIndex = quickEditingId ? quickDrafts.findIndex(item => item.id === quickEditingId) : -1;
   if (!quickEditingId && quickDrafts.length >= QUICK_BATCH_MAX) {
     toast('清单最多放 500 笔，请先保存这一批');
@@ -2642,6 +2912,7 @@ function stageQuickDraft(entry) {
   quickEditingId = null;
   resetQuickEntryFields();
   renderQuickBatchBadge();
+  persistQuickDraft();
   toast((updated ? '已更新清单 · ' : '已加入清单 · ') + catById(next.catId).name + ' ¥' + fmt(next.amount));
   return true;
 }
@@ -2719,6 +2990,7 @@ function editQuickDraft(id) {
   }
   renderQuickChips();
   closeSheet($('#sheet-quick-batch'));
+  persistQuickDraft();
   return true;
 }
 function deleteQuickDraft(id) {
@@ -2729,6 +3001,7 @@ function deleteQuickDraft(id) {
   if (quickEditingId === id) { quickEditingId = null; resetQuickEntryFields(); }
   renderQuickBatchBadge();
   renderQuickBatch();
+  persistQuickDraft();
   toast('已从清单移除 · ' + catById(removed.catId).name);
   if (!quickDrafts.length) closeSheet($('#sheet-quick-batch'));
   return true;
@@ -2752,7 +3025,20 @@ function closeQuickFlow() {
 }
 async function saveQuickBatch() {
   if (quickBatchSubmitting || !quickDrafts.length) return { ok: false, duplicate: true };
-  if (!guardOnce()) return { ok: false, duplicate: true };
+  const currentInput = quickDraftSnapshot();
+  if (currentInput && (currentInput.expression || currentInput.note || currentInput.editingId ||
+      Object.values(currentInput.fuel).some(field => String(field || '').trim()))) {
+    toast('还有未加入清单的输入，请先加入清单或清空输入，再保存全部');
+    return { ok: false, validation: true };
+  }
+  if (quickDrafts.some(entry => !S.categories.expense.some(cat => cat.id === entry.catId && cat.active))) {
+    toast('清单中有已停用或不存在的科目，请修改后再保存');
+    return { ok: false, validation: true };
+  }
+  const persisted = persistQuickDraft();
+  quickBatchSubmitting = true;
+  await persisted;
+  if (quickDraftStorageError) { quickBatchSubmitting = false; toast(quickDraftStorageError.message); return { ok: false, validation: true }; }
   const tripId = quickTripId;
   const entries = JSON.parse(JSON.stringify(quickDrafts));
   const status = $('#quickBatchStatus');
@@ -2782,6 +3068,7 @@ async function saveQuickBatch() {
   clearQuickBatch();
   closeQuickFlow();
   renderCurrent();
+  await refreshRecoveryPanel();
   toast('已保存全部 ' + entries.length + ' 笔 · ¥' + moneyCents(totalCents));
   return result;
 }
@@ -2809,7 +3096,7 @@ async function requestSheetClose(el, options) {
     focusCurrentTopSheet();
     return false;
   }
-  if (el.id !== 'sheet-quick' || !quickDrafts.length) {
+  if (el.id !== 'sheet-quick' || !hasQuickInput()) {
     if (opts.historyConsumed) return closeSheetVisual(el, opts);
     closeSheet(el, opts);
     return true;
@@ -2817,13 +3104,16 @@ async function requestSheetClose(el, options) {
   if (quickExitPromptOpen) { restoreConsumedHistory(); return false; }
   const restoredHistory = restoreConsumedHistory();
   quickExitPromptOpen = true;
-  const discard = await ask('清单里还有 ' + quickDrafts.length + ' 笔没有保存。退出会丢掉这些草稿，确定退出吗？');
+  const discard = await ask('还有未提交的输入。暂存并退出后，可在首页继续填写；本机草稿尚未上传。确定暂存退出吗？');
   quickExitPromptOpen = false;
   if (!discard) {
     focusCurrentTopSheet();
     return false;
   }
+  await persistQuickDraft();
+  if (quickDraftStorageError) { toast('草稿未能暂存，请勿关闭页面'); return false; }
   clearQuickBatch();
+  await refreshRecoveryPanel();
   if (opts.historyConsumed && !restoredHistory) return closeSheetVisual(el, opts);
   closeSheet(el, opts);
   return true;
@@ -3519,10 +3809,14 @@ function createImportOperationId(candidate) {
 }
 function importData(file) {
   if (!canStartBusinessWrite()) return;
+  if (!file || file.size > TTQRecovery.LIMITS.bytes) { toast('备份文件超过 20 MiB，未发送也未修改账本'); return; }
   const r = new FileReader();
   r.onload = async () => {
     try {
       const obj = JSON.parse(r.result);
+      const refreshed = await reconnectCloud();
+      if (!refreshed || !refreshed.ok || !S || !Store.online) return;
+      const importBaseVersion = Store.fleet.version;
       if (!obj || !Array.isArray(obj.trips)) { toast('这不是趟趟清的备份文件'); return; }
       const envelope = inspectBackupEnvelope(obj);
       if (!envelope.ok) { toast(envelope.error + '，已拒绝恢复'); return; }
@@ -3589,6 +3883,7 @@ function importData(file) {
       }, {
         kind: 'json-import',
         operationId: importOperationId,
+        baseVersion: importBaseVersion,
         savingText: '正在原子恢复完整账本…'
       });
       if (result.ok) {
@@ -3603,6 +3898,7 @@ function importData(file) {
         renderCurrent();
         toast('恢复完成 · 云端确认后守恒通过');
       }
+      await refreshRecoveryPanel();
     } catch (e) { toast('文件读取或预检失败：' + (e.message || '未知错误')); }
   };
   r.readAsText(file);
@@ -3624,6 +3920,60 @@ function toggleTheme() {
 document.addEventListener('click', async e => {
   const q = sel => e.target.closest(sel);
   let el;
+  if ((el = q('[data-recovery-resume],[data-recovery-discard],[data-recovery-export],[data-recovery-accept]'))) {
+    if (!S || businessBusy || Store.saving) return;
+    const id = el.dataset.recoveryResume || el.dataset.recoveryDiscard || el.dataset.recoveryExport || el.dataset.recoveryAccept;
+    const record = recoveryRecords.find(item => item.id === id);
+    if (!record) return;
+    try {
+      if (el.dataset.recoveryExport) {
+        const blob = new Blob([JSON.stringify({ format: 'tangtangqing-local-draft-review', restorable: false, savedAt: record.updatedAt, content: record.value }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob), link = document.createElement('a');
+        link.href = url; link.download = '趟趟清-草稿核对-' + todayStr() + '.json'; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      if (el.dataset.recoveryAccept) {
+        if (!await ask('仅当服务器已确认恢复完成时才能结束核对。如果其他设备后来记了新账，当前账本可能不同于原备份。确定接受当前云端账本并结束本机核对？不会重新覆盖或删除云端记录。')) return;
+        const accepted = await Store.acceptCompletedRestore(record);
+        Store.assertGeneration(accepted.generation);
+        S = migrate(accepted.state);
+        DevicePrefs.init(S, Store.storageScope);
+        applyTheme(); renderCurrent();
+        toast('已确认服务器完成恢复，现显示当前云端账本');
+      } else if (el.dataset.recoveryDiscard) {
+        const pending = record.kind === 'restore';
+        if (!await ask(pending ? '取消这个恢复任务并删除临时上传内容？已完成的恢复不能取消，正式账本不会因此被删除。' : '永久丢弃这份未提交草稿？此操作不修改云端账本。')) return;
+        if (pending) await Store.abandonRestore(record);
+        else await Store.draftVault.remove(record.id, record.revision);
+      } else if (record.kind !== 'quick' || record.value.pending) {
+        Store.adoptPending(record);
+        await reconnectCloud();
+      } else await recoverQuickDraft(record);
+      await initializeRecovery();
+      updateCloudModeUI();
+    } catch (error) { toast(error.message || '恢复未完成，请保持页面并重新核对'); }
+    return;
+  }
+  if ((el = q('[data-recovery-server]'))) {
+    if (!S || businessBusy || Store.saving) return;
+    const generation = Store.generation, id = el.dataset.recoveryServer;
+    try {
+      const status = await Store.requestJSON('/api/restore', { action: 'status', id });
+      Store.assertGeneration(generation);
+      if (status.status === 'complete') {
+        serverRestoreJobs = serverRestoreJobs.filter(job => job.id !== id);
+        await reconnectCloud(); toast('该恢复已由服务器完成');
+      }
+      else if (await ask('云端临时区已收到 ' + status.received.length + '/' + status.manifest.chunks.length + ' 块。要继续，请返回“更多”选择原备份并核对摘要；要重新开始，可在这里取消旧任务。确定取消旧任务吗？')) {
+        await Store.requestJSON('/api/restore', { action: 'cancel', id });
+        Store.assertGeneration(generation);
+        serverRestoreJobs = serverRestoreJobs.filter(job => job.id !== id);
+        await refreshRecoveryPanel();
+      }
+    } catch (error) { toast(error.message || '云端任务尚未确认'); }
+    return;
+  }
   if ((el = q('[data-quick-exit]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-close]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-act]'))) {
@@ -4171,7 +4521,7 @@ async function chooseInitialState(opened) {
   }
   if (opened.cache) Store.clearScopedCache();
 
-  if (opened.remote.cloudEmpty) {
+  if (opened.remote.cloudEmpty && !opened.recoveryPending) {
     const fresh = defaultData();
     const seeded = await Store.uploadInitial(fresh);
     Store.assertGeneration(generation);
@@ -4227,7 +4577,7 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
   updateCloudModeUI('已连接云端账本');
   $$('.js-ver').forEach(el => el.textContent = 'v' + APP_VER);
 
-  quickPadCtl = makePad($('#quickPad'), $('#quickAmt'), $('#quickEq'), '＋ 加入清单', quickSave, { localOnly: true });
+  quickPadCtl = makePad($('#quickPad'), $('#quickAmt'), $('#quickEq'), '＋ 加入清单', quickSave, { localOnly: true, onChange: persistQuickDraft });
   amtPadCtl = makePad($('#amtPad'), $('#amtVal'), $('#amtEq'), '✓ 保 存', async v => {
     if (!amtCfg) return;
     const result = await amtCfg.onSave(v, $('#amtDate').value, $('#amtNote').value.trim());
@@ -4245,6 +4595,9 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
     }
   });
   $('#quickFuelForm').addEventListener('input', event => updateFuelForm($('#quickFuelForm'), event.target));
+  $('#sheet-quick').addEventListener('input', () => queueMicrotask(persistQuickDraft));
+  $('#sheet-quick').addEventListener('change', () => queueMicrotask(persistQuickDraft));
+  $('#sheet-quick').addEventListener('click', () => queueMicrotask(persistQuickDraft));
   $('#amtFuelForm').addEventListener('input', event => updateFuelForm($('#amtFuelForm'), event.target));
   initFuelKeyboard($('#quickFuelForm'), $('#quickFuelSave'));
   initFuelKeyboard($('#amtFuelForm'), $('#amtFuelSave'));
@@ -4373,6 +4726,10 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
       await Store.whenIdle();
     }
     if (!S) return;
+    await persistQuickDraft();
+    if (hasQuickInput() || recoveryRecords.length) {
+      if (!await ask('退出后，草稿和待核对请求会保留在本机，只有重新登录当前账号才能继续。共用设备请先在首页处理草稿。确定退出吗？')) return;
+    }
     if (Store.hasPending) {
       const pending = Store.pendingState;
       const shouldExit = await ask('还有一笔没有收到云端确认。是否先导出这份内容供核对，然后继续退出？');
@@ -4387,7 +4744,16 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
     await requestLogout();
   });
   showView('home');
+  await initializeRecovery();
   unlockSession();
+  if (Store.membership && Store.membership.role === 'owner') {
+    const generation = Store.generation;
+    Store.requestJSON('/api/restore', { action: 'list' }).then(result => {
+      if (Store.generation !== generation) return;
+      serverRestoreJobs = result.jobs || [];
+      refreshRecoveryPanel();
+    }).catch(() => {});
+  }
   if (location.hash === '#test') setTimeout(runSelfTests, 60);
 })();
 }

@@ -1,6 +1,6 @@
 {
   "name": "tangtangqing-netlify-supabase",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,6 +14,7 @@
     "start": "node scripts/next-with-local-env.mjs start",
     "test": "node --import tsx --test tests/*.test.js tests/*.test.mjs",
     "test:domain": "node --test tests/domain.test.js",
+    "test:browser": "playwright test",
     "db:generate": "drizzle-kit generate",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern public/ledger --ignore-pattern .netlify",
     "test:postgres": "node --import tsx --test tests/postgres-integration.test.mjs",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "5.15.13",
+    "@playwright/test": "1.63.0",
     "@types/node": "22.19.19",
     "@types/pg": "8.23.1",
     "@types/react": "19.2.14",

@@ -543,6 +543,7 @@ function runtimeEnsureFuelColumnsForTest() {
     .replace(/\bexport\s+/g, "");
   const sandbox = {
     INVARIANT_SCHEMA_STATEMENTS: [],
+    RECOVERY_SCHEMA_STATEMENTS: [],
     getD1() {
       throw new Error("本测试不调用 ensureSchema");
     },

@@ -1,6 +1,7 @@
 import { getD1, usesPostgres } from "./index";
 import { assertPostgresSchema } from "./postgres";
 import { INVARIANT_SCHEMA_STATEMENTS } from "./invariants";
+import { RECOVERY_SCHEMA_STATEMENTS } from "./recovery-schema";
 
 // Local SQLite compatibility schema only. Keep one SQL statement per item so
 // the shared database adapter can execute the list as one atomic batch.
@@ -232,6 +233,7 @@ export const RUNTIME_SCHEMA_STATEMENTS = [
     FOREIGN KEY (fleet_id) REFERENCES fleets(id) ON DELETE CASCADE
   )`,
   ...INVARIANT_SCHEMA_STATEMENTS,
+  ...RECOVERY_SCHEMA_STATEMENTS,
 ] as const;
 
 export const RUNTIME_FUEL_COLUMN_STATEMENTS = {

@@ -1,7 +1,7 @@
 import { defineConfig } from "drizzle-kit";
 
 // Local SQLite compatibility migrations only. Production PostgreSQL changes
-// use reviewed SQL migrations under deploy/supabase/.
+// use the initial deploy/supabase schema plus supabase/migrations/ increments.
 export default defineConfig({
   out: "./drizzle",
   schema: "./db/schema.ts",

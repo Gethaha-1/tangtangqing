@@ -435,3 +435,36 @@ export const syncAssertions = sqliteTable(
     }),
   ],
 );
+
+// Local SQLite mirror of the additive production recovery schema.
+export const restoreJobs = sqliteTable("restore_jobs", {
+  fleetId: text("fleet_id").notNull().references(() => fleets.id),
+  id: text("id").notNull(),
+  membershipId: text("membership_id").notNull().references(() => fleetMembers.id),
+  userId: text("user_id").notNull().references(() => users.id),
+  baseVersion: integer("base_version").notNull(),
+  manifestJson: text("manifest_json").notNull(),
+  status: text("status").notNull().default("uploading"),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.fleetId, table.id] }),
+  check("restore_jobs_version_check", sql`${table.baseVersion} > 0`),
+  check("restore_jobs_status_check", sql`${table.status} IN ('uploading','ready','complete','cancelled')`),
+  uniqueIndex("restore_jobs_one_active").on(table.fleetId).where(sql`${table.status} IN ('uploading','ready')`),
+  index("restore_jobs_expiry").on(table.expiresAt),
+  index("restore_jobs_membership").on(table.membershipId),
+  index("restore_jobs_user").on(table.userId),
+]);
+
+export const restoreChunks = sqliteTable("restore_chunks", {
+  fleetId: text("fleet_id").notNull(),
+  jobId: text("job_id").notNull(),
+  ordinal: integer("ordinal").notNull(),
+  hash: text("hash").notNull(),
+  payload: text("payload").notNull(),
+}, table => [
+  primaryKey({ columns: [table.fleetId, table.jobId, table.ordinal] }),
+  foreignKey({ columns: [table.fleetId, table.jobId], foreignColumns: [restoreJobs.fleetId, restoreJobs.id] }).onDelete("cascade"),
+  check("restore_chunks_ordinal_check", sql`${table.ordinal} >= 0 AND ${table.ordinal} < 256`),
+]);

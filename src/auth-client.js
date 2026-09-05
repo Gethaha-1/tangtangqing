@@ -84,7 +84,7 @@
       const timeout = setTimeout(() => {
         timedOut = true;
         controller.abort();
-      }, url.pathname === '/api/sync' ? 45000 : 20000);
+      }, url.pathname === '/api/sync' || url.pathname === '/api/restore' ? 45000 : 20000);
       let response;
       let body = {};
       try {

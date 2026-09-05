@@ -1,10 +1,10 @@
 > 当前线上架构是 **Netlify + Supabase**：Netlify 运行完整 Next.js 应用，Supabase 提供 Auth 与 PostgreSQL。
 > 当前部署与运维以 [Netlify/Supabase 部署说明](deploy/NETLIFY-SUPABASE.md) 为准；迁移期验证数据保存在 [历史验证报告](deploy/VALIDATION-RESULTS.md)。
-> SQLite 与旧 D1-shaped schema 只用于本地开发和兼容回归，不是线上数据源。Sites、CloudBase、Cloudflare D1 均不再是当前部署目标。
+> 本文只描述 `develop` 主线。Sites/Cloudflare D1 的独立 1.6.1 归档站仍保留，但不接收本轮功能；CloudBase 不属于任何当前部署方案。双平台边界见 [PLATFORM-MAINTENANCE.md](PLATFORM-MAINTENANCE.md)。
 
 # 趟趟清 · 货运趟次云账本
 
-当前版本：**v1.6.1 · 旧版备份恢复优化 · Netlify/Supabase 在线运行 · 严格在线写入**。
+当前开发版本：**v1.7.0 · 草稿恢复与大型备份恢复 · 本地待验收，未发布**。线上发布记录仍以部署说明为准。
 
 趟趟清面向货运车主和司机，提供多车辆、发车、批量快记、二次确认收车、补录、账期统计、结构化油费和维修体验。线上由 Netlify 承载完整 Next.js 应用与服务端 API，Supabase Auth 提供邮箱密码会话，Supabase PostgreSQL 的私有 `ttq` schema 保存正式业务状态。
 
@@ -17,6 +17,8 @@
 - 请求失败不会把提案写进可自动上传的 localStorage 快照，也不会显示“已保存”。
 - `navigator.onLine` 只用于快速切换只读提示；恢复写入前必须重新 POST `/api/bootstrap` 核对身份、车队、权限和版本。
 - 每次写入携带 `expectedVersion` 和稳定 `operationId`。超时重试复用完全相同的 ID 与请求，避免双击或响应丢失导致重复入账。
+
+快记清单及尚未加入清单的金额表达式、油费、日期、备注按已核验账号/车队暂存在 IndexedDB。刷新后可在首页继续填写或丢弃；提交前把原请求与草稿一起暂存，未知回执先查询服务器。它不是自动上传的离线队列。退出/401 隐藏并清除内存，但保留本机草稿供同账号重新登录恢复；共用设备需主动处理草稿。清除浏览器数据或存储回收仍会丢失本机暂存，暂存失败时不得关闭页面。
 
 主题可作为全设备偏好；当前车辆筛选、已查看报告和待核对状态只保存在 bootstrap 确认的 `fleet.id + membership.id` scope。未归属的旧 localStorage 不会自动读取或迁移。账号、密码和认证 token 不写入 localStorage。
 
@@ -39,7 +41,9 @@
 - 可识别到其他来源车队时会警告，但不会改变登录身份。
 - 备份缺失、非法或超过 366 天的账期不会覆盖当前有效账期。
 - 导入通过同一个原子在线提交；服务器拒绝、不可达或版本冲突时保持原正式状态。
-- 单次超过 500 条变更会在发送前拒绝，避免拆批造成部分恢复；大型导入扩容见 `BACKLOG.md`。
+- 完整恢复使用专用临时任务：最多 20 MiB 文件/变更数据、30000 条变更、256 块，每块不超过 128 KiB/250 条；分块只写临时区，最后一个事务生效。普通 `/api/sync` 仍限制 500 条。
+- 上传中断后可按原任务续传；最终提交包含整车队版本检查，别的设备新增记录也会阻止覆盖。完成后回读守恒，不能把“分块上传成功”当成“恢复成功”。
+- 本机已验证一万条费用的 PostgreSQL 恢复；生产网络、Netlify 时限和手机容量需上线前另行验收。运行边界及迁移见 [第一轮交付说明](ITERATION-1-RECOVERY.md)。
 
 ## 本地开发
 
@@ -111,6 +115,6 @@ tests/                  业务、XSS、认证、原子写入、迁移测试
 
 ## 报告与现行部署边界
 
-`buildReportSummary()` 已统一账期/月度交集/自然年、车辆、净利润和 fuel 口径，供当前卡片与文字报告共用。定时生成、视频、外部 OpenAI/API、网络 endpoint 和新依赖均未实现。
+`buildReportSummary()` 已统一账期/月度交集/自然年、车辆、净利润和 fuel 口径，供当前卡片与文字报告共用。报告仍仅在本地生成文字；未实现定时报告、视频或外部 AI/API。恢复接口与开发测试依赖的变化见本轮 CHANGELOG。
 
 当前线上只支持 Netlify + Supabase：Netlify 运行 Next.js 页面、Node API 与认证代理；Supabase Auth 负责账号会话，Supabase PostgreSQL 保存 `ttq` 私有 schema。生产配置强制 `TTQ_AUTH_MODE=supabase` 与 `TTQ_DATABASE_MODE=postgres`，不会回退本地身份或 SQLite。部署、环境变量和验证流程见 [deploy/NETLIFY-SUPABASE.md](deploy/NETLIFY-SUPABASE.md) 与 [deploy/env-vars.md](deploy/env-vars.md)。

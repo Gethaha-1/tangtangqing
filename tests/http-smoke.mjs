@@ -8,6 +8,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:https';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { startTestPostgres, vacantPort } from './helpers/postgres.mjs';
+import '../src/recovery-client.js';
 
 const directory = await mkdtemp(join(tmpdir(), 'ttq-http-test-'));
 let database, authServer, app;
@@ -71,13 +72,32 @@ try {
   const batch={operationId:randomUUID(),finalize:true,operations:[{op:'put',type:'vehicle',id:'http-v1',expectedVersion:0,data:{id:'http-v1',name:'HTTP测试车',active:true,plateNo:'',sortOrder:0}}]};
   const saved=await a('/api/sync',batch);assert.equal(saved.status,200,JSON.stringify(saved.payload));
   assert.equal((await a('/api/sync',batch)).payload.replayed,true);
+  const receipt = await a('/api/sync/status', batch);
+  assert.equal(receipt.status, 200); assert.equal(receipt.payload.committed, true);
+  assert.equal((await b('/api/sync/status', batch)).payload.committed, false);
+  assert.equal((await a('/api/sync/status', {...batch, finalize:false})).status, 409);
+  assert.match(receipt.headers.get('cache-control'), /no-store/);
+  const operations = Array.from({length:514}, (_, index) => ({op:'put',type:'maintenance',id:'http-m-'+index,expectedVersion:0,data:{id:'http-m-'+index,vehicleId:'http-v1',date:'2026-09-01',amount:12.34,note:'隔离恢复'}}));
+  const task = {id:randomUUID(),baseVersion:(await a('/api/bootstrap',{})).payload.fleet.version,...await globalThis.TTQRecovery.prepare(operations)};
+  assert.equal((await a('/api/restore',{action:'start',...task})).status,200);
+  assert.equal((await b('/api/restore',{action:'status',id:task.id})).status,400);
+  assert.equal((await a('/api/restore',{action:'commit',id:task.id})).status,400);
+  for (let ordinal=0;ordinal<task.payloads.length;ordinal++) assert.equal((await a('/api/restore',{action:'chunk',id:task.id,ordinal,payload:task.payloads[ordinal]})).status,200);
+  assert.equal((await a('/api/restore',{action:'commit',id:task.id})).payload.status,'complete');
+  assert.equal((await a('/api/restore',{action:'commit',id:task.id})).payload.replayed,true);
+  assert.equal((await a('/api/bootstrap',{})).payload.records.filter(row=>row.type==='maintenance').length,514);
+  for (const path of ['/api/restore','/api/sync/status']) {
+    assert.equal((await a(path)).status,405);
+    assert.equal((await a(path,{}, {origin:'https://attacker.example'})).status,403);
+    assert.equal((await a(path,{}, {'x-ttq-request':''})).status,403);
+  }
   assert.equal((await a('/api/bootstrap',{})).payload.records.filter(row=>row.type==='vehicle').length,1);
   assert.equal((await b('/api/bootstrap',{})).payload.records.filter(row=>row.type==='vehicle').length,0);
   assert.equal((await a('/api/sync',{...batch,operationId:randomUUID()},{origin:'https://attacker.example'})).status,403);
   assert.equal((await a('/auth/logout',{})).status,200);
   assert.equal((await a('/api/bootstrap',{})).status,401);
   const attacker=browser();assert.equal((await attacker('/api/bootstrap',{}, {'x-ttq-auth-mode':'supabase','x-ttq-auth-issuer':'supabase','x-ttq-auth-subject':users[0].id})).status,401);
-  console.log('HTTP smoke PASS: production Next.js, two-account login, protected ledger, PostgreSQL save/replay/readback, isolation, CSRF, logout, forged-header rejection.');
+  console.log('HTTP smoke PASS: production Next.js, two-account login, protected ledger, PostgreSQL save/replay/readback, staged 514-record recovery, receipt status, isolation, CSRF, logout, forged-header rejection.');
   console.log('Auth used an HTTPS protocol fixture, not live Supabase. Temporary database and listeners are removed.');
 } catch(error) {
   console.error(logs.slice(-12).join(''));throw error;
