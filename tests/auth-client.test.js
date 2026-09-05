@@ -116,6 +116,32 @@ test('401 必须先锁定再向调用方失败', async () => {
   assert.deepEqual(order, ['lock', 'reject']);
 });
 
+test('超时覆盖回执读取，并与服务器错误及断网区分', async () => {
+  let expire, deadline;
+  const context = {
+    URL, AbortController, TypeError,
+    setTimeout(callback, ms) { expire = callback; deadline = ms; return 1; },
+    clearTimeout() {},
+    location: { origin: 'https://ledger.example' },
+    fetch: async (_, init) => ({
+      ok: true, status: 200,
+      json: () => new Promise((_, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        expire();
+      }),
+    }),
+  };
+  vm.runInNewContext(authClientSource, context);
+  await assert.rejects(context.TTQAuthClient.createHttpClient().sync({}), error => error.code === 'request_timeout');
+  assert.equal(deadline, 45000);
+  for (const status of [500, 504]) {
+    const client = Auth.createHttpClient({ origin: 'https://ledger.example', fetch: async () => new Response('gateway error', { status }) });
+    await assert.rejects(client.sync({}), error => error.status === status && !error.message.includes('检查网络'));
+  }
+  const offline = Auth.createHttpClient({ origin: 'https://ledger.example', fetch: async () => { throw new TypeError('Failed to fetch'); } });
+  await assert.rejects(offline.sync({}), error => error.code === 'network_error');
+});
+
 test('账号存储严格按 fleet + membership 隔离，旧未归属键保持且不可见', () => {
   const old = {
     'tangtangqing-data': '{"private":"legacy"}',

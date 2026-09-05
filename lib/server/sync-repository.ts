@@ -123,7 +123,33 @@ type BatchProjection = {
   puts: Map<string, Normalized>;
   deletes: Set<string>;
   tripCreates: Set<string>;
+  snapshot?: BatchReadSnapshot;
 };
+
+type BatchReadSnapshot = {
+  vehicles: Map<string, RawRow>;
+  trips: Map<string, RawRow>;
+  categories: Set<string>;
+  assignedVehicles: Set<string>;
+};
+
+// Request-scoped, fleet-filtered preflight only. Transaction-time membership,
+// assignment, parent and version guards still read the live database.
+function relatedReadStatements(d1: D1Database, actor: Actor, operations: SyncOperation[]) {
+  const tripIds = Array.from(new Set(operations.flatMap(operation => {
+    if (operation.type === 'trip') return [operation.id];
+    if (operation.type === 'trip_expense' || operation.type === 'trip_income')
+      return [childRecordKey(operation.id).tripId];
+    return [];
+  })));
+  const tripPredicate = tripIds.length ? ` OR id IN (${tripIds.map(() => '?').join(',')})` : '';
+  return [
+    d1.prepare('SELECT id, active FROM vehicles WHERE fleet_id = ?').bind(actor.fleetId),
+    d1.prepare(`SELECT id, vehicle_id, status FROM trips WHERE fleet_id = ? AND (status = 'open'${tripPredicate})`).bind(actor.fleetId, ...tripIds),
+    d1.prepare('SELECT id, kind FROM categories WHERE fleet_id = ?').bind(actor.fleetId),
+    d1.prepare("SELECT vehicle_id FROM vehicle_assignments WHERE fleet_id = ? AND user_id = ? AND active = 1 AND datetime(starts_at) <= CURRENT_TIMESTAMP AND (ends_at IS NULL OR datetime(ends_at) > CURRENT_TIMESTAMP)").bind(actor.fleetId, actor.userId),
+  ];
+}
 
 export async function hashSyncPayload(payload: string): Promise<string> {
   const bytes = new TextEncoder().encode(payload);
@@ -147,6 +173,7 @@ export async function applyAtomicSyncBatch(
     ...operations.map((operation) =>
       currentStatement(d1, actor.fleetId, operation),
     ),
+    ...relatedReadStatements(d1, actor, operations),
   ]);
   assertActiveMembership(
     actor,
@@ -158,11 +185,19 @@ export async function applyAtomicSyncBatch(
       response_json: string;
     } | undefined) ?? null;
   if (replay) return replaySyncCommit(replay, requestHash);
-  const currentRows = preflight.slice(2).map(
+  const currentRows = preflight.slice(2, 2 + operations.length).map(
     (result) => (result.results?.[0] as RawRow | undefined) ?? null,
   );
 
   const projection = buildBatchProjection(operations);
+  const related = preflight.slice(2 + operations.length);
+  const rows = (index: number) => (related[index]?.results ?? []) as RawRow[];
+  projection.snapshot = {
+    vehicles: new Map(rows(0).map(row => [String(row.id), row])),
+    trips: new Map(rows(1).map(row => [String(row.id), row])),
+    categories: new Set(rows(2).map(row => `${row.kind}:${row.id}`)),
+    assignedVehicles: new Set(rows(3).map(row => String(row.vehicle_id))),
+  };
   const entries: AtomicEntry[] = [];
   const failures: SyncResult[] = [];
 
@@ -176,6 +211,7 @@ export async function applyAtomicSyncBatch(
           operation.type,
           current,
           true,
+          projection.snapshot,
         );
       }
 
@@ -1215,7 +1251,7 @@ async function operationAuthorizationFootprint(
   }
   const tripId = String(normalized?.tripId ?? current?.trip_id ?? "");
   if (!tripId) return { vehicleIds: [], parentTripIds: [] };
-  const currentTrip = await findTrip(d1, fleetId, tripId);
+  const currentTrip = await findTrip(d1, fleetId, tripId, projection.snapshot);
   const targetTrip = projection.deletes.has(`trip\u0000${tripId}`)
     ? null
     : await projectedTrip(d1, fleetId, tripId, projection);
@@ -1291,7 +1327,7 @@ async function validateRelationships(
           "停用车辆不能发车",
         );
       }
-      await requireVehicleWriteAccess(d1, actor, vehicleId);
+      await requireVehicleWriteAccess(d1, actor, vehicleId, projection?.snapshot);
       if (data.status === "open") {
         if (projection) {
           const otherProjectedOpen = Array.from(
@@ -1309,7 +1345,10 @@ async function validateRelationships(
             );
           }
         }
-        const other = await d1
+        const other = projection?.snapshot
+          ? Array.from(projection.snapshot.trips.values()).find(trip =>
+              trip.status === 'open' && trip.vehicle_id === vehicleId && trip.id !== data.id) ?? null
+          : await d1
           .prepare(
             "SELECT id FROM trips WHERE fleet_id = ? AND vehicle_id = ? AND status = 'open' AND id <> ? LIMIT 1",
           )
@@ -1344,6 +1383,7 @@ async function validateRelationships(
         d1,
         actor,
         String(trip.vehicle_id ?? trip.vehicleId),
+        projection?.snapshot,
       );
       await requireProjectedCategory(
         d1,
@@ -1362,7 +1402,7 @@ async function validateRelationships(
         vehicleId,
         projection,
       );
-      await requireVehicleWriteAccess(d1, actor, vehicleId);
+      await requireVehicleWriteAccess(d1, actor, vehicleId, projection?.snapshot);
       break;
     }
   }
@@ -1377,7 +1417,7 @@ async function projectedVehicleExists(
   const key = `vehicle\u0000${vehicleId}`;
   if (projection?.deletes.has(key)) return false;
   if (projection?.puts.has(key)) return true;
-  return vehicleExists(d1, fleetId, vehicleId);
+  return vehicleExists(d1, fleetId, vehicleId, projection?.snapshot);
 }
 
 async function projectedVehicle(
@@ -1400,7 +1440,7 @@ async function projectedVehicle(
       active: proposed.active,
     };
   }
-  return requireVehicle(d1, fleetId, vehicleId);
+  return requireVehicle(d1, fleetId, vehicleId, projection?.snapshot);
 }
 
 async function projectedTrip(
@@ -1423,7 +1463,7 @@ async function projectedTrip(
       vehicle_id: proposed.vehicleId,
     };
   }
-  return requireTrip(d1, fleetId, tripId);
+  return requireTrip(d1, fleetId, tripId, projection?.snapshot);
 }
 
 async function requireProjectedCategory(
@@ -1450,7 +1490,7 @@ async function requireProjectedCategory(
     }
     return;
   }
-  return requireCategory(d1, fleetId, categoryId, kind);
+  return requireCategory(d1, fleetId, categoryId, kind, projection?.snapshot);
 }
 
 async function authorizeCurrentRecord(
@@ -1459,6 +1499,7 @@ async function authorizeCurrentRecord(
   type: SyncType,
   current: RawRow,
   membershipAlreadyVerified = false,
+  snapshot?: BatchReadSnapshot,
 ): Promise<void> {
   if (!membershipAlreadyVerified) await requireActiveMembership(d1, actor);
   if (type === "category" || type === "vehicle" || type === "fleet_settings") {
@@ -1470,6 +1511,7 @@ async function authorizeCurrentRecord(
       d1,
       actor,
       String(current.vehicle_id),
+      snapshot,
     );
     return;
   }
@@ -1477,8 +1519,9 @@ async function authorizeCurrentRecord(
     d1,
     actor.fleetId,
     String(current.trip_id),
+    snapshot,
   );
-  await requireVehicleWriteAccess(d1, actor, String(trip.vehicle_id));
+  await requireVehicleWriteAccess(d1, actor, String(trip.vehicle_id), snapshot);
 }
 
 async function requireActiveMembership(
@@ -1526,9 +1569,10 @@ async function requireVehicleWriteAccess(
   d1: D1Database,
   actor: Actor,
   vehicleId: string,
+  snapshot?: BatchReadSnapshot,
 ): Promise<void> {
   if (roleCanWriteVehicle(actor.role, false)) return;
-  const assignment = await d1
+  const assignment = snapshot ? snapshot.assignedVehicles.has(vehicleId) : await d1
     .prepare(
       "SELECT id FROM vehicle_assignments WHERE fleet_id = ? AND user_id = ? AND vehicle_id = ? AND active = 1 AND datetime(starts_at) <= CURRENT_TIMESTAMP AND (ends_at IS NULL OR datetime(ends_at) > CURRENT_TIMESTAMP) LIMIT 1",
     )
@@ -1590,7 +1634,9 @@ async function vehicleExists(
   d1: D1Database,
   fleetId: string,
   vehicleId: string,
+  snapshot?: BatchReadSnapshot,
 ): Promise<boolean> {
+  if (snapshot) return snapshot.vehicles.has(vehicleId);
   return Boolean(
     await d1
       .prepare(
@@ -1605,8 +1651,9 @@ async function requireVehicle(
   d1: D1Database,
   fleetId: string,
   vehicleId: string,
+  snapshot?: BatchReadSnapshot,
 ): Promise<RawRow> {
-  const vehicle = await d1
+  const vehicle = snapshot ? snapshot.vehicles.get(vehicleId) : await d1
     .prepare(
       "SELECT * FROM vehicles WHERE fleet_id = ? AND id = ? LIMIT 1",
     )
@@ -1625,8 +1672,9 @@ async function requireTrip(
   d1: D1Database,
   fleetId: string,
   tripId: string,
+  snapshot?: BatchReadSnapshot,
 ): Promise<RawRow> {
-  const trip = await findTrip(d1, fleetId, tripId);
+  const trip = await findTrip(d1, fleetId, tripId, snapshot);
   if (!trip) {
     throw new RecordValidationError(
       "trip_not_found",
@@ -1640,7 +1688,9 @@ async function findTrip(
   d1: D1Database,
   fleetId: string,
   tripId: string,
+  snapshot?: BatchReadSnapshot,
 ): Promise<RawRow | null> {
+  if (snapshot) return snapshot.trips.get(tripId) ?? null;
   return d1
     .prepare("SELECT * FROM trips WHERE fleet_id = ? AND id = ? LIMIT 1")
     .bind(fleetId, tripId)
@@ -1652,8 +1702,9 @@ async function requireCategory(
   fleetId: string,
   categoryId: string,
   kind: "expense" | "income",
+  snapshot?: BatchReadSnapshot,
 ): Promise<void> {
-  const category = await d1
+  const category = snapshot ? snapshot.categories.has(`${kind}:${categoryId}`) : await d1
     .prepare(
       "SELECT id FROM categories WHERE fleet_id = ? AND id = ? AND kind = ? LIMIT 1",
     )

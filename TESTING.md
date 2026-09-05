@@ -1,6 +1,6 @@
 # 测试
 
-适用版本：**v1.6.0 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
+适用版本：**v1.6.1 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
 
 ## 1. 自动化与构建
 
@@ -138,6 +138,8 @@ npm run dev:local
 6. driver 裁剪视图不能导出可完整恢复的车队备份；带 `_ownerRecordsWritable:false`、`driver-visible-partial` 或 `restorable:false` 的文件在迁移/差异规划前拒绝，owner 不能因此删除其他车辆账目。
 7. 取消、服务器不可达、400/422/409 时正式状态不变；相同文件重复导入可安全再次执行，同一次失败重试复用原 operationId。
 8. 超过 500 operations 明确拒绝且零部分写入。
+9. `postgres-integration.test.mjs` 对 v1/v2/v3 的 200 笔混合账目验证首次恢复、再次恢复、幂等回放和服务器回读金额/fuel 守恒；断言预检没有逐记录数据库调用。
+10. HTTP 客户端区分网络中断、500/504、完整回执读取超时；未知回执不得提前提交 UI，重试复用原 operationId。
 
 只读核对真实备份：
 

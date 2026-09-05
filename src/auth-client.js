@@ -80,8 +80,13 @@
         throw new TypeError('认证请求必须保持同源');
       const controller = new AbortController();
       activeControllers.add(controller);
-      const timeout = setTimeout(() => controller.abort(), 20000);
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, url.pathname === '/api/sync' ? 45000 : 20000);
       let response;
+      let body = {};
       try {
         response = await fetchImpl(url.pathname + url.search, {
           method: 'POST',
@@ -94,29 +99,50 @@
           body: JSON.stringify(payload === undefined ? {} : payload),
           signal: controller.signal
         });
+        if (response.status === 401) {
+          if (typeof config.onUnauthorized === 'function')
+            await config.onUnauthorized();
+          const error = new Error('登录已失效，请重新登录');
+          error.status = 401;
+          throw error;
+        }
+        // Keep the deadline active until the complete acknowledgement arrives.
+        try { body = await response.json(); } catch (cause) {
+          if (controller.signal.aborted) throw cause;
+          if (response.ok) {
+            const error = new Error('云端回执不完整，保存结果尚未确认');
+            error.code = 'invalid_response';
+            throw error;
+          }
+        }
+      } catch (cause) {
+        if (timedOut) {
+          const error = new Error('等待云端确认超时，保存结果尚未确认；请重新连接核对');
+          error.code = 'request_timeout';
+          throw error;
+        }
+        if (cause instanceof TypeError) {
+          const error = new Error('无法连接云端，请检查网络后重新连接');
+          error.code = 'network_error';
+          throw error;
+        }
+        throw cause;
       } finally {
         clearTimeout(timeout);
         activeControllers.delete(controller);
       }
 
-      if (response.status === 401) {
-        if (typeof config.onUnauthorized === 'function')
-          await config.onUnauthorized();
-        const error = new Error('登录已失效，请重新登录');
-        error.status = 401;
-        throw error;
-      }
-
-      let body = {};
-      try { body = await response.json(); } catch {}
       if (!response.ok) {
         const message = body && body.error && typeof body.error === 'object'
           ? body.error.message
           : body && body.error;
         const error = new Error(message || (response.status === 409
           ? '云端记录有新改动'
-          : '云端请求失败'));
+          : response.status === 504
+            ? '云端处理超时，保存结果尚未确认；请重新连接核对'
+            : response.status >= 500 ? '云端服务暂时异常，请稍后重新连接核对' : '云端请求失败'));
         error.status = response.status;
+        error.code = body && body.error && body.error.code || 'http_error';
         error.details = body;
         throw error;
       }

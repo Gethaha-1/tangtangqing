@@ -7,6 +7,8 @@ import { PostgresDatabase, postgresPoolOptions } from '../db/postgres.ts';
 import { resolveOrCreateActor, loadBootstrap } from '../lib/server/bootstrap.ts';
 import { applyAtomicSyncBatch, hashSyncPayload } from '../lib/server/sync-repository.ts';
 import { canonicalSyncPayload, parseSyncRequest } from '../lib/server/sync-contract.ts';
+import '../src/domain.js';
+import '../src/cloud-sync.js';
 
 let fixture, pool, database;
 before(async () => {
@@ -144,4 +146,48 @@ test('real PostgreSQL: the existing 500-operation atomic import boundary still w
   assert.equal(response.results.length,500);
   assert.equal(await database.prepare('SELECT COUNT(*) AS count FROM vehicles WHERE fleet_id=?').bind(actor.fleetId).first('count'),500);
   t.diagnostic(`Local 500-operation batch: ${Math.round(performance.now()-start)}ms; not a cloud/network benchmark.`);
+});
+
+test('real PostgreSQL: v1/v2/v3 mixed ledger restores conserve data without per-record queries', async () => {
+  const Domain = globalThis.TTQDomain, Cloud = globalThis.TTQCloudSync;
+  const categories = { expense: [{ id: 'fuel', name: '油费', active: true }], income: [{ id: 'cargo', name: '运费', active: true }] };
+  const defaults = { schemaVersion: 3, settings: { theme: 'day', activeVehicleId: 'all', periodStartDate: '2026-01-01', periodEndDate: '2026-12-31' }, categories, vehicles: [{ id: 'v1', name: '测试车', active: true }], trips: [], maintenance: [] };
+  for (const version of [1, 2, 3]) {
+    const actor = await resolveOrCreateActor(database, identity());
+    const raw = {
+      ...structuredClone(defaults), schemaVersion: version,
+      trips: Array.from({ length: 2 }, (_, i) => ({
+        id: `restore-t${i}`, vehicleId: 'v1', startDate: '2026-07-01', endDate: '2026-07-02', status: 'closed',
+        expenses: Array.from({ length: 100 }, (_, j) => ({ id: `e${i}-${j}`, catId: 'fuel', amount: 80.25, date: '2026-07-01', ...(version === 3 ? { fuel: { unitPrice: 8.025, liters: 10 } } : {}) })),
+        incomes: [{ id: `i${i}`, catId: 'cargo', amount: 12345.67, date: '2026-07-02' }],
+      })), maintenance: [{ id: 'repair', vehicleId: 'v1', date: '2026-07-03', amount: 12.34, note: '' }],
+    };
+    if (version === 1) {
+      delete raw.vehicles;
+      raw.trips.forEach(trip => { delete trip.vehicleId; });
+      delete raw.maintenance[0].vehicleId;
+    }
+    const target = Domain.migrate(raw, defaults);
+    if (!target.vehicles.some(item => item.id === 'v1'))
+      target.vehicles.push({ ...defaults.vehicles[0], active: false });
+    await sync(actor, Cloud.planSync(Domain.migrate(defaults, defaults), (await loadBootstrap(database, actor)).records));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) target.trips[0].expenses[0].note = '再次恢复修改过的记录';
+      const before = await loadBootstrap(database, actor);
+      const operations = Cloud.planSync(target, before.records);
+      const query = pool.query.bind(pool);
+      let singleQueries = 0;
+      pool.query = (...args) => { singleQueries++; return query(...args); };
+      const id = randomUUID();
+      try {
+        await sync(actor, operations, id);
+        assert.equal(singleQueries, 0, `v${version}: preflight must batch related reads`);
+      } finally { pool.query = query; }
+      assert.equal((await sync(actor, operations, id)).replayed, true);
+      const after = await loadBootstrap(database, actor);
+      assert.equal(Cloud.compareConservation(target, Cloud.hydrateState(after.records, defaults)).equal, true);
+      assert.equal(after.records.filter(row => row.type === 'trip_expense').length, 200);
+      if (attempt) assert.equal(after.records.find(row => row.type === 'trip_expense' && row.id === 'restore-t0:e0-0').data.note, '再次恢复修改过的记录');
+    }
+  }
 });

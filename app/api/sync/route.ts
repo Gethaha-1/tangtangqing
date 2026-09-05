@@ -102,13 +102,16 @@ async function sync(request: Request): Promise<Response> {
         400,
       );
     }
-    console.error("sync failed", error instanceof Error ? error.name : "unknown");
+    // Log only a bounded SQLSTATE, never SQL, bind values or account data.
+    const code = (error as { code?: unknown })?.code;
+    console.error("sync failed", error instanceof Error ? error.name : "unknown",
+      typeof code === "string" && /^[A-Z0-9]{5}$/.test(code) ? code : "unclassified");
     return secureJson(
       request,
       {
         error: {
           code: "sync_failed",
-          message: "这次没有保存到云端，请检查网络后重试",
+          message: "云端处理失败，保存结果尚未确认；请稍后重新连接核对",
         },
       },
       500,
