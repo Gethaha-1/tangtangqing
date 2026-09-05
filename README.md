@@ -1,5 +1,7 @@
 # 趟趟清 · 货运趟次云账本
 
+> 维护定位（2026-09-06）：此分支冻结为 **Sites v1.6.1 归档**。后续功能在 `develop` 的 Netlify + Supabase 主线开发；下文仅描述本 Sites 版本，不代表主线。两平台账号和数据库独立，不自动同步。见 [PLATFORM-MAINTENANCE.md](PLATFORM-MAINTENANCE.md)。本次仅修正文档，不升级功能或重新发布。
+
 当前版本：**v1.6.1 · 批量快记与旧版备份恢复优化 · Sites/Cloudflare D1 在线运行 · 严格在线写入**。
 
 趟趟清面向货运车主和司机，提供多车辆、发车、批量快记、二次确认收车、补录、账期统计、结构化油费和维修体验。当前实现由服务端 D1 保存正式业务状态；认证边界已经抽象为 provider-neutral `Principal`，生产实现为 Sites/Cloudflare 技术栈。
@@ -111,4 +113,4 @@ tests/                  业务、XSS、认证、原子写入、迁移测试
 
 `buildReportSummary()` 已统一账期/月度交集/自然年、车辆、净利润和 fuel 口径，供当前卡片与文字报告共用。定时生成、视频、外部 OpenAI/API、网络 endpoint 和新依赖均未实现。
 
-当前 `.openai/hosting.json`、Vinext Worker、D1 adapter 与 Sites 身份仍属于 Sites/Cloudflare 构建，不能直接上传为腾讯云标准 Node 应用。本地代码尚未完成腾讯适配、部署或合规认证。腾讯上海地域、个人主体小范围封闭非经营试用、纯数字手机号用户名、CloudBase Auth + MySQL 只作为下一批候选方案，需用户确认平台资格、域名/备案、安全和迁移细节后再实施。
+当前 `.openai/hosting.json`、Vinext Worker、D1 adapter 与 Sites 身份仅属于此归档版本。主线已经采用 Netlify + Supabase，不再执行原腾讯云候选计划。不可将主线的 Next.js/PostgreSQL 部署配置直接套用到本分支，也不整体合并两个平台分支。

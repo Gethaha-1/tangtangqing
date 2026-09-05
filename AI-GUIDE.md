@@ -2,6 +2,8 @@
 
 适用版本：**v1.6.1 · Sites/Cloudflare D1 · 严格在线写入**。
 
+维护定位：Sites 冻结归档，新功能在 `develop`（Netlify + Supabase）实施。本轮仅同步维护说明，不移植草稿恢复或大型备份协议，不重新发布 Sites。先读 `PLATFORM-MAINTENANCE.md`；本手册后续技术规则只适用于此归档代码。
+
 ## 先读什么
 
 | 任务 | 必读 | 主要位置 |
@@ -31,7 +33,7 @@
 12. 业务口径以 `BUSINESS-RULES.md` 为准；不要借联网改造改变趟号、账期或金额含义。
 13. 恶意备份字段分别经过 `esc()`、`attrEsc()`、`safeIconText()`。
 14. `public/ledger/`、`dist/`、`.wrangler/`、`node_modules/` 是生成物，不提交。
-15. 禁止向 GitHub 旧项目推送或开 PR，除非用户另行明确改变范围。
+15. GitHub 仅用于经授权的源码备份/共享；Sites 分支与 develop 不整体互合，不自行触碰 main。GitHub 推送不等于 Sites 发布授权。
 16. 快记清单只能是当前页面内的非权威草稿：不得持久化成离线队列，不得逐条上传；最终保存必须保持一趟、一个动作、一个原子批次。未知回执期间不得修改或丢弃待重放 payload。
 
 ## 常见改动
@@ -89,4 +91,4 @@ npm test
 → migration、敏感信息、hosting project_id、生成物审计
 ```
 
-有部署授权时：提交精确源码 → 推送精确 commit 到 Sites source repository → package → save version → deploy → 轮询终态。部署链路不经过 GitHub。
+有明确 Sites 发布授权时：提交精确源码 → 推送精确 commit 到 Sites source repository → package → save version → deploy → 轮询终态。GitHub 源码备份与这条部署链路独立；文档同步不触发发布。
