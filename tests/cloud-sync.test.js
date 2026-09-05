@@ -110,6 +110,28 @@ test('不同车辆和不同子账目只产生自己的 put，不覆盖整趟或�
   assert.equal(operations.some(item => item.id === 'v1'), false);
 });
 
+test('同一快记清单的多条支出会规划为同一批中的独立新增操作', () => {
+  const before = stateFixture();
+  const baseline = Cloud.normalizeState(before);
+  const after = clone(before);
+  after.trips[1].expenses.push(
+    { id: 'batch-fuel', catId: 'fuel', amount: 300, date: '2026-07-04', note: '', fuel: { unitPrice: '7.5', liters: '40' } },
+    { id: 'batch-toll', catId: 'other', amount: 25, date: '2026-07-04', note: '高速' },
+    { id: 'batch-meal', catId: 'other', amount: 18.5, date: '2026-07-04', note: '午饭' }
+  );
+
+  const operations = Cloud.planSync(after, baseline);
+  assert.deepEqual(
+    operations.map(item => [item.op, item.type, item.id, item.expectedVersion]),
+    [
+      ['put', 'trip_expense', 't2:batch-fuel', 0],
+      ['put', 'trip_expense', 't2:batch-meal', 0],
+      ['put', 'trip_expense', 't2:batch-toll', 0]
+    ]
+  );
+  assert.equal(operations.some(item => item.type === 'trip'), false);
+});
+
 test('司机裁剪视图只同步业务记录，不生成 owner-only 或本地兜底写入', () => {
   const driver = stateFixture();
   driver.settings._ownerRecordsWritable = false;

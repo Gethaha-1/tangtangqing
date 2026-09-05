@@ -1,6 +1,6 @@
 # 技术架构
 
-适用版本：**v1.5.0 + Unreleased 本地改进 · 严格在线写入**。
+适用版本：**v1.6.1 · Sites/Cloudflare D1 · 严格在线写入**。
 
 ## 1. 分层
 
@@ -57,6 +57,8 @@ D1 是当前实现的业务正式状态。浏览器状态分为：
 
 BFCache `pagehide/pageshow`、其他标签页退出、401 或手动退出都会先锁界面、清空内存正式状态、终止请求并递增 generation；迟到回执不能重新解锁旧账。恢复只能重新加载并 POST bootstrap。
 
+快记清单是例外明确、生命周期很短的 UI 草稿：只保存在 `quickDrafts` 内存变量，不并入正式 `S`，也不进入任何浏览器存储。它以同一趟次为边界，每条在加入时生成稳定 ID；会话锁定时与其他敏感页面状态一起清空。
+
 ## 5. 严格在线状态机
 
 ```text
@@ -72,6 +74,8 @@ network/server failure → keep old S + readonly + in-memory retry token
 ```
 
 保存阶段锁定业务控件并设置 `aria-busy`。失败表单和收车确认层保留，只有完整服务器回执才显示成功和关闭弹层。网络恢复先 bootstrap；响应丢失时仅在版本仍安全的前提下用相同 `operationId` 和 operations 重放。
+
+快记中的「加入清单」只改 UI 草稿，不是业务写入，所以网络中断后仍可继续整理当前已打开的清单；「保存全部」才调用一次 `submitBusinessMutation()`。一旦该请求进入未知回执状态，清单锁定编辑和退出，避免屏幕内容偏离待重放的同 ID、同 payload 请求。
 
 ## 6. 原子批次、fuel 与 D1
 
@@ -100,6 +104,7 @@ network/server failure → keep old S + readonly + in-memory retry token
 - `syncSheetModality()` 只让最顶层 sheet 可交互，其他 view/nav/sheet 使用 inert；Tab 焦点圈、Escape/系统返回、顶部返回沿栈逐层处理；
 - `src/ui-transition.js` 只负责视觉与焦点。来源消失或离屏时降级，reduced motion/旧浏览器同步完成，不接触业务状态或回执；
 - 左缘返回与顶部下拉仍是通用“关闭弹层”手势，不是收车提交方式。
+- 快记清单使用 `sheet-quick-batch` 作为嵌套模态层：顶部返回只回到继续添加，最终按钮固定在安全区上方；未提交退出经确认框，系统返回和手势沿用同一退出策略。
 
 ## 9. JSON 恢复与 schema v3
 

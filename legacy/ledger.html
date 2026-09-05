@@ -8,7 +8,7 @@
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
-  趟趟清 v1.5.1 —— 严格在线写入 · 离线只读 · 原子云端确认
+  趟趟清 v1.6.1 —— 批量快记 · 旧版备份恢复优化 · 原子云端确认
   文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md / AI-GUIDE.md）：
     [CSS-1] 主题令牌（日「宣纸账房」/ 夜「瓷青泥金」双主题）
     [CSS-2] 通用布局 / 组件
@@ -285,6 +285,39 @@ body.theme-night .dot { box-shadow:0 0 8px var(--accent); animation:blink 1.6s i
   font-size:18px; font-weight:800; letter-spacing:.15em; border:0; }
 .note-toggle { display:block; text-align:center; font-size:13.5px; color:var(--sub);
   background:none; border:0; padding:8px; margin:0 auto 6px; text-decoration:underline; }
+.quick-batch-link { flex:none; min-width:76px; min-height:40px; border:1px solid var(--line);
+  border-radius:20px; padding:7px 12px; background:var(--panel2); color:var(--ink);
+  font-size:14px; font-weight:700; }
+.quick-batch-link:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+.quick-batch-link:disabled { color:var(--sub); opacity:.7; }
+#sheet-quick .shead h3 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#sheet-quick-batch .sbody { min-height:calc(100vh - 70px - env(safe-area-inset-top));
+  min-height:calc(100dvh - 70px - env(safe-area-inset-top)); display:flex; flex-direction:column; }
+.quick-batch-intro { margin:0 0 12px; color:var(--sub); font-size:13.5px; line-height:1.65; }
+.quick-batch-list { padding:4px 14px; }
+.quick-batch-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px;
+  align-items:center; padding:13px 0; border-bottom:1px solid var(--line); }
+.quick-batch-row:last-child { border-bottom:0; }
+.quick-batch-icon { font-size:21px; }
+.quick-batch-main { min-width:0; }
+.quick-batch-main b { display:block; font-size:15.5px; }
+.quick-batch-main span { display:block; margin-top:3px; color:var(--sub); font-size:12.5px;
+  line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.quick-batch-side { text-align:right; }
+.quick-batch-side strong { display:block; color:var(--cool); font-size:17px; }
+.quick-batch-tools { display:flex; justify-content:flex-end; gap:6px; margin-top:7px; }
+.quick-batch-tools button { min-width:44px; min-height:32px; border:1px solid var(--line);
+  border-radius:16px; padding:4px 9px; background:var(--panel2); color:var(--sub); font-size:12px; }
+.quick-batch-tools button[data-quick-delete] { color:var(--danger); }
+.quick-batch-total { margin-top:12px; }
+.quick-batch-action { position:sticky; z-index:1; bottom:calc(8px + env(safe-area-inset-bottom));
+  margin-top:auto; padding:28px 0 calc(4px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,transparent,var(--bg) 18%); }
+.quick-batch-action small { display:block; margin-top:7px; color:var(--sub); font-size:12.5px;
+  line-height:1.45; text-align:center; }
+.quick-batch-status { min-height:1.5em; margin:8px 2px 0; color:var(--sub);
+  font-size:13px; line-height:1.5; text-align:center; }
+.quick-batch-status[data-error="true"] { color:var(--danger); }
 .fuel-form { margin:12px 0; padding:12px; border:1px dashed var(--line); border-radius:12px;
   background:var(--panel2); }
 .fuel-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
@@ -530,7 +563,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
 
 <!-- 记一笔（在途快记 / 给某趟补一笔） -->
 <div class="sheet" id="sheet-quick">
-  <div class="shead"><button class="back" data-close>‹</button><h3 id="quickTitle">记一笔</h3></div>
+  <div class="shead"><button type="button" class="back" data-quick-exit aria-label="退出快记">‹</button><h3 id="quickTitle">记一笔</h3><button type="button" class="quick-batch-link num" id="quickBatchOpen" aria-haspopup="dialog" aria-controls="sheet-quick-batch" aria-live="polite" disabled>清单 0</button></div>
   <div class="sbody">
     <div class="chips" id="quickChips"></div>
     <div class="chips-hint">← 左右滑动选科目，最后可加新科目 →</div>
@@ -547,7 +580,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
         </div>
         <div class="fuel-status" id="quickFuelStatus" role="status" aria-live="polite"></div>
         <div class="fuel-error" id="quickFuelError" role="alert" aria-live="polite"></div>
-        <button type="button" class="btn sm" id="quickFuelSave" data-business-write>✓ 记 上</button>
+        <button type="button" class="btn sm" id="quickFuelSave">＋ 加入清单</button>
       </div>
       <div class="amt-cat" id="quickCat"></div>
       <div class="quick-amt num" id="quickCommon"></div>
@@ -560,6 +593,23 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
         <input type="date" id="quickDate">
       </div>
       <div class="pad" id="quickPad"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 待保存清单：只存在当前页面内，最终一次提交到云端 -->
+<div class="sheet" id="sheet-quick-batch" role="dialog" aria-modal="true" aria-labelledby="quickBatchTitle">
+  <div class="shead"><button type="button" class="back" data-close aria-label="返回继续添加">‹</button><h3 id="quickBatchTitle">待保存清单</h3></div>
+  <div class="sbody">
+    <p class="quick-batch-intro">这些只是当前页面里的待保存草稿，还没有进入正式账本。可返回继续添加，也可先修改或移除。</p>
+    <div class="panel quick-batch-list" id="quickBatchList" role="list" aria-label="待保存记录"></div>
+    <div class="panel quick-batch-total">
+      <div class="total-line"><span>共 <b class="num" id="quickBatchCount">0</b> 笔</span><b class="big num display" id="quickBatchTotal">¥0</b></div>
+    </div>
+    <div class="quick-batch-action">
+      <button type="button" class="btn" id="quickBatchSave" data-business-write aria-describedby="quickBatchSaveHint quickBatchStatus">保存全部 0 笔</button>
+      <small id="quickBatchSaveHint">一次提交到云端，全部成功后才进入正式账本</small>
+      <div class="quick-batch-status" id="quickBatchStatus" role="status" aria-live="polite"></div>
     </div>
   </div>
 </div>
@@ -763,7 +813,7 @@ body.is-saving [data-business-write], body.is-readonly [data-business-write] { o
 <script src="/ledger/ui-transition.js"></script>
 <script>
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.5.1';
+const APP_VER = '1.6.1';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 
@@ -896,7 +946,7 @@ const Store = (() => {
       console.error('云端保存失败', error);
       if (connection === 'locked' || error.status === 401 || error.sessionLocked)
         return { ok: false, readonly: true, unauthenticated: true, error };
-      if (error.status === 422 || error.status === 400) {
+      if (error.status === 422 || error.status === 400 || error.status === 413) {
         connection = 'online';
         return { ok: false, validation: true, error };
       }
@@ -1192,6 +1242,7 @@ function unlockSession() {
 function clearSensitiveClientState(options) {
   const config = options || {};
   sessionLockedPermanently = true;
+  clearQuickBatch();
   try { closeAllSheets({ skipHistory: true }); } catch (error) {}
   ['confirmMask', 'migrationMask'].forEach(id => {
     const element = document.getElementById(id);
@@ -1317,7 +1368,7 @@ async function submitBusinessMutation(mutator, options) {
       ? '⚠️ 云端已有新改动，本次没有覆盖；请重新加载核对'
       : (result.validation
         ? '⚠️ ' + (result.error && result.error.message || '服务器未接受，本次没有保存')
-        : '⚠️ 未收到云端确认，账本已切换只读；表单内容仍在当前页面'));
+        : '⚠️ ' + (result.error && result.error.message || '未收到云端确认') + '；账本暂时只读，待确认内容保留在当前页面'));
     if (options && options.onFailure) options.onFailure(result, context);
     return result;
   }
@@ -1340,10 +1391,15 @@ async function reconnectCloud() {
     S = migrate(result.state);
     DevicePrefs.init(S, Store.storageScope);
     applyTheme();
+    const resumedQuickCount = result.resumed ? reconcileQuickBatchAfterReconnect() : 0;
     renderCurrent();
     if (result.resumed) closeAllSheets();
     updateCloudModeUI(result.resumed ? '云端已确认刚才的保存' : '已重新连接云端');
-    toast(result.resumed ? '已核对：刚才的记录已由云端确认' : '已重新连接云端，可以继续记账');
+    toast(result.resumed
+      ? (resumedQuickCount
+        ? '已核对：清单 ' + resumedQuickCount + ' 笔已由云端确认'
+        : '已核对：刚才的记录已由云端确认')
+      : '已重新连接云端，可以继续记账');
     return result;
   }
   updateCloudModeUI();
@@ -2265,7 +2321,7 @@ function handleSheetKeydown(event) {
   const top = document.getElementById(sheetStack[sheetStack.length - 1]);
   if (!top) return;
   if (event.key === 'Escape') {
-    event.preventDefault(); event.stopPropagation(); closeSheet(top); return;
+    event.preventDefault(); event.stopPropagation(); requestSheetClose(top); return;
   }
   if (event.key !== 'Tab') return;
   const focusable = sheetFocusableElements(top);
@@ -2385,11 +2441,12 @@ window.addEventListener('popstate', () => {
 document.addEventListener('keydown', handleSheetKeydown);
 
 /* —— 数字键盘：支持 300+250 连加 —— */
-function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
+function makePad(padEl, dispEl, eqEl, okLabel, onOk, options) {
   let expr = '';
+  const writeAttribute = options && options.localOnly ? '' : ' data-business-write';
   padEl.innerHTML = ['1', '2', '3', '⌫', '4', '5', '6', '＋', '7', '8', '9', '.']
     .map(k => '<button data-k="' + k + '"' + ('⌫＋.'.includes(k) ? ' class="fn"' : '') + '>' + k + '</button>').join('')
-    + '<button class="zero" data-k="0">0</button><button class="ok" data-k="ok" data-business-write>' + okLabel + '</button>';
+    + '<button class="zero" data-k="0">0</button><button class="ok" data-k="ok"' + writeAttribute + '>' + okLabel + '</button>';
   syncBusinessWriteControls(padEl);
   function term() { const p = expr.split('+'); return p[p.length - 1]; }
   function paint() {
@@ -2416,24 +2473,67 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk) {
   };
 }
 
-/* —— 记一笔（快记） —— */
+/* —— 记一笔（快记）：先暂存当前页面，最后一个原子批次提交 —— */
+const QUICK_BATCH_MAX = 500;
 let quickTripId = null, quickCatId = 'fuel', quickPadCtl = null;
+let quickDrafts = [], quickEditingId = null, quickBatchSubmitting = false;
+let quickBatchAwaitingConfirmation = false, quickExitPromptOpen = false;
+function clearQuickBatch() {
+  quickDrafts = [];
+  quickEditingId = null;
+  quickBatchSubmitting = false;
+  quickBatchAwaitingConfirmation = false;
+  quickTripId = null;
+  const status = document.getElementById('quickBatchStatus');
+  if (status) { status.textContent = ''; delete status.dataset.error; }
+  const review = document.getElementById('sheet-quick-batch');
+  if (review) review.setAttribute('aria-busy', 'false');
+  renderQuickBatchBadge();
+}
+function quickFlowActive() {
+  return ['sheet-quick', 'sheet-quick-batch'].some(id => sheetStack.includes(id) || Boolean(sheetTransitions[id]));
+}
+function quickDefaultDate(trip) {
+  return trip && trip.status === 'open' ? todayStr() : (trip && trip.endDate || todayStr());
+}
+function renderQuickEntryMode() {
+  const editing = Boolean(quickEditingId);
+  if (quickPadCtl) quickPadCtl.setOk(editing ? '✓ 更新清单' : '＋ 加入清单');
+  const fuelButton = document.getElementById('quickFuelSave');
+  if (fuelButton) fuelButton.textContent = editing ? '✓ 更新清单' : '＋ 加入清单';
+}
+function renderQuickBatchBadge() {
+  const button = document.getElementById('quickBatchOpen');
+  if (!button) return;
+  button.textContent = '清单 ' + quickDrafts.length;
+  button.disabled = quickDrafts.length === 0;
+  button.setAttribute('aria-label', quickDrafts.length
+    ? '查看待保存清单，共 ' + quickDrafts.length + ' 笔'
+    : '待保存清单为空');
+}
+function resetQuickEntryFields() {
+  $('#quickNote').value = '';
+  $('#quickNoteWrap').style.display = 'none';
+  quickPadCtl.reset('');
+  resetFuelForm($('#quickFuelForm'), {}, false);
+  renderQuickEntryMode();
+}
 function openQuick(tripId, origin) {
+  if (quickFlowActive()) { focusCurrentTopSheet(); return false; }
   if (!canStartBusinessWrite()) return;
   const t = S.trips.find(x => x.id === tripId); if (!t) { toast('先发车，才能记账'); return; }
+  clearQuickBatch();
   quickTripId = tripId;
   const act = S.categories.expense.filter(c => c.active);
   if (!act.find(c => c.id === quickCatId)) quickCatId = act.length ? act[0].id : 'other';
   const seq = tripSeq(t);
   $('#quickTitle').textContent = (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · ' + vehicleById(t.vehicleId).name + ' · 记一笔';
-  $('#quickNote').value = ''; $('#quickNoteWrap').style.display = 'none';
-  $('#quickDate').value = t.status === 'open' ? todayStr() : (t.endDate || todayStr());
+  $('#quickDate').value = quickDefaultDate(t);
   $('#quickDateWrap').style.display = 'none';
   updateQuickDateBtn();
-  quickPadCtl.reset('');
-  resetFuelForm($('#quickFuelForm'), {}, false);
+  resetQuickEntryFields();
   renderQuickChips();
-  openSheet($('#sheet-quick'), origin);
+  return openSheet($('#sheet-quick'), origin);
 }
 function renderQuickChips() {
   const t = S.trips.find(x => x.id === quickTripId);
@@ -2449,30 +2549,44 @@ function renderQuickChips() {
   $('#quickMoneyDisplay').style.display = fuelMode ? 'none' : '';
   $('#quickPad').style.display = fuelMode ? 'none' : '';
   $('#quickFuelForm').style.display = fuelMode ? '' : 'none';
+  renderQuickEntryMode();
+  renderQuickBatchBadge();
 }
 function updateQuickDateBtn() {
   const d = $('#quickDate').value;
   $('#quickDateBtn').textContent = (d === todayStr() ? '记在今天' : '记在 ' + fmtMD(d)) + '（点了改日期）';
 }
-async function quickSave(v) {
-  const t = S.trips.find(x => x.id === quickTripId); if (!t) return;
-  const date = $('#quickDate').value || (t.status === 'open' ? todayStr() : (t.endDate || todayStr()));
-  const note = $('#quickNote').value.trim();
-  const entryId = uid();
-  await submitBusinessMutation(draft => {
-    const nextTrip = draft.trips.find(item => item.id === quickTripId);
-    if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
-    nextTrip.expenses.push({ id: entryId, catId: quickCatId, amount: v, date, note });
-  }, {
-    kind: 'trip-expense',
-    onSuccess: () => {
-      toast('已记上 · ' + catById(quickCatId).name + ' ¥' + fmt(v));
-      closeSheet($('#sheet-quick'));
-      renderCurrent();
-    }
-  });
+function quickEntryDate(trip) {
+  return $('#quickDate').value || quickDefaultDate(trip);
 }
-async function quickFuelSave() {
+function stageQuickDraft(entry) {
+  const editingIndex = quickEditingId ? quickDrafts.findIndex(item => item.id === quickEditingId) : -1;
+  if (!quickEditingId && quickDrafts.length >= QUICK_BATCH_MAX) {
+    toast('清单最多放 500 笔，请先保存这一批');
+    return false;
+  }
+  if (quickEditingId && editingIndex < 0) {
+    toast('这笔草稿已不在清单，请重新添加');
+    quickEditingId = null;
+    renderQuickEntryMode();
+    return false;
+  }
+  const next = Object.assign({}, entry, { id: quickEditingId || uid() });
+  if (next.fuel) next.fuel = Object.assign({}, next.fuel);
+  const updated = editingIndex >= 0;
+  if (updated) quickDrafts.splice(editingIndex, 1, next);
+  else quickDrafts.push(next);
+  quickEditingId = null;
+  resetQuickEntryFields();
+  renderQuickBatchBadge();
+  toast((updated ? '已更新清单 · ' : '已加入清单 · ') + catById(next.catId).name + ' ¥' + fmt(next.amount));
+  return true;
+}
+function quickSave(v) {
+  const t = S.trips.find(x => x.id === quickTripId); if (!t) return;
+  return stageQuickDraft({ catId: quickCatId, amount: v, date: quickEntryDate(t), note: $('#quickNote').value.trim() });
+}
+function quickFuelSave() {
   const resolved = resolveFuelForm($('#quickFuelForm'), false);
   if (!resolved.ok) {
     toast(resolved.error && resolved.error.message || '请把油费填完整');
@@ -2480,18 +2594,176 @@ async function quickFuelSave() {
   }
   if (!guardOnce()) return;
   const t = S.trips.find(x => x.id === quickTripId); if (!t) return;
-  const date = $('#quickDate').value || (t.status === 'open' ? todayStr() : (t.endDate || todayStr()));
-  const note = $('#quickNote').value.trim();
-  const entryId = uid();
+  return stageQuickDraft({
+    catId: 'fuel', amount: resolved.amount, date: quickEntryDate(t),
+    note: $('#quickNote').value.trim(), fuel: resolved.fuel
+  });
+}
+function renderQuickBatch() {
+  if (!S) return;
+  const list = $('#quickBatchList');
+  const locked = quickBatchSubmitting || quickBatchAwaitingConfirmation;
+  list.innerHTML = quickDrafts.map(entry => {
+    const category = catById(entry.catId);
+    const fuelText = entry.fuel
+      ? ' · ' + unitPriceX10000(BigInt(Math.round(Number(entry.fuel.unitPrice) * 10000))) + ' 元/升 · ' + volumeMl(BigInt(Math.round(Number(entry.fuel.liters) * 1000))) + ' 升'
+      : '';
+    const detail = entry.date + (entry.note ? ' · ' + entry.note : '') + fuelText;
+    const actionLabel = category.name + ' ¥' + fmt(entry.amount);
+    return '<div class="quick-batch-row" data-quick-draft="' + attrEsc(entry.id) + '" role="listitem">'
+      + '<span class="quick-batch-icon" aria-hidden="true">' + safeIconText(category.icon) + '</span>'
+      + '<div class="quick-batch-main"><b>' + esc(category.name) + '</b><span>' + esc(detail) + '</span></div>'
+      + '<div class="quick-batch-side"><strong class="num">¥' + fmt(entry.amount) + '</strong>'
+      + '<div class="quick-batch-tools"><button type="button" data-quick-edit="' + attrEsc(entry.id) + '" aria-label="修改 ' + attrEsc(actionLabel) + '"' + (locked ? ' disabled' : '') + '>修改</button>'
+      + '<button type="button" data-quick-delete="' + attrEsc(entry.id) + '" aria-label="移除 ' + attrEsc(actionLabel) + '"' + (locked ? ' disabled' : '') + '>移除</button></div></div></div>';
+  }).join('') || '<div class="empty-tip" role="status" style="padding:20px 8px">清单空了，返回继续添加</div>';
+  const totalCents = quickDrafts.reduce((sum, entry) => sum + Math.round(Number(entry.amount) * 100), 0);
+  $('#quickBatchCount').textContent = String(quickDrafts.length);
+  $('#quickBatchTotal').textContent = '¥' + moneyCents(totalCents);
+  $('#quickBatchSave').textContent = '保存全部 ' + quickDrafts.length + ' 笔';
+  $('#quickBatchSave').dataset.fixedDisabled = quickDrafts.length === 0 || locked ? 'true' : 'false';
+  syncBusinessWriteControls($('#sheet-quick-batch'));
+}
+function openQuickBatch(origin) {
+  if (!quickDrafts.length) { toast('先加入一笔，再查看清单'); return false; }
+  renderQuickBatch();
+  return openSheet($('#sheet-quick-batch'), origin || {
+    source: $('#quickBatchOpen'), resolveSource: () => $('#quickBatchOpen')
+  });
+}
+function editQuickDraft(id) {
+  if (quickBatchSubmitting || quickBatchAwaitingConfirmation) { toast('这批正在等待云端核对，暂时不能修改'); return false; }
+  const entry = quickDrafts.find(item => item.id === id);
+  const trip = S && S.trips.find(item => item.id === quickTripId);
+  if (!entry || !trip) return false;
+  quickEditingId = entry.id;
+  quickCatId = entry.catId;
+  $('#quickNote').value = entry.note || '';
+  $('#quickNoteWrap').style.display = entry.note ? '' : 'none';
+  $('#quickDate').value = entry.date || quickDefaultDate(trip);
+  $('#quickDateWrap').style.display = '';
+  updateQuickDateBtn();
+  if (entry.catId === 'fuel') {
+    quickPadCtl.reset('');
+    resetFuelForm($('#quickFuelForm'), {
+      totalAmount: entry.amount,
+      unitPrice: entry.fuel && entry.fuel.unitPrice || '',
+      liters: entry.fuel && entry.fuel.liters || ''
+    }, false);
+  } else {
+    quickPadCtl.reset(String(entry.amount));
+    resetFuelForm($('#quickFuelForm'), {}, false);
+  }
+  renderQuickChips();
+  closeSheet($('#sheet-quick-batch'));
+  return true;
+}
+function deleteQuickDraft(id) {
+  if (quickBatchSubmitting || quickBatchAwaitingConfirmation) { toast('这批正在等待云端核对，暂时不能移除'); return false; }
+  const index = quickDrafts.findIndex(item => item.id === id);
+  if (index < 0) return false;
+  const removed = quickDrafts.splice(index, 1)[0];
+  if (quickEditingId === id) { quickEditingId = null; resetQuickEntryFields(); }
+  renderQuickBatchBadge();
+  renderQuickBatch();
+  toast('已从清单移除 · ' + catById(removed.catId).name);
+  if (!quickDrafts.length) closeSheet($('#sheet-quick-batch'));
+  return true;
+}
+function quickBatchFailureMessage(result) {
+  if (result && result.conflict) return '云端已有新改动，这批没有覆盖；待核对内容已锁定，请重新加载核对。';
+  if (result && result.validation) return '服务器没有接受这批记录；草稿仍在，可检查后重试。';
+  if (result && result.readonly) return '未收到云端确认；草稿仍在，重新连接后会核对这次提交。';
+  return '这批记录还没有保存；草稿仍在当前页面。';
+}
+function closeQuickFlow() {
+  const targets = [$('#sheet-quick-batch'), $('#sheet-quick')]
+    .filter(element => element && sheetStack.includes(element.id));
+  if (!targets.length) return false;
+  targets.forEach(element => closeSheetVisual(element, { animate: false }));
+  if (historyOK) {
+    expectPop++;
+    try { history.go(-targets.length); } catch (error) {}
+  }
+  return true;
+}
+async function saveQuickBatch() {
+  if (quickBatchSubmitting || !quickDrafts.length) return { ok: false, duplicate: true };
+  if (!guardOnce()) return { ok: false, duplicate: true };
+  const tripId = quickTripId;
+  const entries = JSON.parse(JSON.stringify(quickDrafts));
+  const status = $('#quickBatchStatus');
+  quickBatchSubmitting = true;
+  status.textContent = '正在一次保存 ' + entries.length + ' 笔，等待云端确认…';
+  delete status.dataset.error;
+  $('#sheet-quick-batch').setAttribute('aria-busy', 'true');
+  renderQuickBatch();
   const result = await submitBusinessMutation(draft => {
-    const nextTrip = draft.trips.find(item => item.id === quickTripId);
+    const nextTrip = draft.trips.find(item => item.id === tripId);
     if (!nextTrip) throw new Error('趟次已不存在，请重新加载');
-    nextTrip.expenses.push({ id: entryId, catId: 'fuel', amount: resolved.amount, date, note, fuel: resolved.fuel });
-  }, { kind: 'trip-expense' });
-  if (!result.ok) return;
-  toast('已记上 · 油费 ¥' + resolved.resolved.formatted.totalAmount);
-  closeSheet($('#sheet-quick'));
+    entries.forEach(entry => nextTrip.expenses.push(entry));
+  }, {
+    kind: 'trip-expense-batch',
+    savingText: '正在一次保存 ' + entries.length + ' 笔…'
+  });
+  quickBatchSubmitting = false;
+  $('#sheet-quick-batch').setAttribute('aria-busy', 'false');
+  if (!result.ok) {
+    quickBatchAwaitingConfirmation = Boolean(Store.hasPending);
+    status.textContent = quickBatchFailureMessage(result);
+    status.dataset.error = 'true';
+    renderQuickBatch();
+    return result;
+  }
+  const totalCents = entries.reduce((sum, entry) => sum + Math.round(Number(entry.amount) * 100), 0);
+  clearQuickBatch();
+  closeQuickFlow();
   renderCurrent();
+  toast('已保存全部 ' + entries.length + ' 笔 · ¥' + moneyCents(totalCents));
+  return result;
+}
+function reconcileQuickBatchAfterReconnect() {
+  if (!S || !quickTripId || !quickDrafts.length) return 0;
+  const trip = S.trips.find(item => item.id === quickTripId);
+  if (!trip) return 0;
+  const confirmedIds = new Set(trip.expenses.map(entry => entry.id));
+  if (!quickDrafts.every(entry => confirmedIds.has(entry.id))) return 0;
+  const count = quickDrafts.length;
+  clearQuickBatch();
+  return count;
+}
+async function requestSheetClose(el, options) {
+  if (!el) return false;
+  const opts = options || {};
+  const restoreConsumedHistory = () => {
+    if (!opts.historyConsumed || !historyOK) return false;
+    try { history.pushState({ ttq: sheetStack.length }, ''); return true; }
+    catch (error) { historyOK = false; return false; }
+  };
+  if (quickBatchAwaitingConfirmation && (el.id === 'sheet-quick-batch' || el.id === 'sheet-quick')) {
+    toast('这批已发出，正在等待云端核对，暂时不能退出或修改');
+    restoreConsumedHistory();
+    focusCurrentTopSheet();
+    return false;
+  }
+  if (el.id !== 'sheet-quick' || !quickDrafts.length) {
+    if (opts.historyConsumed) return closeSheetVisual(el, opts);
+    closeSheet(el, opts);
+    return true;
+  }
+  if (quickExitPromptOpen) { restoreConsumedHistory(); return false; }
+  const restoredHistory = restoreConsumedHistory();
+  quickExitPromptOpen = true;
+  const discard = await ask('清单里还有 ' + quickDrafts.length + ' 笔没有保存。退出会丢掉这些草稿，确定退出吗？');
+  quickExitPromptOpen = false;
+  if (!discard) {
+    focusCurrentTopSheet();
+    return false;
+  }
+  clearQuickBatch();
+  if (opts.historyConsumed && !restoredHistory) return closeSheetVisual(el, opts);
+  closeSheet(el, opts);
+  return true;
 }
 
 /* —— 通用金额盘（收入 / 改一笔 / 维修） —— */
@@ -3289,7 +3561,8 @@ function toggleTheme() {
 document.addEventListener('click', async e => {
   const q = sel => e.target.closest(sel);
   let el;
-  if ((el = q('[data-close]'))) { closeSheet(el.closest('.sheet')); return; }
+  if ((el = q('[data-quick-exit]'))) { await requestSheetClose(el.closest('.sheet')); return; }
+  if ((el = q('[data-close]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-act]'))) {
     const act = el.dataset.act;
     if (act === 'quick') {
@@ -3382,8 +3655,13 @@ document.addEventListener('click', async e => {
     return;
   }
   if ((el = q('[data-cat]'))) { quickCatId = el.dataset.cat; renderQuickChips(); return; }
+  if ((el = q('[data-quick-edit]'))) { editQuickDraft(el.dataset.quickEdit); return; }
+  if ((el = q('[data-quick-delete]'))) { deleteQuickDraft(el.dataset.quickDelete); return; }
   if ((el = q('[data-amtcat]'))) { if (amtCfg) { amtCfg.catId = el.dataset.amtcat; renderAmtChips(); updateAmtMode(); } return; }
-  if ((el = q('[data-newexp]'))) { openNewcat({ type: 'expense', mode: 'new', from: 'quick' }); return; }
+  if ((el = q('[data-newexp]'))) {
+    if (quickDrafts.length) { toast('先保存或退出这批，再添加新科目'); return; }
+    openNewcat({ type: 'expense', mode: 'new', from: 'quick' }); return;
+  }
   if ((el = q('[data-amt]'))) {
     if (quickCatId === 'fuel') {
       const input = $('#quickFuelForm [data-fuel-field="totalAmount"]');
@@ -3520,7 +3798,7 @@ document.addEventListener('keydown', e => {
 function closeTopSheet() {
   if (!sheetStack.length) return false;
   const el = document.getElementById(sheetStack[sheetStack.length - 1]);
-  if (el) { closeSheetVisual(el); return true; }
+  if (el) { requestSheetClose(el, { historyConsumed: true }); return true; }
   return false;
 }
 
@@ -3572,7 +3850,7 @@ function initEdgeSwipe() {
       done.style.transform = 'translateX(110%)'; done.style.opacity = '0';
       setTimeout(() => {
         done.style.transition = ''; done.style.transform = ''; done.style.opacity = '';
-        if (sheetStack[sheetStack.length - 1] === done.id) closeSheet(done, { animate: false });
+        if (sheetStack[sheetStack.length - 1] === done.id) requestSheetClose(done, { animate: false });
       }, 180);
     } else { resetDrag(); }
     target = null;
@@ -3603,7 +3881,7 @@ function initPullDown() {
     if (dy >= NEED) {
       el.style.transform = 'translateY(100%)'; el.style.opacity = '0';
       setTimeout(() => { el.style.transition = ''; el.style.transform = ''; el.style.opacity = '';
-        if (sheetStack[sheetStack.length - 1] === el.id) closeSheet(el, { animate: false }); }, 200);
+        if (sheetStack[sheetStack.length - 1] === el.id) requestSheetClose(el, { animate: false }); }, 200);
     } else { el.style.transform = ''; setTimeout(() => el.style.transition = '', 220); }
   }, { passive: true });
 }
@@ -3885,7 +4163,7 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
   updateCloudModeUI('已连接云端账本');
   $$('.js-ver').forEach(el => el.textContent = 'v' + APP_VER);
 
-  quickPadCtl = makePad($('#quickPad'), $('#quickAmt'), $('#quickEq'), '✓ 记 上', quickSave);
+  quickPadCtl = makePad($('#quickPad'), $('#quickAmt'), $('#quickEq'), '＋ 加入清单', quickSave, { localOnly: true });
   amtPadCtl = makePad($('#amtPad'), $('#amtVal'), $('#amtEq'), '✓ 保 存', async v => {
     if (!amtCfg) return;
     const result = await amtCfg.onSave(v, $('#amtDate').value, $('#amtNote').value.trim());
@@ -3907,6 +4185,11 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
   initFuelKeyboard($('#quickFuelForm'), $('#quickFuelSave'));
   initFuelKeyboard($('#amtFuelForm'), $('#amtFuelSave'));
   $('#quickFuelSave').addEventListener('click', quickFuelSave);
+  $('#quickBatchOpen').addEventListener('click', e => openQuickBatch({
+    source: e.currentTarget,
+    resolveSource: () => $('#quickBatchOpen')
+  }));
+  $('#quickBatchSave').addEventListener('click', saveQuickBatch);
   $('#amtFuelSave').addEventListener('click', saveAmtFuel);
 
   $('#themeBtn').addEventListener('click', toggleTheme);

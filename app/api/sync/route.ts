@@ -98,13 +98,13 @@ export async function POST(request: Request): Promise<Response> {
         400,
       );
     }
-    console.error("sync failed", error);
+    console.error("sync failed", error instanceof Error ? error.name : "unknown");
     return secureJson(
       request,
       {
         error: {
           code: "sync_failed",
-          message: "这次没有保存到云端，请检查网络后重试",
+          message: "云端处理失败，保存结果尚未确认；请稍后重新连接核对",
         },
       },
       500,

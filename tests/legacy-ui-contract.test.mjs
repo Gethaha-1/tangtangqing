@@ -135,11 +135,11 @@ test("快记、支出编辑、补录都接入三字段 fuel，普通支出仍保
   assert.match(source, /data-fuel-key="next">下一项/);
   assert.match(source, /\.fuel-pad \+ \.btn \{ margin-top:12px; \}/);
   assert.doesNotMatch(source, /旧油费可只保留总价|旧账可只录总价|油价输 56 会识别为 5\.60/);
-  assert.match(source, /data-business-write>✓ 记 上/);
+  assert.match(source, /id="quickFuelSave">＋ 加入清单/);
   assert.match(source, /setFuelCalculatedStatus\(root, nextCalculated \|\| null\)/);
   assert.match(source, /id="quickPad"/);
   assert.match(source, /id="amtPad"/);
-  assert.match(source, /nextTrip\.expenses\.push\([^\n]*catId: 'fuel'[^\n]*fuel: resolved\.fuel/);
+  assert.match(extractFunction("quickFuelSave"), /stageQuickDraft\([\s\S]*fuel: resolved\.fuel/);
   assert.match(source, /x\.fuel \? \{ fuel: x\.fuel \} : \{\}/);
   assert.match(source, /originalCatId: en\.catId, fuel: en\.fuel \|\| null/);
   assert.match(source, /if \(nextEntry\.catId === 'fuel' && fuel\) nextEntry\.fuel = fuel;\s*else delete nextEntry\.fuel;/);
@@ -147,6 +147,115 @@ test("快记、支出编辑、补录都接入三字段 fuel，普通支出仍保
   assert.match(extractFunction("renderQuickChips"), /<button type="button" class="chip/);
   assert.match(extractFunction("renderAmtChips"), /<button type="button" class="chip/);
   assert.ok(extractFunction("quickFuelSave").indexOf("resolveFuelForm") < extractFunction("quickFuelSave").indexOf("guardOnce"));
+});
+
+test("快记先加入内存清单，编辑保留条目 id，最终只发一个原子提交", async () => {
+  assert.match(source, /id="sheet-quick-batch" role="dialog" aria-modal="true" aria-labelledby="quickBatchTitle"/);
+  assert.match(source, /id="quickBatchSave" data-business-write/);
+  assert.match(source, /一次提交到云端，全部成功后才进入正式账本/);
+  assert.doesNotMatch(extractFunction("quickSave"), /submitBusinessMutation|Store\./);
+  assert.doesNotMatch(extractFunction("quickFuelSave"), /submitBusinessMutation|Store\./);
+  assert.doesNotMatch(extractFunction("stageQuickDraft"), /localStorage|sessionStorage|Store\./);
+
+  const staged = [];
+  const stageContext = compileWithContext(["stageQuickDraft"], {
+    QUICK_BATCH_MAX: 500,
+    quickDrafts: staged,
+    quickEditingId: null,
+    uid: () => "draft-stable-id",
+    resetQuickEntryFields() {},
+    renderQuickBatchBadge() {},
+    catById: () => ({ name: "路桥费" }),
+    fmt: String,
+    toast() {},
+  });
+  assert.equal(stageContext.functions.stageQuickDraft({ catId: "toll", amount: 20, date: "2026-09-04", note: "" }), true);
+  assert.equal(staged[0].id, "draft-stable-id");
+  stageContext.context.quickEditingId = "draft-stable-id";
+  assert.equal(stageContext.functions.stageQuickDraft({ catId: "toll", amount: 25, date: "2026-09-04", note: "改过" }), true);
+  assert.equal(staged.length, 1);
+  assert.equal(staged[0].id, "draft-stable-id");
+  assert.equal(staged[0].amount, 25);
+
+  const makeElements = () => {
+    const status = { textContent: "", dataset: {} };
+    const sheet = { attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
+    return { status, sheet, get: (selector) => selector === "#quickBatchStatus" ? status : sheet };
+  };
+  const draftEntries = [
+    { id: "draft-a", catId: "fuel", amount: 300, date: "2026-09-04", note: "", fuel: { unitPrice: "7.5", liters: "40" } },
+    { id: "draft-b", catId: "toll", amount: 25, date: "2026-09-04", note: "高速" },
+  ];
+  const runSave = async (commitResult) => {
+    const elements = makeElements();
+    const proposal = { trips: [{ id: "trip-1", expenses: [] }] };
+    let writes = 0, cleared = 0, closed = 0, submittedOptions = null;
+    const { functions, context } = compileWithContext(["quickBatchFailureMessage", "saveQuickBatch"], {
+      quickBatchSubmitting: false,
+      quickDrafts: JSON.parse(JSON.stringify(draftEntries)),
+      quickTripId: "trip-1",
+      guardOnce: () => true,
+      $: elements.get,
+      renderQuickBatch() {},
+      submitBusinessMutation: async (mutator, options) => {
+        writes += 1;
+        submittedOptions = options;
+        mutator(proposal);
+        return commitResult;
+      },
+      Store: { hasPending: Boolean(!commitResult.ok && commitResult.readonly) },
+      clearQuickBatch: () => { cleared += 1; },
+      closeQuickFlow: () => { closed = 2; },
+      renderCurrent() {},
+      toast() {},
+      moneyCents: String,
+    });
+    const result = await functions.saveQuickBatch();
+    return { result, context, elements, proposal, writes, cleared, closed, submittedOptions };
+  };
+
+  const failed = await runSave({ ok: false, readonly: true });
+  assert.equal(failed.writes, 1);
+  assert.equal(failed.proposal.trips[0].expenses.length, 2);
+  assert.equal(failed.submittedOptions.kind, "trip-expense-batch");
+  assert.equal(failed.cleared, 0);
+  assert.equal(failed.closed, 0);
+  assert.equal(failed.context.quickDrafts.length, 2);
+  assert.match(failed.elements.status.textContent, /草稿仍在/);
+  assert.equal(failed.elements.status.dataset.error, "true");
+  assert.equal(failed.context.quickBatchAwaitingConfirmation, true);
+
+  const succeeded = await runSave({ ok: true });
+  assert.equal(succeeded.writes, 1);
+  assert.equal(succeeded.cleared, 1);
+  assert.equal(succeeded.closed, 2, "成功后只关闭清单层和快记层");
+  assert.deepEqual(succeeded.proposal.trips[0].expenses.map(entry => entry.id), ["draft-a", "draft-b"]);
+  assert.equal((extractFunction("saveQuickBatch").match(/submitBusinessMutation\(/g) || []).length, 1);
+  assert.doesNotMatch(extractFunction("saveQuickBatch"), /closeAllSheets/);
+
+  const historySteps = [];
+  const closedIds = [];
+  const closeContext = compileWithContext(["closeQuickFlow"], {
+    $: (selector) => ({ id: selector.slice(1) }),
+    sheetStack: ["sheet-trip", "sheet-quick", "sheet-quick-batch"],
+    closeSheetVisual: (element) => { closedIds.push(element.id); },
+    historyOK: true,
+    expectPop: 0,
+    history: { go: (steps) => { historySteps.push(steps); } },
+  });
+  assert.equal(closeContext.functions.closeQuickFlow(), true);
+  assert.deepEqual(closedIds, ["sheet-quick-batch", "sheet-quick"]);
+  assert.deepEqual(historySteps, [-2]);
+  assert.equal(closeContext.context.expectPop, 1);
+});
+
+test("快记清单退出、重连和会话锁定都遵守草稿边界", () => {
+  assert.match(extractFunction("requestSheetClose"), /退出会丢掉这些草稿/);
+  assert.match(extractFunction("requestSheetClose"), /history\.pushState/);
+  assert.match(extractFunction("reconcileQuickBatchAfterReconnect"), /confirmedIds\.has\(entry\.id\)/);
+  assert.match(extractFunction("clearSensitiveClientState"), /clearQuickBatch\(\)/);
+  assert.match(extractFunction("reconnectCloud"), /reconcileQuickBatchAfterReconnect\(\)/);
+  assert.doesNotMatch(source, /localStorage[^\n]*(quickDraft|quickBatch)|sessionStorage[^\n]*(quickDraft|quickBatch)/i);
 });
 
 test("油费数字键盘统一两位显示、智能油价和联算存储精度", () => {
@@ -546,7 +655,7 @@ test("顶层 sheet 圈定 Tab、Escape 走统一历史关闭，IME 不受影响"
       document: documentStub,
       $: () => null,
       TTQUITransition: { focusElement: (element) => { focused = element; activeElement = element; } },
-      closeSheet: (element) => { closed = element; },
+      requestSheetClose: (element) => { closed = element; },
     },
   );
   const event = (key, extras = {}) => ({
@@ -583,7 +692,10 @@ test("顶层 sheet 圈定 Tab、Escape 走统一历史关闭，IME 不受影响"
   const { closeTopSheet } = compile(["closeTopSheet"], {
     sheetStack: ["sheet-trip", "sheet-close", "sheet-close-confirm"],
     document: { getElementById: (id) => ({ id }) },
-    closeSheetVisual: (element) => { visualTarget = element.id; },
+    requestSheetClose: (element, options) => {
+      assert.equal(options.historyConsumed, true);
+      visualTarget = element.id;
+    },
   });
   assert.equal(closeTopSheet(), true);
   assert.equal(visualTarget, "sheet-close-confirm");

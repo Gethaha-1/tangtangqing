@@ -170,6 +170,7 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
         innerHTML: "",
         textContent: "",
         style: {},
+        dataset: {},
         addEventListener() {},
       });
     }
@@ -184,6 +185,7 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
       "vehicleScopeHTML",
       "tripCardHTML",
       "renderQuickChips",
+      "renderQuickBatch",
       "renderVehicles",
       "renderTripDetail",
     ],
@@ -222,9 +224,17 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
       commonAmounts: () => [],
       quickTripId: state.trips[0].id,
       quickCatId: state.categories.expense[0].id,
+      quickDrafts: state.trips[0].expenses,
+      quickBatchSubmitting: false,
+      quickBatchAwaitingConfirmation: false,
       detailTripId: state.trips[0].id,
+      moneyCents: (value) => String(value),
+      unitPriceX10000: (value) => String(value),
+      volumeMl: (value) => String(value),
       closeSheet() {},
       syncBusinessWriteControls() {},
+      renderQuickEntryMode() {},
+      renderQuickBatchBadge() {},
     },
   );
 
@@ -236,12 +246,14 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
   const scopeHtml = functions.vehicleScopeHTML();
   const cardHtml = functions.tripCardHTML(trip);
   functions.renderQuickChips();
+  functions.renderQuickBatch();
   functions.renderVehicles();
   functions.renderTripDetail();
   const rendered = [
     scopeHtml,
     cardHtml,
     element("#quickChips").innerHTML,
+    element("#quickBatchList").innerHTML,
     element("#vehicleList").innerHTML,
     element("#tripDetail").innerHTML,
   ];
@@ -266,6 +278,11 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
   );
   assert.match(quickHtml, /<em>❔<\/em>/);
   assert.match(quickHtml, /油费 &lt;img src=x onerror=/);
+
+  const quickBatchHtml = element("#quickBatchList").innerHTML;
+  assert.ok(quickBatchHtml.includes(`data-quick-draft="${functions.attrEsc(entry.id)}"`));
+  assert.match(quickBatchHtml, /加油 &lt;img src=x onerror=/);
+  assert.match(quickBatchHtml, /aria-label="修改 油费 &lt;img src=x onerror=/);
 
   const vehicleHtml = element("#vehicleList").innerHTML;
   assert.ok(
