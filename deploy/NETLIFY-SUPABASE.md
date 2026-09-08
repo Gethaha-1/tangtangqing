@@ -18,7 +18,16 @@ SQLite、固定测试车主和 `dev:local` 只用于本地 development + loopbac
 
 ## 2. 发布前验证
 
-v1.8.0 已发布；生产 recovery 和 trip-business 增量已按所有者授权执行，marker `[1,2,3]` 已核验。v1.9.0 在现有 JSON 中增加可选市县，并调整后台上传与大键盘，不新增生产变量或 DDL。其他环境仍需按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量；不能发布到缺少 schema marker 2 或 3 的数据库。
+v1.9.0 已于 2026-09-09 发布到原生产站。生产 recovery 和 trip-business 增量此前已按所有者授权执行，marker `[1,2,3]` 已核验。v1.9.0 在现有 JSON 中增加可选市县，并调整后台上传与大键盘，不新增生产变量或 DDL。其他环境仍需按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量；不能发布到缺少 schema marker 2 或 3 的数据库。
+
+### v1.9.0 发布记录（2026-09-09）
+
+- 代码：`develop@74fa1f70d936d1a5729baf979bee72513f0cebac`，已推送 GitHub；没有合并或修改 `main`。
+- 生产站：[趟趟清](https://tangtangqing-supabase-test.netlify.app)。Netlify 部署 `6aa03e7071870f7d50e1c3d6` 已报告 live，使用同一次验证通过的静态文件、Node Functions 和 Edge Functions。
+- 本机：完整自动化、手机尺寸浏览器回归、lint、TypeScript 和 Netlify 生产构建全部通过，部署产物敏感文件扫描通过。
+- 线上只读冒烟：首页与 deployment-info 200，项目仍为 `aacjefpsdfukjitulmsn`；未登录 `/ledger` 及新定位脚本 307 到登录页；bootstrap GET 405、未认证 POST 401。
+- 线上安全头：账本 `geolocation=(self)`，登录页/API `geolocation=()`，未关闭认证或改为本地测试模式。
+- 不用真实生产账目写入验收。第三方地理服务测试为协议夹具，国内手机的定位权限、地址覆盖与网络可达性仍需实际设备核对。
 
 使用 `.nvmrc` 指定的 Node.js 版本。每条命令必须退出码为 0：
 
