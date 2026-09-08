@@ -122,6 +122,10 @@ export function withSecurityHeaders(
   for (const [name, value] of Object.entries(BASE_SECURITY_HEADERS)) {
     headers.set(name, value);
   }
+  const pathname = new URL(request.url).pathname;
+  if (pathname === "/ledger" || pathname.startsWith("/ledger/")) {
+    headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(self), payment=(), usb=()");
+  }
   if (new URL(request.url).protocol === "https:") {
     headers.set(
       "strict-transport-security",

@@ -13,6 +13,7 @@ export const ledgerAssetPairs = [
   [resolve(root, "src", "ui-transition.js"), resolve(target, "ui-transition.js")],
   [resolve(root, "src", "draft-store.js"), resolve(target, "draft-store.js")],
   [resolve(root, "src", "recovery-client.js"), resolve(target, "recovery-client.js")],
+  [resolve(root, "src", "location-client.js"), resolve(target, "location-client.js")],
 ];
 
 export async function prepareLedgerAssets() {

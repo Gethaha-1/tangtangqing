@@ -309,6 +309,10 @@
       handlingNote: safeBusinessText(source.handlingNote, '装卸备注', 300, false),
       note: safeBusinessText(source.note, '地点提醒', 500, false)
     };
+    // Optional v4 extensions: leave legacy region-only records byte-stable.
+    for (const field of ['city', 'county']) {
+      if (source[field] !== undefined) result[field] = safeBusinessText(source[field], field === 'city' ? '市' : '区县', 40, false);
+    }
     if (source.latitude !== undefined && source.latitude !== null && source.latitude !== '') {
       const latitude = Number(source.latitude), longitude = Number(source.longitude);
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||

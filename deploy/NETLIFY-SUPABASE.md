@@ -18,7 +18,7 @@ SQLite、固定测试车主和 `dev:local` 只用于本地 development + loopbac
 
 ## 2. 发布前验证
 
-v1.8.0 第二轮目前仅本地开发，生产仍按上一已发布版本运行。发布新应用前必须先按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量迁移；不能直接发布到缺少 schema marker 2 或 3 的数据库。
+v1.8.0 已发布；生产 recovery 和 trip-business 增量已按所有者授权执行，marker `[1,2,3]` 已核验。v1.9.0 在现有 JSON 中增加可选市县，并调整后台上传与大键盘，不新增生产变量或 DDL。其他环境仍需按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量；不能发布到缺少 schema marker 2 或 3 的数据库。
 
 使用 `.nvmrc` 指定的 Node.js 版本。每条命令必须退出码为 0：
 

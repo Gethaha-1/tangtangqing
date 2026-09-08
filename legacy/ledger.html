@@ -627,13 +627,14 @@ if (location.protocol === 'file:') {
     </div>
     <div class="sec-label">整车运费与按箱位分摊</div>
     <div class="panel">
-      <div class="field"><label>整车原定运费（元）</label><input type="text" inputmode="decimal" id="startTotalFreight" placeholder="例如 6000"></div>
+      <div class="field"><label>整车原定运费（元）</label><input type="text" inputmode="none" readonly data-business-number="2" id="startTotalFreight" placeholder="例如 6000"></div>
       <div id="startAllocationRows"></div>
       <div class="biz-calc" id="startTotals"></div>
       <p class="biz-summary-note">先按箱位分摊整车运费，再分别记录协商抹零。系统尾差按余数从大到小分配到分，绝不算作抹零。</p>
       <p class="biz-status" id="startDraftStatus" role="status" aria-live="polite"></p>
     </div>
     <div class="biz-sticky"><button class="btn" id="btnStartGo" data-business-write>保存清单并发车</button></div>
+    <button type="button" class="btn ghost" data-business-discard="start" style="margin-top:16px">放弃修改</button>
   </div>
 </div>
 
@@ -643,24 +644,25 @@ if (location.protocol === 'file:') {
   <div class="sbody">
     <div class="panel">
       <div class="field"><label>返程货物</label><div class="pill-row" id="returnCargoTypes"></div></div>
-      <div class="frow"><div class="field"><label>装车吨位（吨）</label><input type="text" inputmode="decimal" id="returnLoadedTons" placeholder="30.000"></div><div class="field"><label>单价（元/吨）</label><input type="text" inputmode="decimal" id="returnUnitPrice" placeholder="240.00"></div></div>
+      <div class="frow"><div class="field"><label>装车吨位（吨）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnLoadedTons" placeholder="30.000"></div><div class="field"><label>单价（元/吨）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnUnitPrice" placeholder="240.00"></div></div>
       <div class="biz-calc"><div><span>应收运费</span><b class="num" id="returnReceivable">—</b></div><div><span>首页计入营收</span><b class="num" id="returnEffective">—</b></div><div><span>当前口径</span><b id="returnBasis">待填写</b></div></div>
-      <div class="field"><label>实收运费（可不填；填 0 表示明确实收 0）</label><input type="text" inputmode="decimal" id="returnActual" placeholder="留空则按应收统计"></div>
+      <div class="field"><label>实收运费（可不填；填 0 表示明确实收 0）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnActual" placeholder="留空则按应收统计"></div>
       <div class="sec-label" style="margin:16px 0 4px">称重与掉称 · 选填</div>
-      <div class="frow"><div class="field"><label>卸车吨位（吨）</label><input type="text" inputmode="decimal" id="returnUnloadedTons" placeholder="29.950"></div><div class="field"><label>确认掉称（公斤）</label><input type="text" inputmode="decimal" id="returnLossKg" placeholder="可按两次称重参考"></div></div>
-      <div class="field"><label>协商掉称扣款（元，辅助记录，不重复从营收减）</label><input type="text" inputmode="decimal" id="returnLossDeduction" placeholder="例如 40.00"></div>
+      <div class="frow"><div class="field"><label>卸车吨位（吨）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnUnloadedTons" placeholder="29.950"></div><div class="field"><label>确认掉称（公斤）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnLossKg" placeholder="可按两次称重参考"></div></div>
+      <div class="field"><label>协商掉称扣款（元，辅助记录，不重复从营收减）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnLossDeduction" placeholder="例如 40.00"></div>
       <p class="biz-summary-note" id="returnWeightHint">装、卸车吨位齐全后显示掉称参考；不会自动按公斤扣款。</p>
     </div>
     <div class="sec-label">装卸地点与提醒 · 全部选填</div>
     <div class="panel">
       <div id="returnPickupLocation"></div>
       <div id="returnDeliveryLocation"></div>
-      <p class="biz-summary-note">手动填写始终可用；当前位置只是可跳过的辅助，不持续定位，也不会发送给外部 AI。</p>
+      <p class="biz-summary-note">定位后自动查询市、区县，可手动更正。仅点击并同意后向 BigDataCloud 发送本次坐标，不持续定位。地址数据：BigDataCloud / OpenStreetMap。</p>
     </div>
     <button type="button" class="btn ghost" id="returnStage" style="margin-top:12px">＋ 加入本次清单</button>
     <div class="panel" id="returnStaged" hidden style="margin-top:12px"></div>
     <p class="biz-status" id="returnDraftStatus" role="status" aria-live="polite"></p>
     <div class="biz-sticky"><button type="button" class="btn" id="returnSave" data-business-write>保存并上传</button></div>
+    <button type="button" class="btn ghost" data-business-discard="return" style="margin-top:16px">放弃修改</button>
   </div>
 </div>
 
@@ -703,9 +705,9 @@ if (location.protocol === 'file:') {
 
 <!-- 待保存清单：账号隔离的本机草稿，最终一次提交到云端 -->
 <div class="sheet" id="sheet-quick-batch" role="dialog" aria-modal="true" aria-labelledby="quickBatchTitle">
-  <div class="shead"><button type="button" class="back" data-close aria-label="返回继续添加">‹</button><h3 id="quickBatchTitle">待保存清单</h3></div>
+  <div class="shead"><button type="button" class="back" data-close aria-label="返回并后台上传">‹</button><h3 id="quickBatchTitle">待保存清单</h3></div>
   <div class="sbody">
-    <p class="quick-batch-intro">这些是待保存草稿，还没有进入正式账本。可返回继续添加，也可修改或移除；本机暂存不等于云端保存。</p>
+    <p class="quick-batch-intro">返回即关闭并后台上传已加入清单的记录；下次登录随账号自动加载。未加入的输入只留本机。放弃修改不上传。</p>
     <div class="panel quick-batch-list" id="quickBatchList" role="list" aria-label="待保存记录"></div>
     <div class="panel quick-batch-total">
       <div class="total-line"><span>共 <b class="num" id="quickBatchCount">0</b> 笔</span><b class="big num display" id="quickBatchTotal">¥0</b></div>
@@ -715,7 +717,18 @@ if (location.protocol === 'file:') {
       <small id="quickBatchSaveHint">一次提交到云端，全部成功后才进入正式账本</small>
       <div class="quick-batch-status" id="quickBatchStatus" role="status" aria-live="polite"></div>
     </div>
+    <button type="button" class="btn ghost" id="quickBatchDiscard" style="margin-top:16px">放弃修改</button>
   </div>
+</div>
+
+<!-- 大键盘确认只更新本页，不直接上传 -->
+<div class="sheet" id="sheet-number" role="dialog" aria-modal="true" aria-labelledby="businessNumberTitle">
+  <div class="shead"><button type="button" class="back" data-close aria-label="取消数字输入">‹</button><h3 id="businessNumberTitle">输入数值</h3></div>
+  <div class="sbody"><div class="panel">
+    <div class="amt-line"><span class="amt num display" id="businessNumberValue">0</span></div>
+    <p class="biz-summary-note">清空可保留选填项为空；填 0 表示明确填写零。</p>
+    <div class="pad" id="businessNumberPad" aria-label="业务数字大键盘"></div>
+  </div></div>
 </div>
 
 <!-- 金额盘（收入 / 改一笔 / 维修 通用） -->
@@ -936,10 +949,11 @@ if (location.protocol === 'file:') {
 <script src="/ledger/ui-transition.js"></script>
 <script src="/ledger/draft-store.js"></script>
 <script src="/ledger/recovery-client.js"></script>
+<script src="/ledger/location-client.js"></script>
 <script>
 if (location.protocol !== 'file:') {
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.8.0';
+const APP_VER = '1.9.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 let installPromptEvent = null;
@@ -1102,17 +1116,27 @@ const Store = (() => {
   }
 
   async function finishJournal(action) {
-    if (action.journal) await draftVault.remove(action.journal.id, action.journal.revision);
+    if (action.journal) {
+      const remainder = action.journal.value.remainder;
+      if (remainder) await draftVault.save(action.journal.id, action.journal.kind, remainder, action.journal.revision);
+      else await draftVault.remove(action.journal.id, action.journal.revision);
+    }
     assertActiveGeneration(action.generation);
     if (action.task) serverRestoreJobs = serverRestoreJobs.filter(job => job.id !== action.task.id);
   }
 
   async function rejectJournal(action) {
     if (!action.journal) return;
-    if (action.journal.kind === 'quick') {
+    if (['quick', 'start', 'return'].includes(action.journal.kind)) {
       const value = Object.assign({}, action.journal.value, { pending: null });
-      const saved = await draftVault.save(action.journal.id, 'quick', value, action.journal.revision);
+      delete value.remainder;
+      const saved = await draftVault.save(action.journal.id, action.journal.kind, value, action.journal.revision);
       assertActiveGeneration(action.generation);
+      if (action.draftContext) {
+        action.draftContext.record = saved;
+        action.draftContext.nextRevision = saved.revision;
+        action.draftContext.lastPayload = null;
+      }
       if (quickDraftRecord && quickDraftRecord.id === saved.id) quickDraftRecord = saved;
       if (quickDraftContext && quickDraftContext.id === saved.id) {
         quickDraftContext.record = saved;
@@ -1155,6 +1179,7 @@ const Store = (() => {
     }
     const action = {
       proposal,
+      draftContext: options && options.draftContext,
       baselineRecords: clone(baselineRecords),
       request: {
         operationId: options && options.operationId || operationId(options && options.kind),
@@ -1186,14 +1211,24 @@ const Store = (() => {
         if (quickDraftStorageError) throw quickDraftStorageError;
         const record = quickDraftRecord;
         if (!record) throw new Error('草稿尚未暂存，本次没有发送；请保持页面打开');
-        action.journal = await draftVault.save(record.id, 'quick', Object.assign({}, record.value, { pending: { request: action.request } }), record.revision);
+        action.journal = await draftVault.save(record.id, 'quick', Object.assign({}, record.value, { pending: { request: action.request }, remainder: options.draftRemainder }), record.revision);
         assertActiveGeneration(action.generation);
         quickDraftRecord = action.journal;
         if (quickDraftContext) quickDraftContext.record = action.journal;
+      } else if (options && options.draftContext) {
+        const context = options.draftContext;
+        await context.queue;
+        if (context.error) throw context.error;
+        const record = context.record;
+        if (!record) throw new Error('清单尚未暂存，本次没有发送');
+        action.journal = await draftVault.save(record.id, record.kind,
+          Object.assign({}, record.value, { pending: { request: action.request }, remainder: options.draftRemainder }), record.revision);
+        context.record = action.journal;
       } else {
         action.journal = await draftVault.save(journalId, 'pending', { request: action.request }, 0);
       }
       assertActiveGeneration(action.generation);
+      if (options && options.onQueued) options.onQueued();
       action.sent = true;
       return postAction(action);
     })();
@@ -1290,7 +1325,7 @@ const Store = (() => {
     },
     requestJSON(path, payload) { return http.requestJSON(path, payload); },
     adoptPending(record) {
-      pendingAction = Object.assign({}, record.kind === 'quick' ? record.value.pending : record.value, {
+      pendingAction = Object.assign({}, record.value.pending || record.value, {
         journal: record, generation: sessionGeneration, sent: true
       });
       connection = 'offline';
@@ -1683,7 +1718,10 @@ async function submitBusinessMutation(mutator, options) {
   const result = await Store.commit(proposal, {
     kind: options && options.kind,
     operationId: options && options.operationId,
-    baseVersion: options && options.baseVersion
+    baseVersion: options && options.baseVersion,
+    draftContext: options && options.draftContext,
+    draftRemainder: options && options.draftRemainder,
+    onQueued: options && options.onQueued
   });
   businessBusy = false;
   if (result.ok && (result.generation !== Store.generation || !Store.online))
@@ -1695,7 +1733,7 @@ async function submitBusinessMutation(mutator, options) {
       ? '⚠️ 云端已有新改动，本次没有覆盖；请重新加载核对'
       : (result.validation
         ? '⚠️ ' + (result.error && result.error.message || '服务器未接受，本次没有保存')
-        : '⚠️ ' + (result.error && result.error.message || '未收到云端确认') + '；账本暂时只读，待确认内容保留在当前页面'));
+        : '⚠️ ' + (result.error && result.error.message || '未收到云端确认') + '；账本暂时只读，请在首页“草稿与恢复任务”核对'));
     if (options && options.onFailure) options.onFailure(result, context);
     return result;
   }
@@ -2852,6 +2890,43 @@ function makePad(padEl, dispEl, eqEl, okLabel, onOk, options) {
   };
 }
 
+let businessNumberInput = null, businessNumberText = '', businessNumberReplace = true;
+function openBusinessNumber(input) {
+  const context = input.closest('#sheet-start') ? startCtx : returnCtx;
+  if (!context || context.submitting) return;
+  businessNumberInput = input;
+  businessNumberText = input.value;
+  businessNumberReplace = true;
+  $('#businessNumberTitle').textContent = input.closest('.field').querySelector('label').textContent;
+  $('#businessNumberValue').textContent = businessNumberText || '未填写';
+  $('#businessNumberPad').innerHTML = ['1','2','3','backspace','4','5','6','clear','7','8','9','.'].map(key =>
+    '<button type="button" data-number-key="' + key + '"' + (['backspace','clear','.'].includes(key) ? ' class="fn"' : '') + '>' + ({backspace:'⌫',clear:'清空'}[key] || key) + '</button>').join('')
+    + '<button type="button" class="zero" data-number-key="0">0</button><button type="button" class="ok" data-number-key="ok">确定</button>';
+  openSheet($('#sheet-number'), { source: input, resolveSource: () => input });
+}
+function pressBusinessNumber(key) {
+  const input = businessNumberInput;
+  if (!input || !input.isConnected) return;
+  if (key === 'ok') {
+    input.value = businessNumberText.replace(/\.$/, '');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    businessNumberInput = null;
+    closeSheet($('#sheet-number'));
+    return;
+  }
+  if (key === 'clear') businessNumberText = '';
+  else if (key === 'backspace') businessNumberText = businessNumberText.slice(0, -1);
+  else {
+    let next = businessNumberReplace ? '' : businessNumberText;
+    if (key === '.') { if (!next.includes('.')) next += next ? '.' : '0.'; }
+    else if (/^\d$/.test(key)) next = next === '0' ? key : next + key;
+    const parts = next.split('.');
+    if (parts[0].length <= 9 && (parts[1] || '').length <= Number(input.dataset.businessNumber)) businessNumberText = next;
+  }
+  businessNumberReplace = false;
+  $('#businessNumberValue').textContent = businessNumberText || '未填写';
+}
+
 /* —— 记一笔（快记）：先暂存当前页面，最后一个原子批次提交 —— */
 const QUICK_BATCH_MAX = 500;
 let quickTripId = null, quickCatId = 'fuel', quickPadCtl = null;
@@ -3261,11 +3336,13 @@ function closeQuickFlow() {
   }
   return true;
 }
-async function saveQuickBatch() {
+async function saveQuickBatch(options) {
+  const background = options && options.background === true;
   if (quickBatchSubmitting || !quickDrafts.length) return { ok: false, duplicate: true };
   const currentInput = quickDraftSnapshot();
-  if (currentInput && (currentInput.expression || currentInput.note || currentInput.editingId ||
-      Object.values(currentInput.fuel).some(field => String(field || '').trim()))) {
+  const unfinished = currentInput && (currentInput.expression || currentInput.note || currentInput.editingId ||
+      Object.values(currentInput.fuel).some(field => String(field || '').trim()));
+  if (unfinished && !background) {
     toast('还有未加入清单的输入，请先加入清单或清空输入，再保存全部');
     return { ok: false, validation: true };
   }
@@ -3278,7 +3355,13 @@ async function saveQuickBatch() {
   await persisted;
   if (quickDraftStorageError) { quickBatchSubmitting = false; toast(quickDraftStorageError.message); return { ok: false, validation: true }; }
   const tripId = quickTripId;
-  const entries = JSON.parse(JSON.stringify(quickDrafts));
+  const entries = JSON.parse(JSON.stringify(quickDrafts.filter(entry => !background || entry.id !== quickEditingId)));
+  if (!entries.length) {
+    quickBatchSubmitting = false;
+    if (background) { closeQuickFlow(); clearQuickBatch(); await refreshRecoveryPanel(); }
+    return { ok: true, localOnly: true };
+  }
+  const remainder = unfinished ? Object.assign({}, currentInput, { entries: currentInput.entries.filter(entry => entry.id === currentInput.editingId) }) : null;
   const status = $('#quickBatchStatus');
   quickBatchSubmitting = true;
   status.textContent = '正在一次保存 ' + entries.length + ' 笔，等待云端确认…';
@@ -3291,15 +3374,18 @@ async function saveQuickBatch() {
     entries.forEach(entry => nextTrip.expenses.push(entry));
   }, {
     kind: 'trip-expense-batch',
+    draftRemainder: remainder,
+    onQueued: background ? () => { closeQuickFlow(); clearQuickBatch(); } : null,
     savingText: '正在一次保存 ' + entries.length + ' 笔…'
   });
   quickBatchSubmitting = false;
   $('#sheet-quick-batch').setAttribute('aria-busy', 'false');
   if (!result.ok) {
-    quickBatchAwaitingConfirmation = Boolean(Store.hasPending);
+    quickBatchAwaitingConfirmation = Boolean(quickTripId && Store.hasPending);
     status.textContent = quickBatchFailureMessage(result);
     status.dataset.error = 'true';
     renderQuickBatch();
+    await refreshRecoveryPanel();
     return result;
   }
   const totalCents = entries.reduce((sum, entry) => sum + Math.round(Number(entry.amount) * 100), 0);
@@ -3309,6 +3395,12 @@ async function saveQuickBatch() {
   await refreshRecoveryPanel();
   toast('已保存全部 ' + entries.length + ' 笔 · ¥' + moneyCents(totalCents));
   return result;
+}
+function discardQuickFlow() {
+  if (quickBatchSubmitting || quickBatchAwaitingConfirmation) return;
+  const context = quickDraftContext;
+  closeQuickFlow(); clearQuickBatch();
+  void removeFlowDraft(context).then(refreshRecoveryPanel).catch(() => toast('已退出，未上传；本机草稿未能删除，可在首页丢弃'));
 }
 function reconcileQuickBatchAfterReconnect() {
   if (!S || !quickTripId || !quickDrafts.length) return 0;
@@ -3344,25 +3436,28 @@ async function requestSheetClose(el, options) {
   const flow = el.id === 'sheet-start' && startCtx ? 'start' : el.id === 'sheet-return' && returnCtx ? 'return' : null;
   if (flow) {
     const context = flow === 'start' ? startCtx : returnCtx;
-    const hasUnsaved = flow === 'start'
-      ? context.mode === 'new' || context.dirty
-      : context.dirty || JSON.stringify(context.staged) !== context.savedFingerprint;
-    if (!hasUnsaved) {
-      if (flow === 'start') { startCtx = null; startDraftContext = null; }
-      else { returnCtx = null; returnDraftContext = null; }
-      if (opts.historyConsumed) return closeSheetVisual(el, opts);
-      closeSheet(el, opts); return true;
-    }
-    const restoredHistory = restoreConsumedHistory();
-    if (!await ask('还有未提交的业务清单。暂存并退出后，可在首页继续填写；本机草稿尚未上传。确定暂存退出吗？')) { focusCurrentTopSheet(); return false; }
+    if (context.submitting) { restoreConsumedHistory(); return false; }
     const draftContext = flow === 'start' ? startDraftContext : returnDraftContext;
-    await (flow === 'start' ? persistStartDraft() : persistReturnDraft()).catch(() => {});
-    if (draftContext && draftContext.error) { toast('草稿未能暂存，请勿关闭页面'); return false; }
-    if (flow === 'start') { startCtx = null; startDraftContext = null; }
-    else { returnCtx = null; returnDraftContext = null; }
-    await refreshRecoveryPanel();
-    if (opts.historyConsumed && !restoredHistory) return closeSheetVisual(el, opts);
-    closeSheet(el, opts); return true;
+    const changed = flow === 'start' ? JSON.stringify(startDraftSnapshot()) !== context.initialFingerprint
+      : returnFormFingerprint(context.form) !== context.initialFingerprint || JSON.stringify(context.staged) !== context.savedFingerprint;
+    const upload = changed && (flow === 'start' ? updateStartCalculation().ok
+      : context.staged && JSON.stringify(context.staged) !== context.savedFingerprint);
+    if (upload) {
+      // The immutable, already-added list is submitted; unfinished fields are local only.
+      restoreConsumedHistory();
+      if (flow === 'start') void saveStartManifest();
+      else void saveReturnManifest({ fromBack: true });
+      return true;
+    }
+    const pending = changed ? (flow === 'start' ? persistStartDraft() : persistReturnDraft()) : removeFlowDraft(draftContext);
+    detachBusinessFlow(flow, opts);
+    void pending.catch(() => { if (changed) toast('未加入清单的输入未能暂存；放弃修改不会上传'); }).then(refreshRecoveryPanel);
+    return true;
+  }
+  if ((el.id === 'sheet-quick-batch' || el.id === 'sheet-quick') && quickDrafts.length) {
+    restoreConsumedHistory();
+    void saveQuickBatch({ background: true });
+    return true;
   }
   if (el.id !== 'sheet-quick' || !hasQuickInput()) {
     if (opts.historyConsumed) return closeSheetVisual(el, opts);
@@ -3504,7 +3599,9 @@ function renderBusinessSettings() {
   }).join('') || '<div class="empty-tip" style="padding:16px">可把常一起发车的货主卸货点设为一组</div>';
   $('#businessPlaces').innerHTML = businessSettingsDraft.places.map((place, index) =>
     '<div class="biz-card"><div class="biz-card-head"><b>常用地点 ' + (index + 1) + '</b><button type="button" class="pill" data-business-remove-place="' + attrEsc(place.id) + '">移除</button></div>'
-    + '<div class="frow"><div class="field"><label>市 / 县</label><input type="text" maxlength="80" value="' + attrEsc(place.region || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'region')) + '"></div><div class="field"><label>厂家 / 地点</label><input type="text" maxlength="120" value="' + attrEsc(place.name || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'name')) + '"></div></div>'
+    + '<div class="frow">' + ['city','county'].map(field => '<div class="field"><label>' + (field === 'city' ? '市' : '区 / 县') + '</label><input type="text" maxlength="40" value="' + attrEsc(place[field] || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, field)) + '"></div>').join('') + '</div>'
+    + (place.region && place.city === undefined && place.county === undefined ? '<p class="biz-summary-note">旧版地点原文（保留）：' + esc(place.region) + '</p>' : '')
+    + '<div class="field"><label>厂家 / 地点</label><input type="text" maxlength="120" value="' + attrEsc(place.name || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'name')) + '"></div>'
     + '<div class="field"><label>进出道路</label><input type="text" maxlength="300" value="' + attrEsc(place.roadNote || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'roadNote')) + '"></div>'
     + '<div class="field"><label>装卸情况</label><input type="text" maxlength="300" value="' + attrEsc(place.handlingNote || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'handlingNote')) + '"></div>'
     + '<div class="field"><label>其他提醒</label><input type="text" maxlength="500" value="' + attrEsc(place.note || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'note')) + '"></div></div>'
@@ -3551,9 +3648,32 @@ function persistFlowDraft(context, kind, snapshot, statusSelector) {
   return context.queue;
 }
 async function removeFlowDraft(context) {
-  if (!context || !context.record || !Store.draftVault) return;
+  const vault = Store.draftVault;
+  if (!context || !vault) return;
   await context.queue.catch(() => {});
-  if (context.record) await Store.draftVault.remove(context.record.id, context.record.revision);
+  if (context.record) await vault.remove(context.record.id, context.record.revision);
+}
+function returnFormFingerprint(form) {
+  try { return JSON.stringify(TTQDomain.normalizeTripBusiness({ returnTrip: form }).returnTrip); }
+  catch { return JSON.stringify(form); }
+}
+function detachBusinessFlow(flow, options) {
+  if (flow === 'start') { startCtx = null; startDraftContext = null; }
+  else {
+    if (returnCtx && returnCtx.locationRequests) Object.values(returnCtx.locationRequests).forEach(request => request.abort());
+    returnCtx = null; returnDraftContext = null;
+  }
+  const sheet = $('#sheet-' + flow);
+  if (options && options.historyConsumed) closeSheetVisual(sheet, options);
+  else closeSheet(sheet, options);
+}
+function discardBusinessFlow(flow) {
+  const context = flow === 'start' ? startCtx : returnCtx;
+  if (!context || context.submitting) return;
+  const draft = flow === 'start' ? startDraftContext : returnDraftContext;
+  detachBusinessFlow(flow);
+  // Drain writes already captured before removal; never save or upload on discard.
+  void removeFlowDraft(draft).then(refreshRecoveryPanel).catch(() => toast('已退出，未上传；本机草稿未能删除，可在首页丢弃'));
 }
 
 /* —— 发车清单：货主选择与按箱位分摊全在本机完成 —— */
@@ -3572,13 +3692,17 @@ function openStart(origin, editTripId) {
     totalFreight: outbound ? String(outbound.totalFreight) : '',
     selected: outbound ? cloneJSON(outbound.allocations) : [],
     catalog: cloneJSON(businessCatalog()), calculation: null,
-    dirty: !editing, savedFingerprint: outbound ? JSON.stringify(outbound) : null
+    dirty: false, savedFingerprint: outbound ? JSON.stringify(outbound) : null
   };
-  startDraftContext = newFlowDraftContext('start:' + startCtx.tripId);
+  startDraftContext = newFlowDraftContext('start:' + startCtx.tripId + ':' + uid());
   $('#startTitle').textContent = editing ? '修改发车清单' : '发车清单';
   $('#startDate').value = editing ? editing.startDate : todayStr();
   $('#startTotalFreight').value = startCtx.totalFreight;
   renderStartVehicleChips(); renderStartBusiness(); updateStartTip();
+  startCtx.initialFingerprint = JSON.stringify(startDraftSnapshot());
+  $('#startNewShipper').hidden = true; $('#startAddChoices').hidden = true;
+  ['#startNewShipperName', '#startNewMarketName', '#startNewMarketRegion'].forEach(selector => { $(selector).value = ''; });
+  $('#startDraftStatus').textContent = '返回时后台上传完整清单；放弃修改不上传';
   openSheet($('#sheet-start'), origin);
 }
 function renderStartVehicleChips() {
@@ -3602,7 +3726,7 @@ function renderStartBusiness() {
   }).join('') || '<div class="empty-tip" style="padding:12px">暂无分组，可到“更多”中设置</div>';
   $('#startSelected').innerHTML = startCtx.selected.map(item => '<button type="button" class="biz-circle on" data-start-remove="' + attrEsc(item.id) + '" aria-label="移除 ' + attrEsc(refLabel(item)) + '"><b>' + esc(item.shipperName) + '</b><span>' + esc(item.marketName) + '</span></button>').join('') || '<div class="empty-tip" style="grid-column:1/-1;padding:12px">先选货主分组，或点“＋货主”逐个添加</div>';
   $('#startAddChoices').innerHTML = '<div class="biz-choice-grid">' + businessRefs(startCtx.catalog).map(ref => '<button type="button" class="biz-circle" data-start-add-ref="' + attrEsc(refKey(ref)) + '"><b>' + esc(ref.shipperName) + '</b><span>' + esc(ref.marketName) + '</span></button>').join('') + '</div><button type="button" class="btn ghost sm" data-start-show-new style="margin-top:10px">＋ 新货主卸货点</button>';
-  $('#startAllocationRows').innerHTML = startCtx.selected.map(item => '<div class="biz-card"><div class="biz-card-head"><b>' + esc(refLabel(item)) + '</b></div><div class="frow"><div class="field"><label>箱位</label><input type="text" inputmode="decimal" value="' + attrEsc(item.boxSlots) + '" data-start-box="' + attrEsc(item.id) + '"></div><div class="field"><label>协商抹零（元）</label><input type="text" inputmode="decimal" value="' + attrEsc(item.roundingAmount || '') + '" data-start-round="' + attrEsc(item.id) + '"></div></div><div class="biz-calc"><div><span>分摊运费</span><b class="num" data-start-share="' + attrEsc(item.id) + '">—</b></div><div><span>最终确认</span><b class="num" data-start-final="' + attrEsc(item.id) + '">—</b></div><div><span>卸货点</span><b>' + esc(item.marketRegion || '已选市场') + '</b></div></div></div>').join('') || '<div class="empty-tip" style="padding:12px">清单中还没有货主</div>';
+  $('#startAllocationRows').innerHTML = startCtx.selected.map(item => '<div class="biz-card"><div class="biz-card-head"><b>' + esc(refLabel(item)) + '</b></div><div class="frow"><div class="field"><label>箱位</label><input type="text" inputmode="none" readonly data-business-number="3" value="' + attrEsc(item.boxSlots) + '" data-start-box="' + attrEsc(item.id) + '"></div><div class="field"><label>协商抹零（元）</label><input type="text" inputmode="none" readonly data-business-number="2" value="' + attrEsc(item.roundingAmount || '') + '" data-start-round="' + attrEsc(item.id) + '"></div></div><div class="biz-calc"><div><span>分摊运费</span><b class="num" data-start-share="' + attrEsc(item.id) + '">—</b></div><div><span>最终确认</span><b class="num" data-start-final="' + attrEsc(item.id) + '">—</b></div><div><span>卸货点</span><b>' + esc(item.marketRegion || '已选市场') + '</b></div></div></div>').join('') || '<div class="empty-tip" style="padding:12px">清单中还没有货主</div>';
   updateStartCalculation();
 }
 function updateStartCalculation() {
@@ -3667,12 +3791,12 @@ function refreshBusinessSurfaces(tripId) {
   renderCurrent();
 }
 async function saveStartManifest() {
-  if (!startCtx || !guardOnce('start-manifest-save')) return;
+  if (!startCtx || startCtx.submitting || !guardOnce('start-manifest-save')) return;
   const calculated = updateStartCalculation();
   if (!calculated.ok) { toast(calculated.error.message); return; }
   if (startCtx.mode === 'new' && openTrip(startVehicleId)) { toast(vehicleById(startVehicleId).name + '已有在途的趟'); return; }
-  await persistStartDraft().catch(() => {});
-  if (startDraftContext.error) { toast('草稿未能可靠暂存，请检查浏览器空间后再试'); return; }
+  const context = startCtx, draftContext = startDraftContext;
+  void persistStartDraft().catch(() => {});
   const business = { outbound: {
     cargoType: startCtx.cargoType, totalFreight: calculated.totalFreight,
     allocations: calculated.allocations
@@ -3681,6 +3805,13 @@ async function saveStartManifest() {
   const tripId = startCtx.tripId, vehicleId = startVehicleId, date = $('#startDate').value || todayStr();
   const wasEditing = startCtx.mode === 'edit';
   const catalog = TTQDomain.normalizeBusinessSettings(startCtx.catalog);
+  context.submitting = true;
+  let detached = false;
+  const leave = () => {
+    detached = true;
+    if (startCtx === context) detachBusinessFlow('start');
+    DevicePrefs.activeVehicleId = vehicleId;
+  };
   const result = await submitBusinessMutation(draft => {
     draft.settings.business = catalog;
     let trip = draft.trips.find(item => item.id === tripId);
@@ -3691,11 +3822,10 @@ async function saveStartManifest() {
     trip.startDate = date;
     trip.business = Object.assign({}, trip.business || {}, normalizedBusiness);
     upsertBusinessIncome(trip, 'cargo', 'biz_outbound', normalizedBusiness.outbound.finalTotal, date);
-  }, { kind: 'start-manifest', savingText: '正在一次保存发车资料、货主清单和运费…' });
-  if (!result.ok) { $('#startDraftStatus').textContent = '未获完整确认，草稿仍保留，可明确重试'; return; }
-  await removeFlowDraft(startDraftContext).catch(() => {});
-  const savedVehicleId = vehicleId; startCtx = null; startDraftContext = null;
-  DevicePrefs.activeVehicleId = savedVehicleId; closeSheet($('#sheet-start'));
+  }, { kind: 'start-manifest', draftContext, onQueued: leave, savingText: '发车清单正在后台上传…' });
+  context.submitting = false;
+  if (!result.ok) { await refreshRecoveryPanel(); return; }
+  if (!detached && startCtx === context) { leave(); await removeFlowDraft(draftContext).catch(() => {}); }
   if (wasEditing) refreshBusinessSurfaces(tripId); else showView('home');
   toast(wasEditing ? '发车清单已更新' : '已保存清单并发车 🚚');
   await refreshRecoveryPanel();
@@ -3713,9 +3843,11 @@ function openReturn(tripId, origin) {
   if (!trip) return false;
   const saved = trip.business && trip.business.returnTrip;
   returnCtx = { tripId, form: saved ? cloneJSON(saved) : emptyReturnForm(), staged: saved ? cloneJSON(saved) : null,
-    dirty: !saved, savedFingerprint: saved ? JSON.stringify(saved) : null };
+    dirty: false, savedFingerprint: JSON.stringify(saved || null) };
   if (returnCtx.form.actualReceivedAmount === null) returnCtx.form.actualReceivedAmount = '';
-  returnDraftContext = newFlowDraftContext('return:' + tripId);
+  returnCtx.initialFingerprint = returnFormFingerprint(returnCtx.form);
+  returnDraftContext = newFlowDraftContext('return:' + tripId + ':' + uid());
+  $('#returnDraftStatus').textContent = '加入清单后，返回即后台上传；放弃修改不上传';
   $('#returnTitle').textContent = (saved ? '修改' : '登记') + '返程 · ' + vehicleById(trip.vehicleId).name;
   renderReturnForm();
   return openSheet($('#sheet-return'), origin);
@@ -3726,11 +3858,52 @@ function renderLocationForm(kind, title) {
   const fieldPrefix = kind === 'pickup' ? 'returnPickup' : 'returnDelivery';
   return '<div class="biz-place"><div class="biz-card-head"><h4>' + title + '</h4><button type="button" class="pill" data-return-location-current="' + kind + '">使用当前位置</button></div>'
     + '<div class="field"><label for="' + fieldPrefix + 'Place">选择常用地点（可跳过）</label><select id="' + fieldPrefix + 'Place" data-return-place="' + kind + '"><option value="">手动填写 / 不选择</option>' + places.map(place => '<option value="' + attrEsc(place.id) + '"' + (location.placeId === place.id ? ' selected' : '') + '>' + esc((place.region ? place.region + ' · ' : '') + place.name) + '</option>').join('') + '</select></div>'
-    + '<div class="frow"><div class="field"><label for="' + fieldPrefix + 'Region">市 / 县</label><input id="' + fieldPrefix + 'Region" type="text" maxlength="80" value="' + attrEsc(location.region || '') + '" data-return-location-field="' + kind + '|region"></div><div class="field"><label for="' + fieldPrefix + 'Name">厂家 / 地点</label><input id="' + fieldPrefix + 'Name" type="text" maxlength="120" value="' + attrEsc(location.name || '') + '" data-return-location-field="' + kind + '|name"></div></div>'
+    + '<div class="frow"><div class="field"><label for="' + fieldPrefix + 'City">市</label><input id="' + fieldPrefix + 'City" type="text" maxlength="40" value="' + attrEsc(location.city || '') + '" data-return-location-field="' + kind + '|city"></div><div class="field"><label for="' + fieldPrefix + 'County">区 / 县</label><input id="' + fieldPrefix + 'County" type="text" maxlength="40" value="' + attrEsc(location.county || '') + '" data-return-location-field="' + kind + '|county"></div></div>'
+    + (location.region && location.city === undefined && location.county === undefined ? '<p class="biz-summary-note">旧版地点原文（保留）：' + esc(location.region) + '；可按需在上方拆分填写。</p>' : '')
+    + '<div class="field"><label for="' + fieldPrefix + 'Name">厂家 / 地点</label><input id="' + fieldPrefix + 'Name" type="text" maxlength="120" value="' + attrEsc(location.name || '') + '" data-return-location-field="' + kind + '|name"></div>'
     + '<div class="field"><label for="' + fieldPrefix + 'Road">进出道路</label><input id="' + fieldPrefix + 'Road" type="text" maxlength="300" value="' + attrEsc(location.roadNote || '') + '" data-return-location-field="' + kind + '|roadNote"></div>'
     + '<div class="field"><label for="' + fieldPrefix + 'Handling">装卸情况</label><input id="' + fieldPrefix + 'Handling" type="text" maxlength="300" value="' + attrEsc(location.handlingNote || '') + '" data-return-location-field="' + kind + '|handlingNote"></div>'
     + '<div class="field"><label for="' + fieldPrefix + 'Note">其他提醒</label><input id="' + fieldPrefix + 'Note" type="text" maxlength="500" value="' + attrEsc(location.note || '') + '" data-return-location-field="' + kind + '|note"></div>'
-    + (location.latitude !== undefined ? '<p class="biz-summary-note num">已记录设备位置：' + Number(location.latitude).toFixed(5) + ', ' + Number(location.longitude).toFixed(5) + '</p>' : '') + '</div>';
+    + (location.latitude !== undefined ? '<details class="biz-summary-note"><summary>' + esc(location.region || '已记录坐标，市县可手动补充') + ' · 查看坐标</summary><span class="num">' + Number(location.latitude).toFixed(5) + ', ' + Number(location.longitude).toFixed(5) + '</span></details>' : '') + '</div>';
+}
+function updateLocationRegion(location) {
+  location.region = [location.city, location.county].filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join('');
+}
+async function locateReturn(kind, button) {
+  const context = returnCtx;
+  if (!context || context.submitting) return;
+  if (!await ask('自动填写市县需要把本次设备坐标发送给 BigDataCloud。服务商会收到网络 IP，并使用匿名位置/IP 配对改进定位服务；不发送账号或账目。是否同意本次查询？')) return;
+  if (returnCtx !== context) return;
+  context.locationRequests = context.locationRequests || {};
+  if (context.locationRequests[kind]) context.locationRequests[kind].abort();
+  const controller = new AbortController();
+  context.locationRequests[kind] = controller;
+  const original = cloneJSON(context.form[kind + 'Location'] || {});
+  const stillCurrent = () => returnCtx === context && !context.submitting && !controller.signal.aborted;
+  const untouched = () => ['city','county','region','placeId'].every(field => (context.form[kind + 'Location'] || {})[field] === original[field]);
+  button.disabled = true; button.textContent = '正在定位…';
+  let coordinates;
+  try {
+    const address = await TTQLocation.currentAddress({ signal: controller.signal,
+      onCoordinates: value => { coordinates = value; if (stillCurrent()) button.textContent = '正在查询市县…'; }
+    });
+    if (!stillCurrent() || !untouched()) return;
+    const location = context.form[kind + 'Location'] || (context.form[kind + 'Location'] = {});
+    Object.assign(location, address);
+    updateLocationRegion(location);
+    context.dirty = true; renderReturnForm(); void persistReturnDraft().catch(() => {});
+    toast(address.city && address.county ? '已填写市、区县，请核对' : '已填写可识别地址，缺失项可手动补充');
+  } catch {
+    if (!stillCurrent() || !untouched()) return;
+    if (coordinates) {
+      Object.assign(context.form[kind + 'Location'] || (context.form[kind + 'Location'] = {}), coordinates);
+      context.dirty = true; renderReturnForm(); void persistReturnDraft().catch(() => {});
+    }
+    toast(coordinates ? '已定位，但市县查询失败，可手动填写或稍后重试' : '未取得定位，请检查浏览器位置权限，也可手动填写');
+  } finally {
+    if (context.locationRequests[kind] === controller) delete context.locationRequests[kind];
+    button.disabled = false; button.textContent = '使用当前位置';
+  }
 }
 function renderReturnForm() {
   if (!returnCtx) return;
@@ -3766,6 +3939,7 @@ function persistReturnDraft() {
   return snapshot ? persistFlowDraft(returnDraftContext, 'return', snapshot, '#returnDraftStatus') : Promise.resolve();
 }
 function renderReturnStaged() {
+  if (returnCtx && returnCtx.staged) returnCtx.dirty = returnFormFingerprint(returnCtx.form) !== returnFormFingerprint(returnCtx.staged);
   const box = $('#returnStaged');
   if (!returnCtx || !returnCtx.staged) { box.hidden = true; box.innerHTML = ''; return; }
   const item = returnCtx.staged;
@@ -3780,7 +3954,7 @@ async function stageReturn() {
   try {
     returnCtx.staged = TTQDomain.normalizeTripBusiness({ returnTrip: returnCtx.form }).returnTrip;
     returnCtx.dirty = false; renderReturnStaged(); await persistReturnDraft();
-    toast('返程资料已加入本次清单，尚未上传');
+    toast('已加入清单，返回时自动后台上传');
   } catch (error) { toast(error.message); }
 }
 function saveLocationToCatalog(catalog, location) {
@@ -3793,11 +3967,11 @@ function saveLocationToCatalog(catalog, location) {
   Object.assign(place, stored, { id: place.id, updatedAt: new Date().toISOString() });
   return data;
 }
-async function saveReturnManifest() {
-  if (!returnCtx || !guardOnce('return-manifest-save')) return;
-  if (!returnCtx.staged || returnCtx.dirty) { toast('请先把当前返程资料加入本次清单'); return; }
-  await persistReturnDraft().catch(() => {});
-  if (returnDraftContext.error) { toast('草稿未能可靠暂存，请检查浏览器空间后再试'); return; }
+async function saveReturnManifest(options) {
+  if (!returnCtx || returnCtx.submitting || !guardOnce('return-manifest-save')) return;
+  if (!returnCtx.staged || returnCtx.dirty && !(options && options.fromBack)) { toast('请先把当前返程资料加入本次清单'); return; }
+  const context = returnCtx, draftContext = returnDraftContext;
+  void persistReturnDraft().catch(() => {});
   const tripId = returnCtx.tripId;
   const catalog = cloneJSON(businessCatalog());
   const staged = cloneJSON(returnCtx.staged);
@@ -3805,16 +3979,21 @@ async function saveReturnManifest() {
   staged.deliveryLocation = saveLocationToCatalog(catalog, staged.deliveryLocation);
   const normalizedCatalog = TTQDomain.normalizeBusinessSettings(catalog);
   const normalizedReturn = TTQDomain.normalizeTripBusiness({ returnTrip: staged }).returnTrip;
+  const remainder = context.dirty ? { tripId, form: cloneJSON(context.form), staged: normalizedReturn, dirty: true } : null;
+  context.submitting = true;
+  let detached = false;
+  const leave = () => { detached = true; if (returnCtx === context) detachBusinessFlow('return'); };
   const result = await submitBusinessMutation(draft => {
     const trip = draft.trips.find(item => item.id === tripId);
     if (!trip) throw new Error('趟次已不存在，请重新加载');
     trip.business = Object.assign({}, trip.business || {}, { returnTrip: normalizedReturn });
     upsertBusinessIncome(trip, 'back', 'biz_return', normalizedReturn.effectiveAmount, trip.endDate || todayStr());
     draft.settings.business = normalizedCatalog;
-  }, { kind: 'return-manifest', savingText: '正在一次保存返程、称重、营收和地点资料…' });
-  if (!result.ok) { $('#returnDraftStatus').textContent = '未获完整确认，草稿仍保留，可明确重试'; return; }
-  await removeFlowDraft(returnDraftContext).catch(() => {});
-  returnCtx = null; returnDraftContext = null; closeSheet($('#sheet-return')); refreshBusinessSurfaces(tripId);
+  }, { kind: 'return-manifest', draftContext, draftRemainder: remainder, onQueued: leave, savingText: '返程清单正在后台上传…' });
+  context.submitting = false;
+  if (!result.ok) { await refreshRecoveryPanel(); return; }
+  if (!detached && returnCtx === context) { leave(); if (!remainder) await removeFlowDraft(draftContext).catch(() => {}); }
+  refreshBusinessSurfaces(tripId);
   await refreshRecoveryPanel(); toast('返程清单已保存 · 首页营收已按确认口径更新');
 }
 
@@ -4592,6 +4771,10 @@ document.addEventListener('click', async e => {
     } catch (error) { toast(error.message || '云端任务尚未确认'); }
     return;
   }
+  if ((el = q('[data-business-number]'))) { openBusinessNumber(el); return; }
+  if ((el = q('[data-number-key]'))) { pressBusinessNumber(el.dataset.numberKey); return; }
+  if ((el = q('[data-business-discard]'))) { discardBusinessFlow(el.dataset.businessDiscard); return; }
+  if ((el = q('#quickBatchDiscard'))) { discardQuickFlow(); return; }
   if ((el = q('[data-business-exit],[data-business-settings-exit]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-quick-exit]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-close]'))) { await requestSheetClose(el.closest('.sheet')); return; }
@@ -4783,21 +4966,7 @@ document.addEventListener('click', async e => {
     renderReturnForm(); persistReturnDraft().catch(() => {}); return;
   }
   if ((el = q('[data-return-location-current]'))) {
-    if (!returnCtx) return;
-    const kind = el.dataset.returnLocationCurrent;
-    const expectedContext = returnCtx;
-    if (!navigator.geolocation) { toast('当前设备不支持定位，可继续手动填写'); return; }
-    el.disabled = true;
-    navigator.geolocation.getCurrentPosition(position => {
-      if (returnCtx !== expectedContext) return;
-      const location = returnCtx.form[kind + 'Location'] || (returnCtx.form[kind + 'Location'] = {});
-      location.latitude = Number(position.coords.latitude.toFixed(6));
-      location.longitude = Number(position.coords.longitude.toFixed(6));
-      returnCtx.dirty = true; renderReturnForm(); persistReturnDraft().catch(() => {}); toast('已记录当前位置');
-    }, () => {
-      if (returnCtx !== expectedContext) return;
-      el.disabled = false; toast('未取得定位，不影响手动填写和保存');
-    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    void locateReturn(el.dataset.returnLocationCurrent, el);
     return;
   }
   if ((el = q('[data-bf-vehicle]'))) {
@@ -5023,7 +5192,11 @@ function handleBusinessFieldEvent(event) {
     if (!parsedKey) return;
     const [id, field] = parsedKey;
     const place = businessSettingsDraft.places.find(item => item.id === id);
-    if (place) { place[field] = el.value; place.updatedAt = new Date().toISOString(); markBusinessSettingsDirty(); }
+    if (place) {
+      place[field] = el.value;
+      if (field === 'city' || field === 'county') updateLocationRegion(place);
+      place.updatedAt = new Date().toISOString(); markBusinessSettingsDirty();
+    }
     return;
   }
   if (returnCtx && ['returnLoadedTons','returnUnitPrice','returnActual','returnUnloadedTons','returnLossKg','returnLossDeduction'].includes(el.id)) {
@@ -5036,6 +5209,7 @@ function handleBusinessFieldEvent(event) {
     const [kind, field] = el.dataset.returnLocationField.split('|');
     const location = returnCtx.form[kind + 'Location'] || (returnCtx.form[kind + 'Location'] = {});
     location[field] = el.value; returnCtx.dirty = true;
+    if (field === 'city' || field === 'county') updateLocationRegion(location);
     renderReturnStaged(); persistReturnDraft().catch(() => {});
   }
 }

@@ -672,6 +672,9 @@ function businessLocation(value: unknown): Record<string, unknown> {
     handlingNote: businessText(source.handlingNote, "装卸备注", 300),
     note: businessText(source.note, "地点提醒", 500),
   };
+  for (const field of ["city", "county"]) {
+    if (source[field] !== undefined) result[field] = businessText(source[field], field === "city" ? "市" : "区县", 40);
+  }
   if (source.latitude != null && source.latitude !== "") {
     const latitude = Number(source.latitude);
     const longitude = Number(source.longitude);

@@ -42,4 +42,4 @@ CloudBase、腾讯云容器/CFS 均不是当前部署方案；旧版本 changelo
 
 ## 交付记录
 
-主线本轮开发版本为 1.8.0，Sites 应用版本保持 1.6.1。发布前必须先核对并按顺序应用 recovery 和 trip-business 增量，步骤见 `deploy/RECOVERY-MIGRATION.md` 与 `deploy/TRIP-BUSINESS-MIGRATION.md`。未发布的开发版本不应写成“两站已升级”。
+主线本轮代码版本为 1.9.0，Sites 归档应用仍保持 1.6.1，不参与本次发布。Netlify 对应生产库已经授权完成 recovery 和 trip-business 增量，marker 1/2/3 齐全；1.9.0 复用 JSON 字段，不需要新迁移。部署状态见 `deploy/NETLIFY-SUPABASE.md`，不能写成“两站已升级”。

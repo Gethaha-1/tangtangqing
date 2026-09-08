@@ -1,6 +1,6 @@
 # 测试
 
-适用版本：**v1.8.0 开发中 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
+适用版本：**v1.9.0 · 清单后台提交、服务器确认后生效**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
 
 ## 1. 自动化与构建
 
@@ -21,6 +21,7 @@ git diff --check
 | 文件 | 重点 |
 |---|---|
 | `tests/domain.test.js` | schema v4、去程分摊、返程应收/实收、称重、不重复营收、fuel 与报告 |
+| `tests/location-client.test.mjs` | 中国行政市县/直辖市、GPS-only、定位拒绝/取消/失败、可选字段与旧备份 fingerprint、安全头 |
 | `tests/cloud-sync.test.js` | v4 business/fuel 守恒、expectedVersion、批量快记 diff、回执、严格状态机、JSON 账期安全 |
 | `tests/legacy-ui-contract.test.mjs` | 发车/返程清单、本机草稿/单批提交、fuel UI、收车确认、模态栈与失败留层 |
 | `tests/auth-client.test.js` | 同源 POST、scope 存储、旧键隔离、BFCache 和多标签锁 |
@@ -34,6 +35,8 @@ git diff --check
 | `tests/browser/recovery.spec.mjs` | 真实发车/返程/实收 0 云端回读，以及 IndexedDB、刷新恢复、回执丢失、分块续传、跨标签冲突 |
 
 `test:browser` 使用已安装的 Google Chrome、390×844 视口、独立 loopback 3107 和自动清理的临时 SQLite，不读真实 Supabase。3107 必须空闲；不复用用户开发服务器。测试脚本仅在该隔离进程设置精确 `TTQ_ALLOWED_ORIGINS=http://127.0.0.1:3107`，不要复制到生产。浏览器失败产物在 gitignored `test-results/`；模拟断网用例出现预期网络错误日志不代表验收失败。
+
+v1.9.0 浏览器新增：空返程与改回原样在 IndexedDB 不可用时直接退出、放弃后无上传/无残留草稿、慢回执之前关闭清单、账号重载市县、返程回执丢失仅一条日志且不重复营收、快记返回上传并保留未加入输入、定位结果晚到不覆盖手填、网页大键盘的 0/空值/三位吨位。地理服务只拦截请求使用夹具，测试禁止用服务器或脚本向免费客户端接口发送伪造/预存坐标。
 
 本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；`0002` 保留 fuel 升级，`0003` 增加恢复/revision，`0004` 原位增加两个带 JSON 对象约束的 `business_json` 列。`recovery-schema.test.mjs` 对旧行默认值、约束、触发器幂等与事务回滚做回归。线上 PostgreSQL 分别使用独立 recovery 和 `20260908120000_trip_business.sql` 增量，不能用 SQLite 输出替代。
 

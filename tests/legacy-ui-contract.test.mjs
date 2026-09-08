@@ -295,8 +295,9 @@ test("去程和返程逐字段只写本机草稿，最终按钮各发一个原�
   assert.doesNotMatch(fieldHandler, /submitBusinessMutation/);
   assert.equal((saveStart.match(/submitBusinessMutation/g) || []).length, 1);
   assert.equal((saveReturn.match(/submitBusinessMutation/g) || []).length, 1);
-  assert.match(saveStart, /await persistStartDraft\(\)/);
-  assert.match(saveReturn, /await persistReturnDraft\(\)/);
+  assert.match(saveStart, /persistStartDraft\(\)/);
+  assert.match(saveReturn, /persistReturnDraft\(\)/);
+  for (const save of [saveStart, saveReturn]) assert.match(save, /draftContext,.*onQueued: leave/);
   assert.doesNotMatch(saveStart, /已收车趟次不能修改/);
 });
 

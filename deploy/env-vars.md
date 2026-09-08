@@ -2,7 +2,7 @@
 
 线上变量在 Netlify 站点环境中配置，并确保 Node Functions 可读取。不要把真实值写入仓库、截图、日志或前端代码。
 
-v1.8.0 不增加生产环境变量，但要求数据库内部 schema marker 1/2/3 齐全。先执行经授权的 recovery 增量，再执行 trip-business 增量，见 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 和 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md)。不得通过放宽 Origin、关闭认证或增加管理员权限解决恢复或业务 JSON 校验错误。
+v1.9.0 不增加生产环境变量，但要求数据库内部 schema marker 1/2/3 齐全。当前生产已完成经授权的 recovery 和 trip-business 增量，见 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 和 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md)。新增市县使用已有 JSON，无新数据库迁移。BigDataCloud 仅按次在浏览器调用免密钥的实时设备定位接口，无服务器密钥。不放宽 Origin、关闭认证或增加管理员权限。
 
 ## 生产必填
 
