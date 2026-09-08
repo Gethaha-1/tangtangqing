@@ -2,7 +2,7 @@
 
 线上变量在 Netlify 站点环境中配置，并确保 Node Functions 可读取。不要把真实值写入仓库、截图、日志或前端代码。
 
-v1.7.0 恢复功能不增加生产环境变量，但要求数据库内部 schema marker 2，先执行经授权的增量迁移，见 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md)。分块临时数据会占用数据库容量；未完成任务保留 7 天并在访问时清理，成功后删除分块、保留幂等元信息。不得通过放宽 Origin、关闭认证或增加管理员权限解决恢复超时。
+v1.8.0 不增加生产环境变量，但要求数据库内部 schema marker 1/2/3 齐全。先执行经授权的 recovery 增量，再执行 trip-business 增量，见 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 和 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md)。不得通过放宽 Origin、关闭认证或增加管理员权限解决恢复或业务 JSON 校验错误。
 
 ## 生产必填
 

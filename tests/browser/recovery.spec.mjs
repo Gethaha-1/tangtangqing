@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 function fixture(count = 0, closed = false) {
   return { schemaVersion: 2, settings: { theme: 'day', activeVehicleId: 'all', periodStartDate: '2026-01-01', periodEndDate: '2026-12-31' },
-    categories: { expense: [{ id: 'fuel', name: '油费', icon: '⛽', active: true }, { id: 'toll', name: '路桥费', icon: '路', active: true }], income: [{ id: 'cargo', name: '运费', active: true }] },
+    categories: { expense: [{ id: 'fuel', name: '油费', icon: '⛽', active: true }, { id: 'toll', name: '路桥费', icon: '路', active: true }], income: [{ id: 'cargo', name: '运费', active: true }, { id: 'back', name: '返程收入', active: true }] },
     vehicles: [{ id: 'vehicle_default', name: '本地测试车', plateNo: '', active: true }],
     trips: [{ id: 'test-trip', vehicleId: 'vehicle_default', startDate: '2026-09-01', endDate: closed ? '2026-09-03' : null, status: closed ? 'closed' : 'open',
       expenses: Array.from({ length: count }, (_, i) => ({ id: 'backup-e-' + i, catId: 'toll', amount: 10.25, date: '2026-09-02', note: '隔离备份测试' })), incomes: [] }], maintenance: [] };
@@ -50,6 +50,63 @@ test.beforeEach(async ({ page }) => {
     await post(page, '/api/restore', { action: 'commit', id });
   }
   await page.reload(); await ready(page);
+});
+
+test('one round trip saves outbound allocation and treats explicit return actual 0 as 0', async ({ page }) => {
+  const initial = await post(page, '/api/bootstrap');
+  const initialTrip = initial.records.find(row => row.type === 'trip' && row.id === 'test-trip');
+  await post(page, '/api/sync', { operationId: crypto.randomUUID(), finalize: true, operations: [
+    { op: 'delete', type: 'trip', id: initialTrip.id, expectedVersion: initialTrip.version },
+  ] });
+  await page.reload(); await ready(page);
+  await page.locator('[data-act="start"]').click();
+  await page.locator('#startAddShipper').click();
+  await page.locator('[data-start-show-new]').click();
+  await page.locator('#startNewShipperName').fill('王师傅');
+  await page.locator('#startNewMarketName').fill('北市场');
+  await page.locator('#startNewMarketRegion').fill('济南');
+  await page.locator('#startNewShipperAdd').click();
+  await page.locator('#startTotalFreight').fill('6000');
+  await expect(page.locator('#startTotals')).toContainText('¥6,000');
+  await expect(page.locator('#startDraftStatus')).toContainText('草稿已暂存本机');
+  await page.locator('#btnStartGo').click();
+  await expect(page.locator('#sheet-start')).toBeHidden();
+
+  await page.locator('[data-act="return"][data-trip]').click();
+  await page.locator('#returnLoadedTons').fill('30');
+  await page.locator('#returnUnitPrice').fill('240');
+  await page.locator('#returnActual').fill('0');
+  await page.locator('#returnPickupLocation').getByLabel('市 / 县').fill('德州');
+  await page.locator('#returnPickupLocation').getByLabel('厂家 / 地点').fill('城北粮库');
+  await page.locator('#returnPickupLocation').getByLabel('进出道路').fill('东门限高');
+  await page.locator('#returnDeliveryLocation').getByLabel('市 / 县').fill('济南');
+  await page.locator('#returnDeliveryLocation').getByLabel('厂家 / 地点').fill('南站货场');
+  await expect(page.locator('#returnReceivable')).toHaveText('¥7200.00');
+  await expect(page.locator('#returnEffective')).toHaveText('¥0.00');
+  await expect(page.locator('#returnBasis')).toHaveText('按实收');
+  await page.locator('#returnStage').click();
+  await expect(page.locator('#returnStaged')).toContainText('实收已填，首页按实收');
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+
+  await expect.poll(async () => {
+    const remote = await post(page, '/api/bootstrap');
+    const trip = remote.records.find(row => row.type === 'trip');
+    return trip && trip.data.business;
+  }).toMatchObject({
+    outbound: { totalFreight: 6000, finalTotal: 6000, allocations: [{ shipperName: '王师傅', marketName: '北市场', allocatedAmount: 6000, finalAmount: 6000 }] },
+    returnTrip: { loadedTons: '30', unitPrice: '240', receivableAmount: 7200, actualReceivedAmount: 0, effectiveAmount: 0 },
+  });
+  const remote = await post(page, '/api/bootstrap');
+  expect(remote.records.find(row => row.type === 'fleet_settings').data.business.shippers[0].markets[0].region).toBe('济南');
+  expect(remote.records.find(row => row.type === 'fleet_settings').data.business.places).toHaveLength(2);
+  expect(remote.records.find(row => row.type === 'trip_income' && row.data.categoryId === 'back').data.amount).toBe(0);
+  await page.locator('#nav [data-v="trips"]').click();
+  await page.locator('#tripList [data-trip]').click();
+  await expect(page.locator('#tripDetail')).toContainText('装车位置');
+  await expect(page.locator('#tripDetail')).toContainText('德州 · 城北粮库');
+  await expect(page.locator('#tripDetail')).toContainText('道路：东门限高');
+  await expect(page.locator('#tripDetail')).toContainText('济南 · 南站货场');
 });
 
 test('refresh restores the list, unfinished expression, note and original record IDs', async ({ page }, testInfo) => {

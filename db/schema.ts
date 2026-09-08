@@ -216,6 +216,7 @@ export const fleetSettings = sqliteTable(
     activeVehicleId: text("active_vehicle_id").notNull().default("all"),
     periodStartDate: text("period_start_date").notNull(),
     periodEndDate: text("period_end_date").notNull(),
+    businessJson: text("business_json").notNull().default("{}"),
     initializedAt: text("initialized_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -225,6 +226,10 @@ export const fleetSettings = sqliteTable(
     check(
       "fleet_settings_theme_check",
       sql`${table.theme} IN ('day', 'night')`,
+    ),
+    check(
+      "fleet_settings_business_json_check",
+      sql`json_valid(${table.businessJson}) AND json_type(${table.businessJson}) = 'object'`,
     ),
     check("fleet_settings_version_check", sql`${table.version} > 0`),
   ],
@@ -242,6 +247,7 @@ export const trips = sqliteTable(
     endDate: text("end_date"),
     status: text("status", { enum: ["open", "closed"] }).notNull(),
     closedAt: text("closed_at"),
+    businessJson: text("business_json").notNull().default("{}"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -251,6 +257,10 @@ export const trips = sqliteTable(
     check(
       "trips_status_check",
       sql`${table.status} IN ('open', 'closed')`,
+    ),
+    check(
+      "trips_business_json_check",
+      sql`json_valid(${table.businessJson}) AND json_type(${table.businessJson}) = 'object'`,
     ),
     check("trips_sort_order_check", sql`${table.sortOrder} >= 0`),
     check("trips_version_check", sql`${table.version} > 0`),

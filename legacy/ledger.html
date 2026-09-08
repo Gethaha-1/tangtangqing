@@ -13,7 +13,7 @@
 <title>趟趟清 · 货运账本</title>
 <!--
   ═══════════════════════════════════════════════════
-  趟趟清 v1.6.1 —— 旧版备份恢复优化 · 严格在线写入 · 离线只读 · 原子云端确认
+  趟趟清 v1.8.0 —— 往返业务清单 · 严格在线写入 · 离线只读 · 原子云端确认
   文件结构索引（供后续 AI 迭代定位，详见 ARCHITECTURE.md / AI-GUIDE.md）：
     [CSS-1] 主题令牌（日「宣纸账房」/ 夜「瓷青泥金」双主题）
     [CSS-2] 通用布局 / 组件
@@ -116,9 +116,42 @@ body.theme-day .paper-grid { background-image:
 .pill-row { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; }
 .pill-row::-webkit-scrollbar { display:none; }
 
-input[type=date], input[type=month], input[type=text], input[type=number] {
+.biz-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:10px; }
+.biz-circle { aspect-ratio:1; border-radius:50%; border:1px solid var(--line); background:var(--panel2);
+  color:var(--ink); padding:8px 5px; font-size:12.5px; line-height:1.3; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; overflow:hidden; }
+.biz-circle b { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.biz-circle span { display:block; color:var(--sub); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.biz-circle.on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+.biz-circle.on span { color:inherit; opacity:.82; }
+.biz-card { border-top:1px dashed var(--line); padding:13px 0; }
+.biz-card:first-child { border-top:0; }
+.biz-card-head { display:flex; gap:8px; align-items:center; }
+.biz-card-head b { flex:1; min-width:0; }
+.biz-card-head button { width:auto; }
+.biz-calc { margin-top:8px; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.biz-calc div { background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:8px; text-align:center; }
+.biz-calc span { display:block; font-size:11px; color:var(--sub); }
+.biz-calc b { display:block; margin-top:3px; font-size:14px; overflow-wrap:anywhere; }
+.biz-summary-note { color:var(--sub); font-size:12.5px; line-height:1.6; margin-top:8px; }
+.biz-sticky { position:sticky; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:1;
+  margin-top:14px; padding-top:18px; background:linear-gradient(180deg,transparent,var(--bg) 18%); }
+.biz-status { min-height:1.5em; text-align:center; color:var(--sub); font-size:13px; margin-top:8px; }
+.biz-place { margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); }
+.biz-place h4 { margin-bottom:8px; }
+.biz-inline-actions { display:flex; gap:8px; margin-top:10px; }
+.biz-inline-actions .btn { margin:0; }
+.biz-member-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }
+.biz-check { display:flex; gap:7px; align-items:center; padding:8px; background:var(--panel2); border:1px solid var(--line); border-radius:9px; font-size:13px; }
+.biz-check[hidden] { display:none; }
+.biz-check input { width:18px; height:18px; }
+.income-basis-note { margin-top:8px; color:var(--sub); font-size:12px; text-align:center; }
+@media (max-width:360px) { .biz-choice-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .biz-calc { grid-template-columns:1fr; } }
+
+input[type=date], input[type=month], input[type=text], input[type=number], select, textarea {
   width:100%; border:1px solid var(--line); background:var(--panel2); color:var(--ink);
   border-radius:10px; padding:12px 12px; font-size:16px; }
+textarea { min-height:76px; resize:vertical; }
 .field { margin-top:12px; }
 .field label { display:block; font-size:13px; color:var(--sub); margin-bottom:6px; }
 .frow { display:flex; gap:10px; }
@@ -452,6 +485,7 @@ if (location.protocol === 'file:') {
         <div class="stat"><b id="homeInc">¥0</b><span>总收入</span></div>
         <div class="stat"><b class="exp" id="homeExp">¥0</b><span>总支出</span></div>
       </div>
+      <div class="income-basis-note" id="homeIncomeBasis">营收口径：实收优先，未填实收按应收</div>
       <div class="gauge-wrap" id="homeGaugeWrap">
         <div class="gauge-cap"><span>趟次支出占收入（维修另列）</span><b class="num" id="gaugePct">—</b></div>
         <div class="gauge"><div class="fill" id="gaugeFill"></div></div>
@@ -536,6 +570,7 @@ if (location.protocol === 'file:') {
       <div class="row" data-go="vehicles" role="button" tabindex="0"><span class="ric">🚛</span><div class="rmain"><b>车辆管理</b><span>添加车辆、改名称和车牌、停用旧车</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="period" role="button" tabindex="0"><span class="ric">🗓️</span><div class="rmain"><b>账期设置</b><span id="periodStateTxt">设置趟号和统计的开始、结束日期</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="cats" role="button" tabindex="0"><span class="ric">🏷️</span><div class="rmain"><b>科目管理</b><span>随时添加新费用项目、改名、停用</span></div><span class="rarrow">›</span></div>
+      <div class="row" data-go="business" role="button" tabindex="0"><span class="ric">👥</span><div class="rmain"><b>货主、分组与常用地点</b><span>维护常用市场、快速分组和装卸提醒</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="backfill" role="button" tabindex="0"><span class="ric">📖</span><div class="rmain"><b>补录旧账</b><span>把以前本子上的整趟账搬进来</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="export"><span class="ric">📤</span><div class="rmain"><b>备份数据</b><span>导出成文件，发到微信收藏保存</span></div><span class="rarrow">›</span></div>
       <div class="row" data-go="import"><span class="ric">📥</span><div class="rmain"><b>恢复数据</b><span>换手机后，用备份文件找回全部账</span></div><span class="rarrow">›</span></div>
@@ -568,14 +603,64 @@ if (location.protocol === 'file:') {
 
 <!-- 发车 -->
 <div class="sheet" id="sheet-start">
-  <div class="shead"><button class="back" data-close>‹</button><h3>发车</h3></div>
+  <div class="shead"><button class="back" data-business-exit="start">‹</button><h3 id="startTitle">发车清单</h3></div>
   <div class="sbody">
     <div class="panel">
       <div class="field"><label>选择车辆</label><div class="scope-row" id="startVehicleChips"></div></div>
       <div class="field"><label>发车日期</label><input type="date" id="startDate"></div>
+      <div class="field"><label>去程货物</label><div class="pill-row" id="startCargoTypes"></div></div>
       <div class="now-sub" style="margin-top:10px" id="startSeqTip"></div>
     </div>
-    <button class="btn" id="btnStartGo" data-business-write style="margin-top:14px">🚚 确认发车</button>
+    <div class="sec-label">货主分组 · 点主货主一次带入整组</div>
+    <div class="panel" id="startGroupChoices"></div>
+    <div class="sec-label">本趟发车清单 · 点圆圈只移除这个人</div>
+    <div class="panel">
+      <div class="biz-choice-grid" id="startSelected"></div>
+      <button type="button" class="btn ghost sm" id="startAddShipper" style="margin-top:12px">＋ 货主（每次添加一人）</button>
+      <div id="startAddChoices" hidden></div>
+      <div class="biz-place" id="startNewShipper" hidden>
+        <h4>临时新增货主卸货点</h4>
+        <div class="frow"><div class="field"><label>货主名</label><input type="text" id="startNewShipperName" maxlength="60"></div><div class="field"><label>市场名</label><input type="text" id="startNewMarketName" maxlength="100"></div></div>
+        <div class="field"><label>市 / 县（可不填）</label><input type="text" id="startNewMarketRegion" maxlength="80"></div>
+        <button type="button" class="btn ghost sm" id="startNewShipperAdd">加入本趟清单</button>
+      </div>
+    </div>
+    <div class="sec-label">整车运费与按箱位分摊</div>
+    <div class="panel">
+      <div class="field"><label>整车原定运费（元）</label><input type="text" inputmode="decimal" id="startTotalFreight" placeholder="例如 6000"></div>
+      <div id="startAllocationRows"></div>
+      <div class="biz-calc" id="startTotals"></div>
+      <p class="biz-summary-note">先按箱位分摊整车运费，再分别记录协商抹零。系统尾差按余数从大到小分配到分，绝不算作抹零。</p>
+      <p class="biz-status" id="startDraftStatus" role="status" aria-live="polite"></p>
+    </div>
+    <div class="biz-sticky"><button class="btn" id="btnStartGo" data-business-write>保存清单并发车</button></div>
+  </div>
+</div>
+
+<!-- 返程登记：计费、称重、扣款与地点在同一页，本机试算后一次保存 -->
+<div class="sheet" id="sheet-return">
+  <div class="shead"><button class="back" data-business-exit="return">‹</button><h3 id="returnTitle">登记返程</h3></div>
+  <div class="sbody">
+    <div class="panel">
+      <div class="field"><label>返程货物</label><div class="pill-row" id="returnCargoTypes"></div></div>
+      <div class="frow"><div class="field"><label>装车吨位（吨）</label><input type="text" inputmode="decimal" id="returnLoadedTons" placeholder="30.000"></div><div class="field"><label>单价（元/吨）</label><input type="text" inputmode="decimal" id="returnUnitPrice" placeholder="240.00"></div></div>
+      <div class="biz-calc"><div><span>应收运费</span><b class="num" id="returnReceivable">—</b></div><div><span>首页计入营收</span><b class="num" id="returnEffective">—</b></div><div><span>当前口径</span><b id="returnBasis">待填写</b></div></div>
+      <div class="field"><label>实收运费（可不填；填 0 表示明确实收 0）</label><input type="text" inputmode="decimal" id="returnActual" placeholder="留空则按应收统计"></div>
+      <div class="sec-label" style="margin:16px 0 4px">称重与掉称 · 选填</div>
+      <div class="frow"><div class="field"><label>卸车吨位（吨）</label><input type="text" inputmode="decimal" id="returnUnloadedTons" placeholder="29.950"></div><div class="field"><label>确认掉称（公斤）</label><input type="text" inputmode="decimal" id="returnLossKg" placeholder="可按两次称重参考"></div></div>
+      <div class="field"><label>协商掉称扣款（元，辅助记录，不重复从营收减）</label><input type="text" inputmode="decimal" id="returnLossDeduction" placeholder="例如 40.00"></div>
+      <p class="biz-summary-note" id="returnWeightHint">装、卸车吨位齐全后显示掉称参考；不会自动按公斤扣款。</p>
+    </div>
+    <div class="sec-label">装卸地点与提醒 · 全部选填</div>
+    <div class="panel">
+      <div id="returnPickupLocation"></div>
+      <div id="returnDeliveryLocation"></div>
+      <p class="biz-summary-note">手动填写始终可用；当前位置只是可跳过的辅助，不持续定位，也不会发送给外部 AI。</p>
+    </div>
+    <button type="button" class="btn ghost" id="returnStage" style="margin-top:12px">＋ 加入本次清单</button>
+    <div class="panel" id="returnStaged" hidden style="margin-top:12px"></div>
+    <p class="biz-status" id="returnDraftStatus" role="status" aria-live="polite"></p>
+    <div class="biz-sticky"><button type="button" class="btn" id="returnSave" data-business-write>保存并上传</button></div>
   </div>
 </div>
 
@@ -763,6 +848,25 @@ if (location.protocol === 'file:') {
 </div>
 
 <!-- 科目管理 -->
+<div class="sheet" id="sheet-business">
+  <div class="shead"><button class="back" data-business-settings-exit>‹</button><h3>货主、分组与常用地点</h3></div>
+  <div class="sbody">
+    <div class="banner" style="margin:0 0 12px">这里的增删改先留在本页，点最下面“保存设置”才一次提交。</div>
+    <div class="sec-label" style="margin-top:4px">货主与常用市场</div>
+    <div class="panel" id="businessShippers"></div>
+    <button type="button" class="btn ghost sm" id="businessAddShipper" style="margin-top:10px">＋ 添加货主</button>
+    <div class="sec-label">货主分组</div>
+    <div class="panel" id="businessGroups"></div>
+    <button type="button" class="btn ghost sm" id="businessAddGroup" style="margin-top:10px">＋ 添加分组</button>
+    <div class="sec-label">常用装卸地点</div>
+    <div class="panel" id="businessPlaces"></div>
+    <button type="button" class="btn ghost sm" id="businessAddPlace" style="margin-top:10px">＋ 添加地点</button>
+    <p class="biz-status" id="businessSettingsStatus" role="status" aria-live="polite"></p>
+    <div class="biz-sticky"><button type="button" class="btn" id="businessSettingsSave" data-business-write>保存设置</button></div>
+  </div>
+</div>
+
+<!-- 科目管理 -->
 <div class="sheet" id="sheet-cats">
   <div class="shead"><button class="back" data-close>‹</button><h3>科目管理</h3></div>
   <div class="sbody">
@@ -835,7 +939,7 @@ if (location.protocol === 'file:') {
 <script>
 if (location.protocol !== 'file:') {
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '1.7.0';
+const APP_VER = '1.8.0';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 let installPromptEvent = null;
@@ -1232,7 +1336,7 @@ const Store = (() => {
         return { ok: false, validation: true, error: new Error('上传后守恒核对失败') };
       const stateConservation = TTQCloudSync.compareConservation(data, uploaded);
       if (!stateConservation.equal)
-        return { ok: false, validation: true, error: new Error('上传确认后的金额或 fuel 守恒核对失败') };
+        return { ok: false, validation: true, error: new Error('上传确认后的金额、fuel 或业务资料守恒核对失败') };
       return { ok: true, state: uploaded, conservation: stateConservation, generation };
     },
     useRemote(remote, expectedGeneration) {
@@ -1345,7 +1449,8 @@ function defaultData() {
       lastBackupAt: '',
       activeVehicleId: 'all',
       periodStartDate: period.start,
-      periodEndDate: period.end
+      periodEndDate: period.end,
+      business: { shippers: [], shipperGroups: [], places: [] }
     },
     categories: {
       expense: [
@@ -1364,7 +1469,7 @@ function defaultData() {
       ]
     },
     vehicles: [{ id: 'vehicle_default', name: '一号车', plateNo: '', active: true, createdAt: new Date().toISOString() }],
-    trips: [],       /* {id, vehicleId, startDate, endDate|null, status:'open'|'closed', expenses:[...], incomes:[...], createdAt, closedAt?} */
+    trips: [],       /* 趟次包含 business.outbound / business.returnTrip 往返业务清单 */
     maintenance: []  /* {id, vehicleId, date, amount, note} */
   };
 }
@@ -1452,6 +1557,12 @@ function clearSensitiveClientState(options) {
   const config = options || {};
   sessionLockedPermanently = true;
   clearQuickBatch();
+  startCtx = null;
+  startDraftContext = null;
+  returnCtx = null;
+  returnDraftContext = null;
+  businessSettingsDraft = null;
+  businessSettingsDirty = false;
   recoveryRecords = [];
   serverRestoreJobs = [];
   const recoveryList = document.getElementById('recoveryList');
@@ -1608,6 +1719,7 @@ async function reconnectCloud() {
     DevicePrefs.init(S, Store.storageScope);
     applyTheme();
     const resumedQuickCount = result.resumed ? reconcileQuickBatchAfterReconnect() : 0;
+    const resumedBusinessCount = result.resumed ? await reconcileBusinessDraftsAfterReconnect() : 0;
     renderCurrent();
     await initializeRecovery();
     if (result.resumed) closeAllSheets();
@@ -1615,6 +1727,7 @@ async function reconnectCloud() {
     toast(result.resumed
       ? (resumedQuickCount
         ? '已核对：清单 ' + resumedQuickCount + ' 笔已由云端确认'
+        : resumedBusinessCount ? '已核对：业务清单已由云端确认'
         : '已核对：刚才的记录已由云端确认')
       : '已重新连接云端，可以继续记账');
     return result;
@@ -2246,8 +2359,9 @@ function renderHome() {
       return '<div class="now-trip">'
         + '<div class="vehicle-badge">🚛 ' + esc(vehicleLabel(t.vehicleId)) + '</div>'
         + '<div class="now-head"><i class="dot"></i><b>' + (seq > 0 ? '预计第 ' + seq + ' 趟' : '当前趟') + ' · 在途中</b></div>'
-        + '<div class="now-sub num">' + esc(fmtMD(t.startDate)) + ' 发车 · 第 ' + tripDays(t) + ' 天 · 已记支出 ¥' + fmt(tt.exp) + '（' + t.expenses.length + ' 笔）</div>'
+        + '<div class="now-sub num">' + esc(fmtMD(t.startDate)) + ' 发车 · 第 ' + tripDays(t) + ' 天 · 已记支出 ¥' + fmt(tt.exp) + '（' + t.expenses.length + ' 笔）' + (t.business && t.business.outbound ? ' · 去程 ' + t.business.outbound.allocations.length + ' 个卸货点' : '') + '</div>'
         + '<button class="btn" style="margin-top:12px" data-act="quick" data-trip="' + attrEsc(t.id) + '">＋ 记一笔</button>'
+        + '<button class="btn ghost" data-act="return" data-trip="' + attrEsc(t.id) + '">' + (t.business && t.business.returnTrip ? '修改返程清单' : '登记返程') + '</button>'
         + '<div class="close-action home-close-action"><button type="button" class="btn" data-act="openclose" data-trip="' + attrEsc(t.id) + '" data-business-write aria-haspopup="dialog" aria-controls="sheet-close">🏁 确认收车</button></div>'
         + '</div>';
     }).join('') + (canStartAnother ? '<button class="btn ghost" style="margin-top:12px" data-act="start">＋ 另一辆车发车</button>' : '');
@@ -2312,6 +2426,23 @@ function tripCardHTML(t) {
     + '<div class="trip-profit"><span>利 润</span><b class="num display' + (tt.profit < 0 ? ' loss' : '') + '">' + (tt.profit >= 0 ? '+' : '−') + fmt(Math.abs(tt.profit)) + '</b></div></div></div>';
 }
 
+function businessLocationSummaryHTML(label, location) {
+  const value = location || {};
+  const title = [value.region, value.name].filter(Boolean).join(' · ');
+  const notes = [
+    value.roadNote ? '道路：' + value.roadNote : '',
+    value.handlingNote ? '装卸：' + value.handlingNote : '',
+    value.note ? '提醒：' + value.note : ''
+  ].filter(Boolean);
+  const coordinates = value.latitude !== undefined
+    ? Number(value.latitude).toFixed(5) + ', ' + Number(value.longitude).toFixed(5)
+    : '';
+  if (!title && !notes.length && !coordinates) return '';
+  return '<div class="biz-place"><div class="total-line"><span>' + esc(label) + '</span><b>' + esc(title || '已记录位置') + '</b></div>'
+    + notes.map(note => '<p class="biz-summary-note">' + esc(note) + '</p>').join('')
+    + (coordinates ? '<p class="biz-summary-note num">设备位置：' + esc(coordinates) + '</p>' : '') + '</div>';
+}
+
 /* ---- 趟次详情 ---- */
 function renderTripDetail() {
   const t = S.trips.find(x => x.id === detailTripId);
@@ -2327,12 +2458,36 @@ function renderTripDetail() {
     + '<div class="field"><label>到家日期</label><input type="date" id="dEnd" data-business-write' + (open ? ' data-fixed-disabled="true"' : '') + ' value="' + attrEsc(t.endDate || '') + '"' + (open ? ' disabled placeholder="收车时填"' : '') + '></div>'
     + '</div></div>';
 
+  const outbound = t.business && t.business.outbound;
+  const backhaul = t.business && t.business.returnTrip;
+  if (outbound) {
+    h += '<div class="sec-label">去程发车清单</div><div class="panel">'
+      + outbound.allocations.map(item => '<div class="total-line"><span>' + esc(refLabel(item)) + ' · ' + esc(item.boxSlots) + ' 箱位</span><b class="num">¥' + fmt(item.finalAmount) + '</b></div>').join('')
+      + '<div class="total-line"><span>' + esc(OUTBOUND_CARGO_LABELS[outbound.cargoType] || '去程货物') + ' · 整车原定 / 抹零 / 最终</span><b class="num">¥' + fmt(outbound.totalFreight) + ' / −¥' + fmt(outbound.roundingTotal) + ' / ¥' + fmt(outbound.finalTotal) + '</b></div>'
+      + '<button type="button" class="btn ghost sm" data-act="editoutbound" data-trip="' + attrEsc(t.id) + '">修改发车清单</button></div>';
+  }
+  if (backhaul) {
+    const weightNotes = [];
+    if (backhaul.unloadedTons !== '') weightNotes.push('卸车 ' + backhaul.unloadedTons + ' 吨');
+    if (backhaul.lossReferenceKg !== '') weightNotes.push('掉称参考 ' + backhaul.lossReferenceKg + ' 公斤');
+    if (backhaul.lossKg !== '') weightNotes.push('确认掉称 ' + backhaul.lossKg + ' 公斤');
+    if (backhaul.weightGainConfirmed) weightNotes.push('增重已人工核对');
+    if (backhaul.lossDeductionAmount !== null) weightNotes.push('协商扣款 ¥' + fmt(backhaul.lossDeductionAmount) + '（仅说明，不重复扣减营收）');
+    h += '<div class="sec-label">返程清单</div><div class="panel"><div class="total-line"><span>' + esc(RETURN_CARGO_LABELS[backhaul.cargoType] || '返程货物') + ' · ' + esc(backhaul.loadedTons) + ' 吨 × ¥' + esc(backhaul.unitPrice) + '</span><b class="num">应收 ¥' + fmt(backhaul.receivableAmount) + '</b></div>'
+      + '<div class="total-line"><span>营收口径</span><b class="num">' + (backhaul.actualReceivedAmount === null ? '未填实收，按应收 ¥' + fmt(backhaul.effectiveAmount) : '按实收 ¥' + fmt(backhaul.effectiveAmount)) + '</b></div>'
+      + (weightNotes.length ? '<p class="biz-summary-note">' + esc(weightNotes.join(' · ')) + '</p>' : '')
+      + businessLocationSummaryHTML('装车位置', backhaul.pickupLocation)
+      + businessLocationSummaryHTML('卸车位置', backhaul.deliveryLocation)
+      + '<button type="button" class="btn ghost sm" data-act="return" data-trip="' + attrEsc(t.id) + '">修改返程清单</button></div>';
+  }
+
   /* 收入：每类一行，点了改 */
   h += '<div class="sec-label">收入</div><div class="panel">';
   S.categories.income.filter(c => c.active || t.incomes.some(e => e.catId === c.id)).forEach(c => {
-    const sum = t.incomes.filter(e => e.catId === c.id).reduce((s, e) => s + e.amount, 0);
-    h += '<div class="row" data-inccat="' + attrEsc(c.id) + '" role="button" tabindex="0"><span class="ric">' + safeIconText(c.icon) + '</span>'
-      + '<div class="rmain"><b>' + esc(c.name) + '</b></div>'
+    const managed = c.id === 'cargo' && outbound || c.id === 'back' && backhaul;
+    const sum = c.id === 'cargo' && outbound ? outbound.finalTotal : (c.id === 'back' && backhaul ? backhaul.effectiveAmount : t.incomes.filter(e => e.catId === c.id).reduce((s, e) => s + e.amount, 0));
+    h += '<div class="row" data-inccat="' + attrEsc(c.id) + '"' + (managed ? ' data-managed-income="true"' : '') + ' role="button" tabindex="0"><span class="ric">' + safeIconText(c.icon) + '</span>'
+      + '<div class="rmain"><b>' + esc(c.name) + '</b>' + (managed ? '<span>由业务清单计算，点此返回清单修改</span>' : '') + '</div>'
       + '<span class="ramt num">¥' + fmt(sum) + '</span><span class="rarrow">›</span></div>';
   });
   h += '</div>';
@@ -2456,8 +2611,12 @@ function renderMore() {
 
 /* ================= [JS-4] 数字键盘 / 滑动收车 / 交互动作 ================= */
 /* —— 防连点 / 防穿透 —— */
-let _lockAt = 0;
-function guardOnce() { const n = Date.now(); if (n - _lockAt < 600) return false; _lockAt = n; return true; }
+const _lockAt = Object.create(null);
+function guardOnce(key) {
+  const lockKey = key || 'global', n = Date.now();
+  if (n - (_lockAt[lockKey] || 0) < 600) return false;
+  _lockAt[lockKey] = n; return true;
+}
 function tapShield(duration) {
   const d = document.createElement('div');
   d.style.cssText = 'position:fixed;inset:0;z-index:99;background:transparent';
@@ -2757,8 +2916,10 @@ async function refreshRecoveryPanel() {
     panel.hidden = !records.length && !serverRestoreJobs.length;
     message.textContent = '本机草稿仅属于当前账号，不是云端备份。待核对的提交请先查询服务器，勿重复记账。';
     list.innerHTML = records.map(record => {
-      const pending = record.kind !== 'quick' || record.value.pending;
+      const pending = isPendingRecoveryRecord(record);
       const label = record.kind === 'restore' ? '备份恢复尚待完成' : pending ? '提交结果尚待核对'
+        : record.kind === 'start' ? '未提交草稿 · 发车清单 · ' + (record.value.selected || []).length + ' 个卸货点'
+        : record.kind === 'return' ? '未提交草稿 · 返程称重与运费'
         : '未提交草稿 · ' + (record.value.entries || []).length + ' 笔' + (record.value.expression || record.value.note ? ' · 含未加入清单的输入' : '');
       return '<div style="padding:10px 0;border-top:1px solid var(--line)"><p style="margin:0 0 8px">' + esc(label) + '</p>'
         + '<button class="pill" data-recovery-resume="' + attrEsc(record.id) + '">' + (pending ? '核对并继续' : '继续填写') + '</button> '
@@ -2775,6 +2936,9 @@ async function refreshRecoveryPanel() {
     panel.hidden = false;
     message.textContent = '本机暂存不可用：' + error.message;
   }
+}
+function isPendingRecoveryRecord(record) {
+  return Boolean(record && (record.kind === 'pending' || record.kind === 'restore' || record.value && record.value.pending));
 }
 async function recoverQuickDraft(record) {
   if (!canStartBusinessWrite()) return;
@@ -2799,10 +2963,84 @@ async function recoverQuickDraft(record) {
   if (quickDrafts.some(entry => !S.categories.expense.some(cat => cat.id === entry.catId && cat.active)))
     toast('部分科目已停用，请修改相关草稿的科目后再保存');
 }
+async function recoverStartDraft(record) {
+  if (!canStartBusinessWrite()) return;
+  const data = record && record.value || {};
+  const vehicle = S.vehicles.find(item => item.id === data.vehicleId);
+  const editing = data.mode === 'edit';
+  const trip = editing && S.trips.find(item => item.id === data.tripId);
+  if (!vehicle || editing && (!trip || trip.vehicleId !== data.vehicleId)) {
+    toast('原车辆或趟次已变化，请先导出草稿核对；不会自动记到其他趟');
+    return;
+  }
+  if (!editing && S.trips.some(item => item.id === data.tripId)) {
+    toast('这份发车清单已在正式账本中，正在清理重复草稿');
+    await Store.draftVault.remove(record.id, record.revision);
+    return;
+  }
+  startVehicleId = data.vehicleId;
+  startCtx = {
+    mode: editing ? 'edit' : 'new', tripId: data.tripId,
+    cargoType: data.cargoType || 'produce', totalFreight: String(data.totalFreight || ''),
+    selected: cloneJSON(data.selected || []), catalog: cloneJSON(data.catalog || businessCatalog()),
+    calculation: null, dirty: true, savedFingerprint: null
+  };
+  startDraftContext = newFlowDraftContext(record.id, record);
+  startDraftContext.lastPayload = JSON.stringify(data);
+  $('#startTitle').textContent = editing ? '继续修改发车清单' : '继续发车清单';
+  $('#startDate').value = data.startDate || trip && trip.startDate || todayStr();
+  $('#startTotalFreight').value = startCtx.totalFreight;
+  renderStartVehicleChips(); renderStartBusiness(); updateStartTip();
+  openSheet($('#sheet-start'));
+}
+async function recoverReturnDraft(record) {
+  if (!canStartBusinessWrite()) return;
+  const data = record && record.value || {};
+  const trip = S.trips.find(item => item.id === data.tripId);
+  if (!trip) { toast('原趟次已删除，请先导出草稿核对'); return; }
+  returnCtx = {
+    tripId: data.tripId,
+    form: cloneJSON(data.form || emptyReturnForm()),
+    staged: data.staged ? cloneJSON(data.staged) : null,
+    dirty: data.dirty !== false,
+    savedFingerprint: null
+  };
+  if (returnCtx.form.actualReceivedAmount === null) returnCtx.form.actualReceivedAmount = '';
+  returnDraftContext = newFlowDraftContext(record.id, record);
+  returnDraftContext.lastPayload = JSON.stringify(data);
+  $('#returnTitle').textContent = '继续返程登记 · ' + vehicleById(trip.vehicleId).name;
+  renderReturnForm();
+  openSheet($('#sheet-return'));
+}
+async function reconcileBusinessDraftsAfterReconnect() {
+  if (!S || !Store.draftVault) return 0;
+  let records;
+  try { records = await Store.draftVault.list(); } catch (error) { return 0; }
+  let removed = 0;
+  for (const record of records) {
+    if (record.kind !== 'start' && record.kind !== 'return') continue;
+    const value = record.value || {};
+    const trip = S.trips.find(item => item.id === value.tripId);
+    if (!trip) continue;
+    try {
+      const expected = record.kind === 'start'
+        ? TTQDomain.normalizeTripBusiness({ outbound: { cargoType: value.cargoType, totalFreight: value.totalFreight, allocations: value.selected } }).outbound
+        : value.staged && value.dirty === false
+          ? TTQDomain.normalizeTripBusiness({ returnTrip: value.staged }).returnTrip
+          : null;
+      const actual = record.kind === 'start' ? trip.business && trip.business.outbound : trip.business && trip.business.returnTrip;
+      if (expected && actual && JSON.stringify(expected) === JSON.stringify(actual)) {
+        await Store.draftVault.remove(record.id, record.revision);
+        removed++;
+      }
+    } catch (error) { /* 保留无法确认的草稿供人工核对。 */ }
+  }
+  return removed;
+}
 async function initializeRecovery() {
   await refreshRecoveryPanel();
   if (!S || !Store.draftVault) return;
-  const pending = recoveryRecords.find(record => record.kind !== 'quick' || record.value.pending);
+  const pending = recoveryRecords.find(isPendingRecoveryRecord);
   if (pending) { Store.adoptPending(pending); updateCloudModeUI('发现尚待核对的提交，请在首页“草稿与恢复任务”继续'); }
 }
 function clearQuickBatch() {
@@ -3096,6 +3334,36 @@ async function requestSheetClose(el, options) {
     focusCurrentTopSheet();
     return false;
   }
+  if (el.id === 'sheet-business' && businessSettingsDirty) {
+    const restoredHistory = restoreConsumedHistory();
+    if (!await ask('货主、分组或地点有未保存修改。确定放弃并退出吗？')) { focusCurrentTopSheet(); return false; }
+    businessSettingsDraft = null; businessSettingsDirty = false;
+    if (opts.historyConsumed && !restoredHistory) return closeSheetVisual(el, opts);
+    closeSheet(el, opts); return true;
+  }
+  const flow = el.id === 'sheet-start' && startCtx ? 'start' : el.id === 'sheet-return' && returnCtx ? 'return' : null;
+  if (flow) {
+    const context = flow === 'start' ? startCtx : returnCtx;
+    const hasUnsaved = flow === 'start'
+      ? context.mode === 'new' || context.dirty
+      : context.dirty || JSON.stringify(context.staged) !== context.savedFingerprint;
+    if (!hasUnsaved) {
+      if (flow === 'start') { startCtx = null; startDraftContext = null; }
+      else { returnCtx = null; returnDraftContext = null; }
+      if (opts.historyConsumed) return closeSheetVisual(el, opts);
+      closeSheet(el, opts); return true;
+    }
+    const restoredHistory = restoreConsumedHistory();
+    if (!await ask('还有未提交的业务清单。暂存并退出后，可在首页继续填写；本机草稿尚未上传。确定暂存退出吗？')) { focusCurrentTopSheet(); return false; }
+    const draftContext = flow === 'start' ? startDraftContext : returnDraftContext;
+    await (flow === 'start' ? persistStartDraft() : persistReturnDraft()).catch(() => {});
+    if (draftContext && draftContext.error) { toast('草稿未能暂存，请勿关闭页面'); return false; }
+    if (flow === 'start') { startCtx = null; startDraftContext = null; }
+    else { returnCtx = null; returnDraftContext = null; }
+    await refreshRecoveryPanel();
+    if (opts.historyConsumed && !restoredHistory) return closeSheetVisual(el, opts);
+    closeSheet(el, opts); return true;
+  }
   if (el.id !== 'sheet-quick' || !hasQuickInput()) {
     if (opts.historyConsumed) return closeSheetVisual(el, opts);
     closeSheet(el, opts);
@@ -3178,27 +3446,197 @@ async function saveAmtFuel() {
   if (!result || result.ok) closeSheet($('#sheet-amt'));
 }
 
-/* —— 发车 —— */
-let startVehicleId = null;
-function openStart(origin) {
+/* —— 第二轮业务资料：货主、分组与常用地点 —— */
+const OUTBOUND_CARGO_LABELS = { produce: '拉菜（常用）', general: '普货', other: '其他' };
+const RETURN_CARGO_LABELS = { corn: '玉米', corn_flakes: '玉米压片', soybean: '黄豆', rice: '大米', general: '普货', other: '其他' };
+let businessSettingsDraft = null, businessSettingsDirty = false;
+function cloneJSON(value) { return JSON.parse(JSON.stringify(value)); }
+function businessCatalog(source) {
+  const value = source || S && S.settings && S.settings.business || {};
+  return {
+    shippers: Array.isArray(value.shippers) ? value.shippers : [],
+    shipperGroups: Array.isArray(value.shipperGroups) ? value.shipperGroups : [],
+    places: Array.isArray(value.places) ? value.places : []
+  };
+}
+function businessRefs(catalog) {
+  return businessCatalog(catalog).shippers.flatMap(shipper =>
+    (shipper.markets || []).map(market => ({
+      shipperId: shipper.id, shipperName: shipper.name,
+      marketId: market.id, marketName: market.name, marketRegion: market.region || ''
+    }))
+  );
+}
+function tupleKey() { return JSON.stringify(Array.from(arguments, value => String(value == null ? '' : value))); }
+function parseTupleKey(value, size) {
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    return Array.isArray(parsed) && parsed.length === size && parsed.every(item => typeof item === 'string') ? parsed : null;
+  } catch (_) { return null; }
+}
+function refKey(ref) { return tupleKey(ref && ref.shipperId, ref && ref.marketId); }
+function refLabel(ref) { return (ref && ref.shipperName || '货主') + ' / ' + (ref && ref.marketName || '市场'); }
+function openBusinessSettings(origin) {
+  if (!canStartBusinessWrite()) return false;
+  businessSettingsDraft = cloneJSON(businessCatalog());
+  businessSettingsDirty = false;
+  $('#businessSettingsStatus').textContent = '本页修改尚未上传';
+  renderBusinessSettings();
+  return openSheet($('#sheet-business'), origin);
+}
+function renderBusinessSettings() {
+  if (!businessSettingsDraft) return;
+  $('#businessShippers').innerHTML = businessSettingsDraft.shippers.map((shipper, shipperIndex) =>
+    '<div class="biz-card"><div class="biz-card-head"><b>货主 ' + (shipperIndex + 1) + '</b><button type="button" class="pill" data-business-remove-shipper="' + attrEsc(shipper.id) + '">移除</button></div>'
+    + '<div class="field"><label>货主名称</label><input type="text" maxlength="60" value="' + attrEsc(shipper.name) + '" data-business-shipper-name="' + attrEsc(shipper.id) + '"></div>'
+    + (shipper.markets || []).map((market, marketIndex) => '<div class="biz-place"><div class="biz-card-head"><b>常用市场 ' + (marketIndex + 1) + '</b><button type="button" class="pill" data-business-remove-market="' + attrEsc(refKey({ shipperId: shipper.id, marketId: market.id })) + '">移除</button></div>'
+      + '<div class="frow"><div class="field"><label>市场名称</label><input type="text" maxlength="100" value="' + attrEsc(market.name) + '" data-business-market-name="' + attrEsc(refKey({ shipperId: shipper.id, marketId: market.id })) + '"></div>'
+      + '<div class="field"><label>市 / 县</label><input type="text" maxlength="80" value="' + attrEsc(market.region || '') + '" data-business-market-region="' + attrEsc(refKey({ shipperId: shipper.id, marketId: market.id })) + '"></div></div></div>').join('')
+    + '<button type="button" class="btn ghost sm" data-business-add-market="' + attrEsc(shipper.id) + '" style="margin-top:10px">＋ 给这位货主添加市场</button></div>'
+  ).join('') || '<div class="empty-tip" style="padding:16px">还没有货主，先添加货主和至少一个常用市场</div>';
+  const refs = businessRefs(businessSettingsDraft);
+  $('#businessGroups').innerHTML = businessSettingsDraft.shipperGroups.map((group, groupIndex) => {
+    const mainKey = refKey(group.mainRef);
+    return '<div class="biz-card"><div class="biz-card-head"><b>分组 ' + (groupIndex + 1) + '</b><button type="button" class="pill" data-business-remove-group="' + attrEsc(group.id) + '">移除</button></div>'
+      + '<div class="field"><label>分组名称</label><input type="text" maxlength="60" value="' + attrEsc(group.name) + '" data-business-group-name="' + attrEsc(group.id) + '"></div>'
+      + '<div class="field"><label>主货主入口</label><select data-business-group-main="' + attrEsc(group.id) + '">' + refs.map(ref => '<option value="' + attrEsc(refKey(ref)) + '"' + (refKey(ref) === mainKey ? ' selected' : '') + '>' + esc(refLabel(ref)) + '</option>').join('') + '</select></div>'
+      + '<div class="biz-member-grid">' + refs.map(ref => '<label class="biz-check"><input type="checkbox" data-business-group-member="' + attrEsc(tupleKey(group.id, refKey(ref))) + '"' + ((group.members || []).some(item => refKey(item) === refKey(ref)) ? ' checked' : '') + '><span>' + esc(refLabel(ref)) + '</span></label>').join('') + '</div></div>';
+  }).join('') || '<div class="empty-tip" style="padding:16px">可把常一起发车的货主卸货点设为一组</div>';
+  $('#businessPlaces').innerHTML = businessSettingsDraft.places.map((place, index) =>
+    '<div class="biz-card"><div class="biz-card-head"><b>常用地点 ' + (index + 1) + '</b><button type="button" class="pill" data-business-remove-place="' + attrEsc(place.id) + '">移除</button></div>'
+    + '<div class="frow"><div class="field"><label>市 / 县</label><input type="text" maxlength="80" value="' + attrEsc(place.region || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'region')) + '"></div><div class="field"><label>厂家 / 地点</label><input type="text" maxlength="120" value="' + attrEsc(place.name || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'name')) + '"></div></div>'
+    + '<div class="field"><label>进出道路</label><input type="text" maxlength="300" value="' + attrEsc(place.roadNote || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'roadNote')) + '"></div>'
+    + '<div class="field"><label>装卸情况</label><input type="text" maxlength="300" value="' + attrEsc(place.handlingNote || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'handlingNote')) + '"></div>'
+    + '<div class="field"><label>其他提醒</label><input type="text" maxlength="500" value="' + attrEsc(place.note || '') + '" data-business-place-field="' + attrEsc(tupleKey(place.id, 'note')) + '"></div></div>'
+  ).join('') || '<div class="empty-tip" style="padding:16px">返程登记时也可把装卸地点保存为常用地点</div>';
+}
+function markBusinessSettingsDirty() {
+  businessSettingsDirty = true;
+  $('#businessSettingsStatus').textContent = '有未保存修改 · 仍只在本页';
+}
+async function saveBusinessSettings() {
+  if (!businessSettingsDraft || !guardOnce('business-settings-save')) return;
+  let normalized;
+  try { normalized = TTQDomain.normalizeBusinessSettings(businessSettingsDraft); }
+  catch (error) { toast(error.message); return; }
+  $('#businessSettingsStatus').textContent = '正在一次保存设置…';
+  const result = await submitBusinessMutation(draft => { draft.settings.business = normalized; }, {
+    kind: 'business-settings', savingText: '正在保存货主、分组与地点设置…'
+  });
+  if (!result.ok) { $('#businessSettingsStatus').textContent = '未保存，修改仍保留在本页'; return; }
+  businessSettingsDirty = false; businessSettingsDraft = null;
+  closeSheet($('#sheet-business')); toast('货主、分组与常用地点已保存');
+}
+
+/* —— 通用本机业务草稿 —— */
+function newFlowDraftContext(id, record) { return { id, record: record || null, queue: Promise.resolve(), lastPayload: null, error: null }; }
+function persistFlowDraft(context, kind, snapshot, statusSelector) {
+  const vault = Store.draftVault, generation = Store.generation;
+  if (!vault || !context || sessionLockedPermanently) return Promise.resolve(null);
+  const encoded = JSON.stringify(snapshot);
+  if (context.lastPayload === encoded || context.error || context.record && context.record.value.pending) return context.queue;
+  const expected = context.nextRevision === undefined ? context.record && context.record.revision || 0 : context.nextRevision;
+  context.nextRevision = expected + 1; context.lastPayload = encoded;
+  const status = $(statusSelector);
+  if (status) status.textContent = '正在暂存本机草稿…';
+  context.queue = vault.save(context.id, kind, snapshot, expected).then(record => {
+    context.record = record;
+    if (Store.generation === generation && status) status.textContent = '草稿已暂存本机，尚未上传';
+    return record;
+  }).catch(error => {
+    context.error = error;
+    if (Store.generation === generation && status) status.textContent = error.message + '；请勿关闭页面';
+    throw error;
+  });
+  return context.queue;
+}
+async function removeFlowDraft(context) {
+  if (!context || !context.record || !Store.draftVault) return;
+  await context.queue.catch(() => {});
+  if (context.record) await Store.draftVault.remove(context.record.id, context.record.revision);
+}
+
+/* —— 发车清单：货主选择与按箱位分摊全在本机完成 —— */
+let startVehicleId = null, startCtx = null, startDraftContext = null;
+function openStart(origin, editTripId) {
   if (!canStartBusinessWrite()) return;
   const active = S.vehicles.filter(v => v.active);
   if (!active.length) { toast('先到「更多 → 车辆管理」添加车辆'); return; }
+  const editing = editTripId && S.trips.find(item => item.id === editTripId);
   const scoped = activeVehicleId() !== 'all' ? active.find(v => v.id === activeVehicleId() && !openTrip(v.id)) : null;
-  startVehicleId = (scoped || active.find(v => !openTrip(v.id)) || active[0]).id;
-  renderStartVehicleChips();
-  $('#startDate').value = todayStr(); updateStartTip();
+  startVehicleId = editing ? editing.vehicleId : (scoped || active.find(v => !openTrip(v.id)) || active[0]).id;
+  const outbound = editing && editing.business && editing.business.outbound;
+  startCtx = {
+    mode: editing ? 'edit' : 'new', tripId: editing ? editing.id : 'trip_' + uid(),
+    cargoType: outbound && outbound.cargoType || 'produce',
+    totalFreight: outbound ? String(outbound.totalFreight) : '',
+    selected: outbound ? cloneJSON(outbound.allocations) : [],
+    catalog: cloneJSON(businessCatalog()), calculation: null,
+    dirty: !editing, savedFingerprint: outbound ? JSON.stringify(outbound) : null
+  };
+  startDraftContext = newFlowDraftContext('start:' + startCtx.tripId);
+  $('#startTitle').textContent = editing ? '修改发车清单' : '发车清单';
+  $('#startDate').value = editing ? editing.startDate : todayStr();
+  $('#startTotalFreight').value = startCtx.totalFreight;
+  renderStartVehicleChips(); renderStartBusiness(); updateStartTip();
   openSheet($('#sheet-start'), origin);
 }
 function renderStartVehicleChips() {
   $('#startVehicleChips').innerHTML = S.vehicles.filter(v => v.active).map(v =>
-    '<button class="pill' + (v.id === startVehicleId ? ' on' : '') + '" data-start-vehicle="' + attrEsc(v.id) + '">' + esc(v.name) + (openTrip(v.id) ? ' · 在途' : '') + '</button>'
+    '<button class="pill' + (v.id === startVehicleId ? ' on' : '') + '" data-start-vehicle="' + attrEsc(v.id) + '"' + (startCtx && startCtx.mode === 'edit' ? ' disabled' : '') + '>' + esc(v.name) + (openTrip(v.id) && (!startCtx || startCtx.tripId !== openTrip(v.id).id) ? ' · 在途' : '') + '</button>'
   ).join('');
+}
+function findBusinessRef(catalog, key) { return businessRefs(catalog).find(ref => refKey(ref) === key); }
+function addStartRef(ref) {
+  if (!startCtx || !ref || startCtx.selected.some(item => refKey(item) === refKey(ref))) return false;
+  startCtx.selected.push({ id: 'alloc_' + uid(), shipperId: ref.shipperId, shipperName: ref.shipperName,
+    marketId: ref.marketId, marketName: ref.marketName, marketRegion: ref.marketRegion || '', boxSlots: '1', roundingAmount: 0 });
+  startCtx.dirty = true; renderStartBusiness(); persistStartDraft().catch(() => {}); return true;
+}
+function renderStartBusiness() {
+  if (!startCtx) return;
+  $('#startCargoTypes').innerHTML = Object.keys(OUTBOUND_CARGO_LABELS).map(key => '<button type="button" class="pill' + (startCtx.cargoType === key ? ' on' : '') + '" data-start-cargo="' + key + '">' + OUTBOUND_CARGO_LABELS[key] + '</button>').join('');
+  $('#startGroupChoices').innerHTML = startCtx.catalog.shipperGroups.map(group => {
+    const main = findBusinessRef(startCtx.catalog, refKey(group.mainRef));
+    return '<button type="button" class="biz-circle" data-start-group="' + attrEsc(group.id) + '"><b>' + esc(main ? main.shipperName : group.name) + '</b><span>' + esc(main ? main.marketName : group.name) + '</span><span>' + group.members.length + ' 人组</span></button>';
+  }).join('') || '<div class="empty-tip" style="padding:12px">暂无分组，可到“更多”中设置</div>';
+  $('#startSelected').innerHTML = startCtx.selected.map(item => '<button type="button" class="biz-circle on" data-start-remove="' + attrEsc(item.id) + '" aria-label="移除 ' + attrEsc(refLabel(item)) + '"><b>' + esc(item.shipperName) + '</b><span>' + esc(item.marketName) + '</span></button>').join('') || '<div class="empty-tip" style="grid-column:1/-1;padding:12px">先选货主分组，或点“＋货主”逐个添加</div>';
+  $('#startAddChoices').innerHTML = '<div class="biz-choice-grid">' + businessRefs(startCtx.catalog).map(ref => '<button type="button" class="biz-circle" data-start-add-ref="' + attrEsc(refKey(ref)) + '"><b>' + esc(ref.shipperName) + '</b><span>' + esc(ref.marketName) + '</span></button>').join('') + '</div><button type="button" class="btn ghost sm" data-start-show-new style="margin-top:10px">＋ 新货主卸货点</button>';
+  $('#startAllocationRows').innerHTML = startCtx.selected.map(item => '<div class="biz-card"><div class="biz-card-head"><b>' + esc(refLabel(item)) + '</b></div><div class="frow"><div class="field"><label>箱位</label><input type="text" inputmode="decimal" value="' + attrEsc(item.boxSlots) + '" data-start-box="' + attrEsc(item.id) + '"></div><div class="field"><label>协商抹零（元）</label><input type="text" inputmode="decimal" value="' + attrEsc(item.roundingAmount || '') + '" data-start-round="' + attrEsc(item.id) + '"></div></div><div class="biz-calc"><div><span>分摊运费</span><b class="num" data-start-share="' + attrEsc(item.id) + '">—</b></div><div><span>最终确认</span><b class="num" data-start-final="' + attrEsc(item.id) + '">—</b></div><div><span>卸货点</span><b>' + esc(item.marketRegion || '已选市场') + '</b></div></div></div>').join('') || '<div class="empty-tip" style="padding:12px">清单中还没有货主</div>';
+  updateStartCalculation();
+}
+function updateStartCalculation() {
+  if (!startCtx) return null;
+  startCtx.totalFreight = $('#startTotalFreight').value.trim();
+  const calculated = TTQDomain.allocateOutboundFreight(startCtx.totalFreight, startCtx.selected);
+  startCtx.calculation = calculated.ok ? calculated : null;
+  if (!calculated.ok) {
+    $('#startTotals').innerHTML = '<div style="grid-column:1/-1"><span>待完成</span><b>' + esc(calculated.error.message) + '</b></div>';
+    $$('[data-start-share],[data-start-final]').forEach(el => { el.textContent = '—'; });
+    return calculated;
+  }
+  calculated.allocations.forEach(item => {
+    const share = $('[data-start-share="' + CSS.escape(item.id) + '"]');
+    const final = $('[data-start-final="' + CSS.escape(item.id) + '"]');
+    if (share) share.textContent = '¥' + fmt(item.allocatedAmount);
+    if (final) final.textContent = '¥' + fmt(item.finalAmount);
+  });
+  $('#startTotals').innerHTML = '<div><span>箱位合计</span><b class="num">' + esc(calculated.totalBoxSlots) + '</b></div><div><span>抹零合计</span><b class="num">¥' + fmt(calculated.roundingTotal) + '</b></div><div><span>最终运费</span><b class="num">¥' + fmt(calculated.finalTotal) + '</b></div>';
+  return calculated;
+}
+function startDraftSnapshot() {
+  return startCtx && { mode: startCtx.mode, tripId: startCtx.tripId, vehicleId: startVehicleId,
+    startDate: $('#startDate').value, cargoType: startCtx.cargoType, totalFreight: $('#startTotalFreight').value,
+    selected: startCtx.selected, catalog: startCtx.catalog };
+}
+function persistStartDraft() {
+  const snapshot = startDraftSnapshot();
+  return snapshot ? persistFlowDraft(startDraftContext, 'start', snapshot, '#startDraftStatus') : Promise.resolve();
 }
 function updateStartTip() {
   const d = $('#startDate').value || todayStr();
   if (!startVehicleId) return;
-  if (openTrip(startVehicleId)) {
+  if (openTrip(startVehicleId) && (!startCtx || openTrip(startVehicleId).id !== startCtx.tripId)) {
     $('#startSeqTip').textContent = vehicleById(startVehicleId).name + '已有一趟在途中，请先收车';
     return;
   }
@@ -3209,6 +3647,175 @@ function updateStartTip() {
   $('#startSeqTip').textContent = TTQDomain.isInRange(d, periodStart(), periodEnd())
     ? '预计是 ' + vehicleById(startVehicleId).name + '本账期第 ' + n + ' 趟（收车后按到家日期确定）'
     : '发车日期不在当前账期，收车时将按到家日期归账';
+}
+
+function upsertBusinessIncome(trip, categoryId, stableId, amount, date) {
+  const matches = trip.incomes.filter(item => item.catId === categoryId);
+  const entry = matches[0] || { id: stableId, catId: categoryId };
+  entry.amount = amount; entry.date = date;
+  trip.incomes = trip.incomes.filter(item => item.catId !== categoryId).concat(entry);
+}
+function refreshBusinessSurfaces(tripId) {
+  const trip = S && S.trips.find(item => item.id === tripId);
+  if (!trip) return;
+  if (detailTripId === tripId && sheetStack.includes('sheet-trip')) renderTripDetail();
+  if (closeCtx && closeCtx.tripId === tripId && sheetStack.includes('sheet-close')) {
+    if (trip.business && trip.business.outbound) closeCtx.inc.cargo = trip.business.outbound.finalTotal;
+    if (trip.business && trip.business.returnTrip) closeCtx.inc.back = trip.business.returnTrip.effectiveAmount;
+    renderCloseRows();
+  }
+  renderCurrent();
+}
+async function saveStartManifest() {
+  if (!startCtx || !guardOnce('start-manifest-save')) return;
+  const calculated = updateStartCalculation();
+  if (!calculated.ok) { toast(calculated.error.message); return; }
+  if (startCtx.mode === 'new' && openTrip(startVehicleId)) { toast(vehicleById(startVehicleId).name + '已有在途的趟'); return; }
+  await persistStartDraft().catch(() => {});
+  if (startDraftContext.error) { toast('草稿未能可靠暂存，请检查浏览器空间后再试'); return; }
+  const business = { outbound: {
+    cargoType: startCtx.cargoType, totalFreight: calculated.totalFreight,
+    allocations: calculated.allocations
+  }};
+  const normalizedBusiness = TTQDomain.normalizeTripBusiness(business);
+  const tripId = startCtx.tripId, vehicleId = startVehicleId, date = $('#startDate').value || todayStr();
+  const wasEditing = startCtx.mode === 'edit';
+  const catalog = TTQDomain.normalizeBusinessSettings(startCtx.catalog);
+  const result = await submitBusinessMutation(draft => {
+    draft.settings.business = catalog;
+    let trip = draft.trips.find(item => item.id === tripId);
+    if (!trip) {
+      trip = { id: tripId, vehicleId, startDate: date, endDate: null, status: 'open', createdAt: new Date().toISOString(), expenses: [], incomes: [], business: {} };
+      draft.trips.push(trip);
+    }
+    trip.startDate = date;
+    trip.business = Object.assign({}, trip.business || {}, normalizedBusiness);
+    upsertBusinessIncome(trip, 'cargo', 'biz_outbound', normalizedBusiness.outbound.finalTotal, date);
+  }, { kind: 'start-manifest', savingText: '正在一次保存发车资料、货主清单和运费…' });
+  if (!result.ok) { $('#startDraftStatus').textContent = '未获完整确认，草稿仍保留，可明确重试'; return; }
+  await removeFlowDraft(startDraftContext).catch(() => {});
+  const savedVehicleId = vehicleId; startCtx = null; startDraftContext = null;
+  DevicePrefs.activeVehicleId = savedVehicleId; closeSheet($('#sheet-start'));
+  if (wasEditing) refreshBusinessSurfaces(tripId); else showView('home');
+  toast(wasEditing ? '发车清单已更新' : '已保存清单并发车 🚚');
+  await refreshRecoveryPanel();
+}
+
+/* —— 返程登记：单页试算、加入清单、一次保存 —— */
+let returnCtx = null, returnDraftContext = null;
+function emptyReturnForm() {
+  return { cargoType: 'corn', loadedTons: '', unitPrice: '', actualReceivedAmount: '', unloadedTons: '', lossKg: '', lossDeductionAmount: '', weightGainConfirmed: false,
+    pickupLocation: {}, deliveryLocation: {} };
+}
+function openReturn(tripId, origin) {
+  if (!canStartBusinessWrite()) return false;
+  const trip = S.trips.find(item => item.id === tripId);
+  if (!trip) return false;
+  const saved = trip.business && trip.business.returnTrip;
+  returnCtx = { tripId, form: saved ? cloneJSON(saved) : emptyReturnForm(), staged: saved ? cloneJSON(saved) : null,
+    dirty: !saved, savedFingerprint: saved ? JSON.stringify(saved) : null };
+  if (returnCtx.form.actualReceivedAmount === null) returnCtx.form.actualReceivedAmount = '';
+  returnDraftContext = newFlowDraftContext('return:' + tripId);
+  $('#returnTitle').textContent = (saved ? '修改' : '登记') + '返程 · ' + vehicleById(trip.vehicleId).name;
+  renderReturnForm();
+  return openSheet($('#sheet-return'), origin);
+}
+function renderLocationForm(kind, title) {
+  const location = returnCtx.form[kind + 'Location'] || {};
+  const places = businessCatalog().places;
+  const fieldPrefix = kind === 'pickup' ? 'returnPickup' : 'returnDelivery';
+  return '<div class="biz-place"><div class="biz-card-head"><h4>' + title + '</h4><button type="button" class="pill" data-return-location-current="' + kind + '">使用当前位置</button></div>'
+    + '<div class="field"><label for="' + fieldPrefix + 'Place">选择常用地点（可跳过）</label><select id="' + fieldPrefix + 'Place" data-return-place="' + kind + '"><option value="">手动填写 / 不选择</option>' + places.map(place => '<option value="' + attrEsc(place.id) + '"' + (location.placeId === place.id ? ' selected' : '') + '>' + esc((place.region ? place.region + ' · ' : '') + place.name) + '</option>').join('') + '</select></div>'
+    + '<div class="frow"><div class="field"><label for="' + fieldPrefix + 'Region">市 / 县</label><input id="' + fieldPrefix + 'Region" type="text" maxlength="80" value="' + attrEsc(location.region || '') + '" data-return-location-field="' + kind + '|region"></div><div class="field"><label for="' + fieldPrefix + 'Name">厂家 / 地点</label><input id="' + fieldPrefix + 'Name" type="text" maxlength="120" value="' + attrEsc(location.name || '') + '" data-return-location-field="' + kind + '|name"></div></div>'
+    + '<div class="field"><label for="' + fieldPrefix + 'Road">进出道路</label><input id="' + fieldPrefix + 'Road" type="text" maxlength="300" value="' + attrEsc(location.roadNote || '') + '" data-return-location-field="' + kind + '|roadNote"></div>'
+    + '<div class="field"><label for="' + fieldPrefix + 'Handling">装卸情况</label><input id="' + fieldPrefix + 'Handling" type="text" maxlength="300" value="' + attrEsc(location.handlingNote || '') + '" data-return-location-field="' + kind + '|handlingNote"></div>'
+    + '<div class="field"><label for="' + fieldPrefix + 'Note">其他提醒</label><input id="' + fieldPrefix + 'Note" type="text" maxlength="500" value="' + attrEsc(location.note || '') + '" data-return-location-field="' + kind + '|note"></div>'
+    + (location.latitude !== undefined ? '<p class="biz-summary-note num">已记录设备位置：' + Number(location.latitude).toFixed(5) + ', ' + Number(location.longitude).toFixed(5) + '</p>' : '') + '</div>';
+}
+function renderReturnForm() {
+  if (!returnCtx) return;
+  const form = returnCtx.form;
+  $('#returnCargoTypes').innerHTML = Object.keys(RETURN_CARGO_LABELS).map(key => '<button type="button" class="pill' + (form.cargoType === key ? ' on' : '') + '" data-return-cargo="' + key + '">' + RETURN_CARGO_LABELS[key] + '</button>').join('');
+  [['#returnLoadedTons','loadedTons'],['#returnUnitPrice','unitPrice'],['#returnActual','actualReceivedAmount'],['#returnUnloadedTons','unloadedTons'],['#returnLossKg','lossKg'],['#returnLossDeduction','lossDeductionAmount']].forEach(([selector, field]) => { $(selector).value = form[field] == null ? '' : form[field]; });
+  $('#returnPickupLocation').innerHTML = renderLocationForm('pickup', '装车位置');
+  $('#returnDeliveryLocation').innerHTML = renderLocationForm('delivery', '卸车位置');
+  updateReturnCalculation(); renderReturnStaged();
+}
+function updateReturnCalculation() {
+  if (!returnCtx) return;
+  const form = returnCtx.form;
+  const calculated = TTQDomain.calculateReturnFreight(form);
+  $('#returnReceivable').textContent = calculated.ok ? '¥' + calculated.formatted.receivableAmount : '—';
+  $('#returnEffective').textContent = calculated.ok ? '¥' + calculated.formatted.effectiveAmount : '—';
+  $('#returnBasis').textContent = calculated.ok ? (calculated.usesActualReceived ? '按实收' : '按应收') : '待填写';
+  const loss = TTQDomain.calculateWeightLoss(form);
+  const gain = !loss.ok && loss.warning;
+  let confirm = $('#returnWeightGainConfirm');
+  if (!confirm) {
+    $('#returnWeightHint').insertAdjacentHTML('afterend', '<label class="biz-check" id="returnWeightGainConfirm" hidden><input type="checkbox" id="returnWeightGainConfirmed">卸车吨位更高，我已人工核对并确认保存</label>');
+    confirm = $('#returnWeightGainConfirm');
+  }
+  confirm.hidden = !gain;
+  $('#returnWeightGainConfirmed').checked = form.weightGainConfirmed === true;
+  $('#returnWeightHint').textContent = gain ? loss.warning : (loss.referenceLossKg !== null ? '掉称参考：' + loss.referenceLossKg + ' 公斤；可在确认掉称中手动覆盖，不自动算扣款。' : '装、卸车吨位齐全后显示掉称参考；不会自动按公斤扣款。');
+  return calculated;
+}
+function returnDraftSnapshot() { return returnCtx && { tripId: returnCtx.tripId, form: returnCtx.form, staged: returnCtx.staged, dirty: returnCtx.dirty }; }
+function persistReturnDraft() {
+  const snapshot = returnDraftSnapshot();
+  return snapshot ? persistFlowDraft(returnDraftContext, 'return', snapshot, '#returnDraftStatus') : Promise.resolve();
+}
+function renderReturnStaged() {
+  const box = $('#returnStaged');
+  if (!returnCtx || !returnCtx.staged) { box.hidden = true; box.innerHTML = ''; return; }
+  const item = returnCtx.staged;
+  box.hidden = false;
+  box.innerHTML = '<div class="total-line"><span>' + esc(RETURN_CARGO_LABELS[item.cargoType] || '返程货物') + ' · 已加入本次清单</span><b class="num">¥' + fmt(item.effectiveAmount) + '</b></div><p class="biz-summary-note">应收 ¥' + fmt(item.receivableAmount) + ' · ' + (item.actualReceivedAmount === null ? '未填实收，首页按应收' : '实收已填，首页按实收') + (returnCtx.dirty ? ' · 当前输入已变化，请重新加入清单' : '') + '</p>';
+}
+async function stageReturn() {
+  if (!returnCtx || !guardOnce('return-stage')) return;
+  const calculation = updateReturnCalculation();
+  if (!calculation.ok) { toast(calculation.error.message); return; }
+  if ($('#returnWeightGainConfirm') && !$('#returnWeightGainConfirm').hidden && !returnCtx.form.weightGainConfirmed) { toast('卸车吨位更高，请先人工核对并勾选确认'); return; }
+  try {
+    returnCtx.staged = TTQDomain.normalizeTripBusiness({ returnTrip: returnCtx.form }).returnTrip;
+    returnCtx.dirty = false; renderReturnStaged(); await persistReturnDraft();
+    toast('返程资料已加入本次清单，尚未上传');
+  } catch (error) { toast(error.message); }
+}
+function saveLocationToCatalog(catalog, location) {
+  const data = cloneJSON(location || {});
+  const hasContent = ['region','name','roadNote','handlingNote','note'].some(field => String(data[field] || '').trim()) || data.latitude !== undefined;
+  if (!hasContent) return data;
+  let place = data.placeId && catalog.places.find(item => item.id === data.placeId);
+  if (!place) { place = { id: 'place_' + uid() }; catalog.places.push(place); data.placeId = place.id; }
+  const stored = cloneJSON(data); delete stored.placeId;
+  Object.assign(place, stored, { id: place.id, updatedAt: new Date().toISOString() });
+  return data;
+}
+async function saveReturnManifest() {
+  if (!returnCtx || !guardOnce('return-manifest-save')) return;
+  if (!returnCtx.staged || returnCtx.dirty) { toast('请先把当前返程资料加入本次清单'); return; }
+  await persistReturnDraft().catch(() => {});
+  if (returnDraftContext.error) { toast('草稿未能可靠暂存，请检查浏览器空间后再试'); return; }
+  const tripId = returnCtx.tripId;
+  const catalog = cloneJSON(businessCatalog());
+  const staged = cloneJSON(returnCtx.staged);
+  staged.pickupLocation = saveLocationToCatalog(catalog, staged.pickupLocation);
+  staged.deliveryLocation = saveLocationToCatalog(catalog, staged.deliveryLocation);
+  const normalizedCatalog = TTQDomain.normalizeBusinessSettings(catalog);
+  const normalizedReturn = TTQDomain.normalizeTripBusiness({ returnTrip: staged }).returnTrip;
+  const result = await submitBusinessMutation(draft => {
+    const trip = draft.trips.find(item => item.id === tripId);
+    if (!trip) throw new Error('趟次已不存在，请重新加载');
+    trip.business = Object.assign({}, trip.business || {}, { returnTrip: normalizedReturn });
+    upsertBusinessIncome(trip, 'back', 'biz_return', normalizedReturn.effectiveAmount, trip.endDate || todayStr());
+    draft.settings.business = normalizedCatalog;
+  }, { kind: 'return-manifest', savingText: '正在一次保存返程、称重、营收和地点资料…' });
+  if (!result.ok) { $('#returnDraftStatus').textContent = '未获完整确认，草稿仍保留，可明确重试'; return; }
+  await removeFlowDraft(returnDraftContext).catch(() => {});
+  returnCtx = null; returnDraftContext = null; closeSheet($('#sheet-return')); refreshBusinessSurfaces(tripId);
+  await refreshRecoveryPanel(); toast('返程清单已保存 · 首页营收已按确认口径更新');
 }
 
 /* —— 收车结算 —— */
@@ -3229,6 +3836,10 @@ function openCloseSheet(tripId, origin) {
     const s = t.incomes.filter(e => e.catId === c.id).reduce((a, e) => a + e.amount, 0);
     if (s > 0) closeCtx.inc[c.id] = s;
   });
+  const outbound = t.business && t.business.outbound;
+  const backhaul = t.business && t.business.returnTrip;
+  if (outbound) closeCtx.inc.cargo = outbound.finalTotal;
+  if (backhaul) closeCtx.inc.back = backhaul.effectiveAmount;
   const seq = tripSeq(t);
   $('#closeTitle').textContent = vehicleById(t.vehicleId).name + ' · ' + (seq > 0 ? '第 ' + seq + ' 趟' : '当前趟') + ' · 收车';
   $('#closeDate').value = t.endDate || todayStr();
@@ -3242,10 +3853,11 @@ function renderCloseRows() {
   const exp = tripTotals(t).exp;
   $('#closeExp').textContent = '¥' + fmt(exp);
   $('#closeIncomeRows').innerHTML = S.categories.income.filter(c => c.active || (closeCtx.inc[c.id] || 0) > 0).map(c => {
-    const v = closeCtx.inc[c.id] || 0;
-    return '<div class="row" data-closeinc="' + attrEsc(c.id) + '" role="button" tabindex="0"><span class="ric">' + safeIconText(c.icon) + '</span>'
-      + '<div class="rmain"><b>' + esc(c.name) + '</b></div>'
-      + '<span class="ramt num"' + (v ? '' : ' style="color:var(--sub)"') + '>' + (v ? '¥' + fmt(v) : '点了填') + '</span><span class="rarrow">›</span></div>';
+    const v = Object.prototype.hasOwnProperty.call(closeCtx.inc, c.id) ? closeCtx.inc[c.id] : 0;
+    const managed = c.id === 'cargo' && t.business && t.business.outbound || c.id === 'back' && t.business && t.business.returnTrip;
+    return '<div class="row" data-closeinc="' + attrEsc(c.id) + '"' + (managed ? ' data-managed-income="true"' : '') + ' role="button" tabindex="0"><span class="ric">' + safeIconText(c.icon) + '</span>'
+      + '<div class="rmain"><b>' + esc(c.name) + '</b>' + (managed ? '<span>由业务清单计算，点此返回清单修改</span>' : '') + '</div>'
+      + '<span class="ramt num"' + (!managed && !v ? ' style="color:var(--sub)"' : '') + '>' + (managed || v ? '¥' + fmt(v) : '点了填') + '</span><span class="rarrow">›</span></div>';
   }).join('');
   const inc = Object.values(closeCtx.inc).reduce((s, v) => s + v, 0);
   const p = inc - exp;
@@ -3267,7 +3879,7 @@ function buildCloseTripPreview(state, context, endDate) {
   const inc = context && context.inc || {};
   const incomeEntries = Object.keys(inc).filter(catId => Number(inc[catId]) > 0)
     .map(catId => ({ catId, amount: Number(inc[catId]), date }));
-  const income = incomeEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  const income = Object.keys(inc).reduce((sum, catId) => sum + (Number(inc[catId]) || 0), 0);
   const expense = (Array.isArray(trip.expenses) ? trip.expenses : [])
     .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
   return {
@@ -3729,7 +4341,7 @@ function exportSnapshot(snapshot, suffix) {
   const partial = isPartialDriverSnapshot(payload) ||
     Boolean(Store.membership && Store.membership.role !== 'owner');
   payload._backupMeta = {
-    format: 'tangtangqing-schema-v3',
+    format: 'tangtangqing-schema-v4',
     schemaVersion: TTQDomain.SCHEMA_VERSION,
     appVersion: APP_VER,
     exportedAt: new Date().toISOString(),
@@ -3775,32 +4387,34 @@ function inspectBackupEnvelope(obj) {
   ));
   if (partial)
     return { ok: false, error: '这是司机可见范围的部分数据，不能作为完整车队备份恢复' };
-  const claimsV3 = topVersion >= 3 || Boolean(meta && (
-    meta.format === 'tangtangqing-schema-v3' || Number(meta.schemaVersion) >= 3
+  const claimsStructured = topVersion >= 3 || Boolean(meta && (
+    /^tangtangqing-schema-v[34]$/.test(String(meta.format || '')) || Number(meta.schemaVersion) >= 3
   ));
-  if (!claimsV3) return { ok: true, legacy: true, meta: meta || {} };
-  if (topVersion !== 3 || !meta || meta.format !== 'tangtangqing-schema-v3' || Number(meta.schemaVersion) !== 3)
-    return { ok: false, error: 'schema v3 备份必须带有匹配的完整 _backupMeta' };
+  if (!claimsStructured) return { ok: true, legacy: true, schemaVersion: topVersion || 1, meta: meta || {} };
+  if (![3, 4].includes(topVersion) || !meta || meta.format !== 'tangtangqing-schema-v' + topVersion || Number(meta.schemaVersion) !== topVersion)
+    return { ok: false, error: 'schema v3/v4 备份必须带有版本匹配的完整 _backupMeta' };
   if (typeof meta.appVersion !== 'string' || !meta.appVersion.trim() ||
       typeof meta.exportedAt !== 'string' || Number.isNaN(Date.parse(meta.exportedAt)) ||
       typeof meta.sourceFleetId !== 'string')
-    return { ok: false, error: 'schema v3 备份的版本、导出时间或车队来源信息不完整' };
+    return { ok: false, error: '结构化备份的版本、导出时间或车队来源信息不完整' };
   const conservation = meta.conservation;
+  const conservationGroups = ['counts', 'amounts', 'exactAmounts', 'fuel'].concat(topVersion >= 4 ? ['business'] : []);
   if (!conservation || typeof conservation !== 'object' ||
-      ['counts', 'amounts', 'exactAmounts', 'fuel'].some(group =>
+      conservationGroups.some(group =>
         !conservation[group] || typeof conservation[group] !== 'object' || Array.isArray(conservation[group])
       ))
-    return { ok: false, error: 'schema v3 备份缺少完整的内嵌守恒摘要' };
+    return { ok: false, error: '结构化备份缺少完整的内嵌守恒摘要' };
   const requiredFields = {
     counts: ['vehicles', 'expenseCategories', 'incomeCategories', 'trips', 'tripExpenses', 'tripIncomes', 'maintenance'],
     amounts: ['tripExpenses', 'tripIncomes', 'maintenance'],
     exactAmounts: ['tripExpensesCents', 'tripIncomesCents', 'maintenanceCents'],
-    fuel: ['structuredRecords', 'legacyRecords', 'totalVolumeMl', 'structuredCostCents', 'fingerprint']
+    fuel: ['structuredRecords', 'legacyRecords', 'totalVolumeMl', 'structuredCostCents', 'fingerprint'],
+    ...(topVersion >= 4 ? { business: ['shippers', 'markets', 'shipperGroups', 'places', 'outboundTrips', 'returnTrips', 'fingerprint'] } : {})
   };
   if (Object.keys(requiredFields).some(group =>
     requiredFields[group].some(field => !Object.prototype.hasOwnProperty.call(conservation[group], field))
-  )) return { ok: false, error: 'schema v3 备份的内嵌守恒摘要字段不完整' };
-  return { ok: true, legacy: false, meta };
+  )) return { ok: false, error: '结构化备份的内嵌守恒摘要字段不完整' };
+  return { ok: true, legacy: false, schemaVersion: topVersion, meta };
 }
 function createImportOperationId(candidate) {
   const fingerprint = TTQCloudSync.snapshotFingerprint(candidate)
@@ -3821,13 +4435,13 @@ function importData(file) {
       const envelope = inspectBackupEnvelope(obj);
       if (!envelope.ok) { toast(envelope.error + '，已拒绝恢复'); return; }
       const meta = envelope.meta;
-      const isV3Backup = !envelope.legacy;
+      const isStructuredBackup = !envelope.legacy;
       const periodPlan = TTQCloudSync.inspectImportPeriod(obj, S);
       const rawStart = periodPlan.periodStartDate;
       const rawEnd = periodPlan.periodEndDate;
       const validBackupPeriod = periodPlan.backupPeriodValid;
       const migrated = migrate(obj);
-      if (isV3Backup) {
+      if (isStructuredBackup) {
         const embeddedCheck = TTQCloudSync.compareConservation(
           meta.conservation,
           TTQCloudSync.summarizeState(migrated)
@@ -3852,8 +4466,10 @@ function importData(file) {
       const periodText = validBackupPeriod
         ? '账期也将完整恢复为 ' + rawStart + ' 至 ' + rawEnd + '。'
         : '⚠️ 文件缺少合法账期；为安全起见会保留当前账期 ' + periodLabel() + '。';
-      const versionText = isV3Backup
-        ? 'schema v3 内嵌金额与 fuel 守恒预检：通过。'
+      const versionText = isStructuredBackup
+        ? (envelope.schemaVersion >= 4
+          ? 'schema v4 内嵌金额、fuel 与业务资料守恒预检：通过。'
+          : 'schema v3 内嵌金额与 fuel 守恒预检：通过；缺少的业务资料按空对象迁移。')
         : '⚠️ 旧版备份没有内嵌 fuel 守恒摘要；允许兼容导入，但只能按迁移后的记录预览核对。';
       const ok = await ask(
         '这是“完整替换当前账本”。\n' +
@@ -3890,7 +4506,7 @@ function importData(file) {
         const confirmed = TTQCloudSync.compareConservation(candidate, S);
         if (!confirmed.equal) {
           updateCloudModeUI('云端已响应，但恢复后的守恒复核失败');
-          toast('⚠️ 云端确认后的金额或 fuel 守恒复核失败，请停止继续记账并联系管理员');
+          toast('⚠️ 云端确认后的金额、fuel 或业务资料守恒复核失败，请停止继续记账并联系管理员');
           return;
         }
         Store.noteExplicitImport(S);
@@ -3946,10 +4562,12 @@ document.addEventListener('click', async e => {
         if (!await ask(pending ? '取消这个恢复任务并删除临时上传内容？已完成的恢复不能取消，正式账本不会因此被删除。' : '永久丢弃这份未提交草稿？此操作不修改云端账本。')) return;
         if (pending) await Store.abandonRestore(record);
         else await Store.draftVault.remove(record.id, record.revision);
-      } else if (record.kind !== 'quick' || record.value.pending) {
+      } else if (isPendingRecoveryRecord(record)) {
         Store.adoptPending(record);
         await reconnectCloud();
-      } else await recoverQuickDraft(record);
+      } else if (record.kind === 'start') await recoverStartDraft(record);
+      else if (record.kind === 'return') await recoverReturnDraft(record);
+      else await recoverQuickDraft(record);
       await initializeRecovery();
       updateCloudModeUI();
     } catch (error) { toast(error.message || '恢复未完成，请保持页面并重新核对'); }
@@ -3974,6 +4592,7 @@ document.addEventListener('click', async e => {
     } catch (error) { toast(error.message || '云端任务尚未确认'); }
     return;
   }
+  if ((el = q('[data-business-exit],[data-business-settings-exit]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-quick-exit]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-close]'))) { await requestSheetClose(el.closest('.sheet')); return; }
   if ((el = q('[data-act]'))) {
@@ -3988,6 +4607,14 @@ document.addEventListener('click', async e => {
     else if (act === 'start') openStart({
       source: el,
       resolveSource: dataResolver('[data-act="start"]', 'act', 'start')
+    });
+    else if (act === 'editoutbound') openStart({
+      source: el,
+      resolveSource: dataResolver('[data-act="editoutbound"][data-trip]', 'trip', el.dataset.trip)
+    }, el.dataset.trip);
+    else if (act === 'return') openReturn(el.dataset.trip, {
+      source: el,
+      resolveSource: dataResolver('[data-act="return"][data-trip]', 'trip', el.dataset.trip)
     });
     else if (act === 'openclose') {
       const tripId = el.dataset.trip;
@@ -4029,7 +4656,149 @@ document.addEventListener('click', async e => {
   }
   if ((el = q('[data-start-vehicle]'))) {
     startVehicleId = el.dataset.startVehicle;
-    renderStartVehicleChips(); updateStartTip(); return;
+    if (startCtx) startCtx.dirty = true;
+    renderStartVehicleChips(); updateStartTip(); persistStartDraft().catch(() => {}); return;
+  }
+  if ((el = q('[data-start-cargo]'))) {
+    if (!startCtx) return;
+    startCtx.cargoType = el.dataset.startCargo; startCtx.dirty = true;
+    renderStartBusiness(); persistStartDraft().catch(() => {}); return;
+  }
+  if ((el = q('[data-start-group]'))) {
+    if (!startCtx) return;
+    const group = startCtx.catalog.shipperGroups.find(item => item.id === el.dataset.startGroup);
+    if (!group) return;
+    let added = 0;
+    group.members.forEach(member => {
+      const ref = findBusinessRef(startCtx.catalog, refKey(member));
+      if (!ref || startCtx.selected.some(item => refKey(item) === refKey(ref))) return;
+      startCtx.selected.push({ id: 'alloc_' + uid(), shipperId: ref.shipperId, shipperName: ref.shipperName,
+        marketId: ref.marketId, marketName: ref.marketName, marketRegion: ref.marketRegion || '', boxSlots: '1', roundingAmount: 0 });
+      added++;
+    });
+    if (added) { startCtx.dirty = true; renderStartBusiness(); persistStartDraft().catch(() => {}); }
+    else toast('这组货主已全在本趟清单中');
+    return;
+  }
+  if ((el = q('[data-start-remove]'))) {
+    if (!startCtx) return;
+    startCtx.selected = startCtx.selected.filter(item => item.id !== el.dataset.startRemove);
+    startCtx.dirty = true; renderStartBusiness(); persistStartDraft().catch(() => {}); return;
+  }
+  if ((el = q('#startAddShipper'))) {
+    const choices = $('#startAddChoices'); choices.hidden = !choices.hidden;
+    if (!choices.hidden) $('#startNewShipper').hidden = true;
+    return;
+  }
+  if ((el = q('[data-start-add-ref]'))) {
+    if (!startCtx) return;
+    const added = addStartRef(findBusinessRef(startCtx.catalog, el.dataset.startAddRef));
+    if (added) $('#startAddChoices').hidden = true;
+    return;
+  }
+  if ((el = q('[data-start-show-new]'))) {
+    $('#startNewShipper').hidden = false; $('#startNewShipperName').focus(); return;
+  }
+  if ((el = q('#startNewShipperAdd'))) {
+    if (!startCtx) return;
+    const shipperName = $('#startNewShipperName').value.trim();
+    const marketName = $('#startNewMarketName').value.trim();
+    const marketRegion = $('#startNewMarketRegion').value.trim();
+    if (!shipperName || !marketName) { toast('请填货主名和市场名'); return; }
+    let shipper = startCtx.catalog.shippers.find(item => item.name === shipperName);
+    if (!shipper) { shipper = { id: 'shipper_' + uid(), name: shipperName, markets: [] }; startCtx.catalog.shippers.push(shipper); }
+    let market = shipper.markets.find(item => item.name === marketName && String(item.region || '') === marketRegion);
+    if (!market) { market = { id: 'market_' + uid(), name: marketName, region: marketRegion }; shipper.markets.push(market); }
+    const added = addStartRef({ shipperId: shipper.id, shipperName: shipper.name, marketId: market.id, marketName: market.name, marketRegion: market.region || '' });
+    if (!added) { toast('这个货主卸货点已在清单中'); return; }
+    $('#startNewShipperName').value = ''; $('#startNewMarketName').value = ''; $('#startNewMarketRegion').value = '';
+    $('#startNewShipper').hidden = true; $('#startAddChoices').hidden = true;
+    return;
+  }
+  if ((el = q('#businessAddShipper'))) {
+    if (!businessSettingsDraft) return;
+    businessSettingsDraft.shippers.push({ id: 'shipper_' + uid(), name: '', markets: [{ id: 'market_' + uid(), name: '', region: '' }] });
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('[data-business-add-market]'))) {
+    const shipper = businessSettingsDraft && businessSettingsDraft.shippers.find(item => item.id === el.dataset.businessAddMarket);
+    if (!shipper) return;
+    shipper.markets.push({ id: 'market_' + uid(), name: '', region: '' });
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('[data-business-remove-shipper]'))) {
+    if (!businessSettingsDraft) return;
+    const shipperId = el.dataset.businessRemoveShipper;
+    businessSettingsDraft.shippers = businessSettingsDraft.shippers.filter(item => item.id !== shipperId);
+    businessSettingsDraft.shipperGroups.forEach(group => { group.members = group.members.filter(ref => ref.shipperId !== shipperId); });
+    businessSettingsDraft.shipperGroups = businessSettingsDraft.shipperGroups.filter(group => {
+      if (!group.members.length) return false;
+      if (group.mainRef.shipperId === shipperId) group.mainRef = cloneJSON(group.members[0]);
+      return true;
+    });
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('[data-business-remove-market]'))) {
+    if (!businessSettingsDraft) return;
+    const parsedKey = parseTupleKey(el.dataset.businessRemoveMarket, 2);
+    if (!parsedKey) return;
+    const [shipperId, marketId] = parsedKey;
+    const marketKey = refKey({ shipperId, marketId });
+    const shipper = businessSettingsDraft.shippers.find(item => item.id === shipperId);
+    if (shipper) shipper.markets = shipper.markets.filter(item => item.id !== marketId);
+    businessSettingsDraft.shipperGroups.forEach(group => { group.members = group.members.filter(ref => refKey(ref) !== marketKey); });
+    businessSettingsDraft.shipperGroups = businessSettingsDraft.shipperGroups.filter(group => {
+      if (!group.members.length) return false;
+      if (refKey(group.mainRef) === marketKey) group.mainRef = cloneJSON(group.members[0]);
+      return true;
+    });
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('#businessAddGroup'))) {
+    if (!businessSettingsDraft) return;
+    const first = businessRefs(businessSettingsDraft)[0];
+    if (!first) { toast('先添加货主和市场，再建快捷分组'); return; }
+    const ref = { shipperId: first.shipperId, marketId: first.marketId };
+    businessSettingsDraft.shipperGroups.push({ id: 'group_' + uid(), name: '', mainRef: cloneJSON(ref), members: [cloneJSON(ref)] });
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('[data-business-remove-group]'))) {
+    if (!businessSettingsDraft) return;
+    businessSettingsDraft.shipperGroups = businessSettingsDraft.shipperGroups.filter(item => item.id !== el.dataset.businessRemoveGroup);
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('#businessAddPlace'))) {
+    if (!businessSettingsDraft) return;
+    businessSettingsDraft.places.push({ id: 'place_' + uid(), region: '', name: '', roadNote: '', handlingNote: '', note: '', updatedAt: new Date().toISOString() });
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('[data-business-remove-place]'))) {
+    if (!businessSettingsDraft) return;
+    businessSettingsDraft.places = businessSettingsDraft.places.filter(item => item.id !== el.dataset.businessRemovePlace);
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if ((el = q('[data-return-cargo]'))) {
+    if (!returnCtx) return;
+    returnCtx.form.cargoType = el.dataset.returnCargo; returnCtx.dirty = true;
+    renderReturnForm(); persistReturnDraft().catch(() => {}); return;
+  }
+  if ((el = q('[data-return-location-current]'))) {
+    if (!returnCtx) return;
+    const kind = el.dataset.returnLocationCurrent;
+    const expectedContext = returnCtx;
+    if (!navigator.geolocation) { toast('当前设备不支持定位，可继续手动填写'); return; }
+    el.disabled = true;
+    navigator.geolocation.getCurrentPosition(position => {
+      if (returnCtx !== expectedContext) return;
+      const location = returnCtx.form[kind + 'Location'] || (returnCtx.form[kind + 'Location'] = {});
+      location.latitude = Number(position.coords.latitude.toFixed(6));
+      location.longitude = Number(position.coords.longitude.toFixed(6));
+      returnCtx.dirty = true; renderReturnForm(); persistReturnDraft().catch(() => {}); toast('已记录当前位置');
+    }, () => {
+      if (returnCtx !== expectedContext) return;
+      el.disabled = false; toast('未取得定位，不影响手动填写和保存');
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    return;
   }
   if ((el = q('[data-bf-vehicle]'))) {
     backfillVehicleId = el.dataset.bfVehicle;
@@ -4103,6 +4872,12 @@ document.addEventListener('click', async e => {
   }
   if ((el = q('[data-closeinc]'))) {
     const cid = el.dataset.closeinc, c = catById(cid), cur = closeCtx.inc[cid] || 0;
+    if (el.dataset.managedIncome) {
+      const trip = S.trips.find(item => item.id === closeCtx.tripId);
+      if (cid === 'cargo') openStart({ source: el, resolveSource: dataResolver('#sheet-close [data-closeinc]', 'closeinc', cid) }, trip.id);
+      else if (cid === 'back') openReturn(trip.id, { source: el, resolveSource: dataResolver('#sheet-close [data-closeinc]', 'closeinc', cid) });
+      return;
+    }
     openAmtPad({ title: '填「' + c.name + '」', expr: cur ? String(cur) : '', okLabel: '✓ 填 好',
       canDelete: cur > 0,
       onSave: v => { closeCtx.inc[cid] = v; },
@@ -4115,6 +4890,11 @@ document.addEventListener('click', async e => {
   if ((el = q('[data-inccat]'))) {
     const t = S.trips.find(x => x.id === detailTripId); if (!t) return;
     const cid = el.dataset.inccat, c = catById(cid);
+    if (el.dataset.managedIncome) {
+      if (cid === 'cargo') openStart({ source: el, resolveSource: dataResolver('#sheet-trip [data-inccat]', 'inccat', cid) }, t.id);
+      else if (cid === 'back') openReturn(t.id, { source: el, resolveSource: dataResolver('#sheet-trip [data-inccat]', 'inccat', cid) });
+      return;
+    }
     const cur = t.incomes.filter(x => x.catId === cid).reduce((s, x) => s + x.amount, 0);
     openAmtPad({ title: '改「' + c.name + '」', expr: cur ? String(cur) : '', okLabel: '✓ 保 存',
       canDelete: cur > 0,
@@ -4189,6 +4969,7 @@ document.addEventListener('click', async e => {
     if (go === 'vehicles') { renderVehicles(); openSheet($('#sheet-vehicles'), origin); }
     else if (go === 'period') openPeriod(origin);
     else if (go === 'cats') { renderCats(); openSheet($('#sheet-cats'), origin); }
+    else if (go === 'business') openBusinessSettings(origin);
     else if (go === 'backfill') openBackfill(origin);
     else if (go === 'export') exportData();
     else if (go === 'import') $('#importFile').click();
@@ -4197,6 +4978,110 @@ document.addEventListener('click', async e => {
     return;
   }
   if ((el = q('#nav button'))) { showView(el.dataset.v); return; }
+});
+
+function handleBusinessFieldEvent(event) {
+  const el = event.target;
+  if (!el || !el.matches) return;
+  if (startCtx && el.id === 'startTotalFreight') {
+    startCtx.totalFreight = el.value.trim(); startCtx.dirty = true;
+    updateStartCalculation(); persistStartDraft().catch(() => {}); return;
+  }
+  if (startCtx && el.id === 'startDate') {
+    startCtx.dirty = true; updateStartTip(); persistStartDraft().catch(() => {}); return;
+  }
+  if (startCtx && (el.dataset.startBox || el.dataset.startRound)) {
+    const id = el.dataset.startBox || el.dataset.startRound;
+    const item = startCtx.selected.find(value => value.id === id);
+    if (!item) return;
+    if (el.dataset.startBox) item.boxSlots = el.value.trim();
+    else item.roundingAmount = el.value.trim();
+    startCtx.dirty = true; updateStartCalculation(); persistStartDraft().catch(() => {}); return;
+  }
+  if (businessSettingsDraft && el.dataset.businessShipperName) {
+    const shipper = businessSettingsDraft.shippers.find(item => item.id === el.dataset.businessShipperName);
+    if (shipper) { shipper.name = el.value; markBusinessSettingsDirty(); }
+    return;
+  }
+  if (businessSettingsDraft && (el.dataset.businessMarketName || el.dataset.businessMarketRegion)) {
+    const key = el.dataset.businessMarketName || el.dataset.businessMarketRegion;
+    const parsedKey = parseTupleKey(key, 2);
+    if (!parsedKey) return;
+    const [shipperId, marketId] = parsedKey;
+    const shipper = businessSettingsDraft.shippers.find(item => item.id === shipperId);
+    const market = shipper && shipper.markets.find(item => item.id === marketId);
+    if (market) { market[el.dataset.businessMarketName ? 'name' : 'region'] = el.value; markBusinessSettingsDirty(); }
+    return;
+  }
+  if (businessSettingsDraft && el.dataset.businessGroupName) {
+    const group = businessSettingsDraft.shipperGroups.find(item => item.id === el.dataset.businessGroupName);
+    if (group) { group.name = el.value; markBusinessSettingsDirty(); }
+    return;
+  }
+  if (businessSettingsDraft && el.dataset.businessPlaceField) {
+    const parsedKey = parseTupleKey(el.dataset.businessPlaceField, 2);
+    if (!parsedKey) return;
+    const [id, field] = parsedKey;
+    const place = businessSettingsDraft.places.find(item => item.id === id);
+    if (place) { place[field] = el.value; place.updatedAt = new Date().toISOString(); markBusinessSettingsDirty(); }
+    return;
+  }
+  if (returnCtx && ['returnLoadedTons','returnUnitPrice','returnActual','returnUnloadedTons','returnLossKg','returnLossDeduction'].includes(el.id)) {
+    const fieldById = { returnLoadedTons: 'loadedTons', returnUnitPrice: 'unitPrice', returnActual: 'actualReceivedAmount',
+      returnUnloadedTons: 'unloadedTons', returnLossKg: 'lossKg', returnLossDeduction: 'lossDeductionAmount' };
+    returnCtx.form[fieldById[el.id]] = el.value.trim(); returnCtx.dirty = true;
+    updateReturnCalculation(); renderReturnStaged(); persistReturnDraft().catch(() => {}); return;
+  }
+  if (returnCtx && el.dataset.returnLocationField) {
+    const [kind, field] = el.dataset.returnLocationField.split('|');
+    const location = returnCtx.form[kind + 'Location'] || (returnCtx.form[kind + 'Location'] = {});
+    location[field] = el.value; returnCtx.dirty = true;
+    renderReturnStaged(); persistReturnDraft().catch(() => {});
+  }
+}
+document.addEventListener('input', handleBusinessFieldEvent);
+document.addEventListener('change', event => {
+  handleBusinessFieldEvent(event);
+  const el = event.target;
+  if (businessSettingsDraft && el.dataset.businessGroupMain) {
+    const group = businessSettingsDraft.shipperGroups.find(item => item.id === el.dataset.businessGroupMain);
+    const ref = findBusinessRef(businessSettingsDraft, el.value);
+    if (group && ref) {
+      group.mainRef = { shipperId: ref.shipperId, marketId: ref.marketId };
+      if (!group.members.some(item => refKey(item) === refKey(ref))) group.members.push(cloneJSON(group.mainRef));
+      markBusinessSettingsDirty(); renderBusinessSettings();
+    }
+    return;
+  }
+  if (businessSettingsDraft && el.dataset.businessGroupMember) {
+    const parsedKey = parseTupleKey(el.dataset.businessGroupMember, 2);
+    if (!parsedKey) return;
+    const [groupId, key] = parsedKey;
+    const group = businessSettingsDraft.shipperGroups.find(item => item.id === groupId);
+    const ref = findBusinessRef(businessSettingsDraft, key);
+    if (!group || !ref) return;
+    if (el.checked && !group.members.some(item => refKey(item) === key))
+      group.members.push({ shipperId: ref.shipperId, marketId: ref.marketId });
+    if (!el.checked) group.members = group.members.filter(item => refKey(item) !== key);
+    if (!group.members.length) {
+      group.members.push({ shipperId: ref.shipperId, marketId: ref.marketId }); el.checked = true;
+      toast('分组至少保留一个成员'); return;
+    }
+    if (!group.members.some(item => refKey(item) === refKey(group.mainRef))) group.mainRef = cloneJSON(group.members[0]);
+    markBusinessSettingsDirty(); renderBusinessSettings(); return;
+  }
+  if (returnCtx && el.dataset.returnPlace) {
+    const kind = el.dataset.returnPlace;
+    const place = businessCatalog().places.find(item => item.id === el.value);
+    returnCtx.form[kind + 'Location'] = place ? cloneJSON(Object.assign({}, place, { placeId: place.id })) : {};
+    if (returnCtx.form[kind + 'Location'].id) delete returnCtx.form[kind + 'Location'].id;
+    if (returnCtx.form[kind + 'Location'].updatedAt) delete returnCtx.form[kind + 'Location'].updatedAt;
+    returnCtx.dirty = true; renderReturnForm(); persistReturnDraft().catch(() => {}); return;
+  }
+  if (returnCtx && el.id === 'returnWeightGainConfirmed') {
+    returnCtx.form.weightGainConfirmed = el.checked; returnCtx.dirty = true;
+    renderReturnStaged(); persistReturnDraft().catch(() => {});
+  }
 });
 
 document.addEventListener('keydown', e => {
@@ -4330,14 +5215,14 @@ function runSelfTests() {
   eq(Array.isArray(md.maintenance), true, 'migrate 补齐缺失的 maintenance');
   eq(migrate(null).trips.length, 0, 'migrate 空数据回默认');
   eq(typeof migrate(null).settings.lastBackupAt, 'string', 'migrate 合并新增 settings 字段');
-  eq(md.schemaVersion, 3, '旧备份迁移到 schema v3');
+  eq(md.schemaVersion, 4, '旧备份迁移到 schema v4');
   eq(md.vehicles[0].name, '原有车辆', 'v1 备份自动建立原有车辆');
   eq(md.trips[0].vehicleId, md.vehicles[0].id, 'v1 趟次自动归入原有车辆');
 
   /* —— 统计口径（换夹具数据，测完还原）—— */
   const real = S;
   S = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     settings: Object.assign(defaultData().settings, { activeVehicleId: 'all', periodStartDate: '2026-01-01', periodEndDate: '2026-12-31' }),
     categories: defaultData().categories,
     vehicles: [
@@ -4626,31 +5511,10 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
     resolveSource: () => $('#btnAddVehicle')
   }));
   $('#btnVehicleSave').addEventListener('click', saveVehicle);
-  $('#btnStartGo').addEventListener('click', async () => {
-    if (!guardOnce()) return;
-    if (!startVehicleId) { toast('先选一辆车'); return; }
-    if (openTrip(startVehicleId)) { toast(vehicleById(startVehicleId).name + '已有在途的趟'); return; }
-    const d = $('#startDate').value || todayStr();
-    const tripId = uid();
-    const vehicleId = startVehicleId;
-    const result = await submitBusinessMutation(draft => {
-      draft.trips.push({
-        id: tripId,
-        vehicleId,
-        startDate: d,
-        endDate: null,
-        status: 'open',
-        createdAt: new Date().toISOString(),
-        expenses: [],
-        incomes: []
-      });
-    }, { kind: 'start-trip' });
-    if (!result.ok) return;
-    DevicePrefs.activeVehicleId = vehicleId;
-    closeSheet($('#sheet-start'));
-    showView('home');
-    toast(vehicleById(vehicleId).name + '已发车 🚚 一路顺风');
-  });
+  $('#btnStartGo').addEventListener('click', saveStartManifest);
+  $('#returnStage').addEventListener('click', stageReturn);
+  $('#returnSave').addEventListener('click', saveReturnManifest);
+  $('#businessSettingsSave').addEventListener('click', saveBusinessSettings);
   $('#startDate').addEventListener('change', updateStartTip);
   $('#quickNoteBtn').addEventListener('click', () => {
     const w = $('#quickNoteWrap');

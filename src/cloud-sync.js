@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 3;
+  const SCHEMA_VERSION = 4;
   const SETTINGS_ID = 'settings';
   const ORDER_FIELD = 'sortOrder';
   const RECORD_TYPES = [
@@ -138,7 +138,7 @@
 
   function normalizeState(state, versions) {
     if (!state || typeof state !== 'object')
-      throw new TypeError('需要 schema v3 账本状态');
+      throw new TypeError('需要 schema v4 账本状态');
 
     const records = [];
     const settings = clone(state.settings || {});
@@ -562,6 +562,15 @@
         totalVolumeMl: 0,
         structuredCostCents: 0,
         fingerprint: ''
+      },
+      business: {
+        shippers: 0,
+        markets: 0,
+        shipperGroups: 0,
+        places: 0,
+        outboundTrips: 0,
+        returnTrips: 0,
+        fingerprint: ''
       }
     };
     let expenseCents = 0;
@@ -573,13 +582,21 @@
     let fuelVolumeMl = 0;
     let structuredFuelCostCents = 0;
     const fuelFingerprints = [];
+    const businessFingerprints = [];
 
     records.forEach(item => {
       if (item.type === 'vehicle') summary.counts.vehicles++;
       else if (item.type === 'category') {
         if (item.data && item.data.kind === 'expense') summary.counts.expenseCategories++;
         if (item.data && item.data.kind === 'income') summary.counts.incomeCategories++;
-      } else if (item.type === 'trip') summary.counts.trips++;
+      } else if (item.type === 'trip') {
+        summary.counts.trips++;
+        const business = item.data && item.data.business || {};
+        if (business.outbound) summary.business.outboundTrips++;
+        if (business.returnTrip) summary.business.returnTrips++;
+        if (business.outbound || business.returnTrip)
+          businessFingerprints.push(recordKey(item.type, item.id) + '|' + canonical(business));
+      }
       else if (item.type === 'trip_expense') {
         summary.counts.tripExpenses++;
         const amountCents = amountInCents(item.data && item.data.amount);
@@ -626,6 +643,18 @@
     summary.fuel.totalVolumeMl = fuelVolumeMl;
     summary.fuel.structuredCostCents = structuredFuelCostCents;
     summary.fuel.fingerprint = snapshotFingerprint(fuelFingerprints.sort());
+    const settingRecord = records.find(item => item.type === 'fleet_settings');
+    const settingBusiness = settingRecord && settingRecord.data && settingRecord.data.business || {};
+    const shippers = Array.isArray(settingBusiness.shippers) ? settingBusiness.shippers : [];
+    summary.business.shippers = shippers.length;
+    summary.business.markets = shippers.reduce((sum, shipper) =>
+      sum + (Array.isArray(shipper && shipper.markets) ? shipper.markets.length : 0), 0);
+    summary.business.shipperGroups = Array.isArray(settingBusiness.shipperGroups)
+      ? settingBusiness.shipperGroups.length : 0;
+    summary.business.places = Array.isArray(settingBusiness.places)
+      ? settingBusiness.places.length : 0;
+    businessFingerprints.push('fleet_settings|' + canonical(settingBusiness));
+    summary.business.fingerprint = snapshotFingerprint(businessFingerprints.sort());
     return summary;
   }
 
@@ -637,7 +666,8 @@
       ? clone(after)
       : summarizeState(after);
     const differences = [];
-    ['counts', 'amounts', 'exactAmounts', 'fuel'].forEach(group => {
+    ['counts', 'amounts', 'exactAmounts', 'fuel', 'business'].forEach(group => {
+      if (!Object.prototype.hasOwnProperty.call(left, group)) return;
       const fields = new Set(
         Object.keys(left[group] || {}).concat(Object.keys(right[group] || {}))
       );

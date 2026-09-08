@@ -18,7 +18,7 @@ SQLite、固定测试车主和 `dev:local` 只用于本地 development + loopbac
 
 ## 2. 发布前验证
 
-v1.7.0 第一轮目前仅本地开发，生产仍按上一已发布版本运行。发布新应用前必须先按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 审核、授权并应用增量迁移；不能直接发布到仅有 schema marker 1 的数据库。
+v1.8.0 第二轮目前仅本地开发，生产仍按上一已发布版本运行。发布新应用前必须先按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量迁移；不能直接发布到缺少 schema marker 2 或 3 的数据库。
 
 使用 `.nvmrc` 指定的 Node.js 版本。每条命令必须退出码为 0：
 

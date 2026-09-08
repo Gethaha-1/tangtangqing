@@ -5,11 +5,15 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 3;
+  const SCHEMA_VERSION = 4;
   const LEGACY_VEHICLE_ID = 'vehicle_legacy';
   const MAX_AMOUNT_CENTS = 99999999999n;
   const MAX_UNIT_PRICE_X10000 = 9999999n;
   const MAX_VOLUME_ML = 100000000n;
+  const MAX_WEIGHT_MILLI = 100000000n;
+  const MAX_BOX_SLOT_MILLI = 100000000n;
+  const OUTBOUND_CARGO_TYPES = ['produce', 'general', 'other'];
+  const RETURN_CARGO_TYPES = ['corn', 'corn_flakes', 'soybean', 'rice', 'general', 'other'];
 
   function localDateString(date) {
     const d = date || new Date();
@@ -137,6 +141,313 @@
     return (numerator + denominator / 2n) / denominator;
   }
 
+  function strictDecimalUnits(value, scale, maximum, field, allowZero) {
+    let text;
+    if (typeof value === 'number' && Number.isFinite(value)) text = String(value);
+    else if (typeof value === 'string') text = value.trim();
+    else text = '';
+    if (!text || /[eE]/.test(text)) throw new Error((field || '数值') + ' 必须使用普通十进制');
+    const match = /^\+?(?:(\d+)(?:\.(\d*))?|\.(\d+))$/.exec(text);
+    const fraction = match && ((match[2] !== undefined ? match[2] : match[3]) || '');
+    if (!match || fraction.length > scale)
+      throw new Error((field || '数值') + ' 最多保留 ' + scale + ' 位小数');
+    const units = BigInt(match[1] || '0') * (10n ** BigInt(scale)) +
+      BigInt((fraction + '0'.repeat(scale)).slice(0, scale) || '0');
+    if ((!allowZero && units === 0n) || units > maximum)
+      throw new Error((field || '数值') + (allowZero ? ' 超出支持范围' : ' 必须大于零且不能超出支持范围'));
+    return units;
+  }
+
+  function optionalStrictDecimal(value, scale, maximum, field, allowZero) {
+    if (value === '' || value === null || value === undefined) return null;
+    return strictDecimalUnits(value, scale, maximum, field, allowZero);
+  }
+
+  function calculateReturnFreight(fields) {
+    const input = fields || {};
+    try {
+      const loaded = strictDecimalUnits(input.loadedTons, 3, MAX_WEIGHT_MILLI, '装车吨位', false);
+      const price = strictDecimalUnits(input.unitPrice, 2, MAX_AMOUNT_CENTS, '返程单价', false);
+      const receivable = roundQuotient(loaded * price, 1000n);
+      if (receivable === null || receivable > MAX_AMOUNT_CENTS)
+        throw new Error('返程应收运费超出支持范围');
+      const actualPresent = input.actualReceivedAmount !== '' &&
+        input.actualReceivedAmount !== null && input.actualReceivedAmount !== undefined;
+      const actual = actualPresent
+        ? strictDecimalUnits(input.actualReceivedAmount, 2, MAX_AMOUNT_CENTS, '实收运费', true)
+        : null;
+      return {
+        ok: true,
+        loadedTons: unitsToCanonical(loaded, 3),
+        unitPrice: unitsToCanonical(price, 2),
+        receivableAmount: unitsToNumber(receivable, 2),
+        actualReceivedAmount: actual === null ? null : unitsToNumber(actual, 2),
+        effectiveAmount: unitsToNumber(actual === null ? receivable : actual, 2),
+        usesActualReceived: actual !== null,
+        formatted: {
+          loadedTons: unitsToFixed(loaded, 3),
+          unitPrice: unitsToFixed(price, 2),
+          receivableAmount: unitsToFixed(receivable, 2),
+          actualReceivedAmount: actual === null ? '' : unitsToFixed(actual, 2),
+          effectiveAmount: unitsToFixed(actual === null ? receivable : actual, 2)
+        }
+      };
+    } catch (error) {
+      return { ok: false, error: { message: error.message || '返程运费输入无效' } };
+    }
+  }
+
+  function calculateWeightLoss(fields) {
+    const input = fields || {};
+    try {
+      const loaded = optionalStrictDecimal(input.loadedTons, 3, MAX_WEIGHT_MILLI, '装车吨位', false);
+      const unloaded = optionalStrictDecimal(input.unloadedTons, 3, MAX_WEIGHT_MILLI, '卸车吨位', false);
+      const confirmed = optionalStrictDecimal(input.lossKg, 3, MAX_WEIGHT_MILLI * 1000n, '确认掉称', true);
+      if (loaded !== null && unloaded !== null && unloaded > loaded)
+        return { ok: false, warning: '卸车吨位大于装车吨位，请确认称重记录', referenceLossKg: null };
+      const reference = loaded !== null && unloaded !== null ? loaded - unloaded : null;
+      return {
+        ok: true,
+        referenceLossKg: reference === null ? null : unitsToCanonical(reference, 0),
+        confirmedLossKg: confirmed === null
+          ? (reference === null ? null : unitsToCanonical(reference, 0))
+          : unitsToCanonical(confirmed, 3),
+        usedReference: confirmed === null && reference !== null
+      };
+    } catch (error) {
+      return { ok: false, error: { message: error.message || '称重输入无效' } };
+    }
+  }
+
+  function allocateOutboundFreight(totalFreight, entries) {
+    try {
+      const total = strictDecimalUnits(totalFreight, 2, MAX_AMOUNT_CENTS, '整车原定运费', false);
+      const source = Array.isArray(entries) ? entries : [];
+      if (!source.length) throw new Error('请至少选择一个货主卸货点');
+      const slots = source.map((entry, index) => ({
+        entry,
+        index,
+        id: String(entry && entry.id || ''),
+        units: strictDecimalUnits(entry && entry.boxSlots, 3, MAX_BOX_SLOT_MILLI, '箱位', false)
+      }));
+      if (slots.some(item => !item.id)) throw new Error('货主清单缺少稳定标识');
+      const totalSlots = slots.reduce((sum, item) => sum + item.units, 0n);
+      const shares = slots.map(item => {
+        const numerator = total * item.units;
+        return { item, cents: numerator / totalSlots, remainder: numerator % totalSlots };
+      });
+      let remaining = total - shares.reduce((sum, share) => sum + share.cents, 0n);
+      shares.slice().sort((left, right) => {
+        if (left.remainder === right.remainder) return left.item.index - right.item.index;
+        return left.remainder > right.remainder ? -1 : 1;
+      }).forEach(share => {
+        if (remaining > 0n) { share.cents += 1n; remaining -= 1n; }
+      });
+      const allocations = shares.sort((a, b) => a.item.index - b.item.index).map(share => {
+        const rounding = optionalStrictDecimal(
+          share.item.entry && share.item.entry.roundingAmount,
+          2, MAX_AMOUNT_CENTS, '协商抹零', true
+        ) || 0n;
+        if (rounding > share.cents) throw new Error('协商抹零不能大于该货主的分摊运费');
+        return Object.assign({}, clone(share.item.entry), {
+          id: share.item.id,
+          boxSlots: unitsToCanonical(share.item.units, 3),
+          allocatedAmount: unitsToNumber(share.cents, 2),
+          roundingAmount: unitsToNumber(rounding, 2),
+          finalAmount: unitsToNumber(share.cents - rounding, 2)
+        });
+      });
+      if (new Set(allocations.map(item => item.id)).size !== allocations.length)
+        throw new Error('本趟货主清单标识重复');
+      const roundingTotal = allocations.reduce((sum, item) => sum + amountUnits(item.roundingAmount), 0n);
+      return {
+        ok: true,
+        totalFreight: unitsToNumber(total, 2),
+        totalBoxSlots: unitsToCanonical(totalSlots, 3),
+        allocatedTotal: unitsToNumber(total, 2),
+        roundingTotal: unitsToNumber(roundingTotal, 2),
+        finalTotal: unitsToNumber(total - roundingTotal, 2),
+        allocations
+      };
+    } catch (error) {
+      return { ok: false, error: { message: error.message || '去程运费分摊失败' } };
+    }
+  }
+
+  function safeBusinessText(value, label, maximum, required) {
+    const text = value == null ? '' : String(value).trim();
+    if ((required && !text) || text.length > maximum)
+      throw new Error((label || '文字') + (required ? '不能为空且' : '') + '不能超过 ' + maximum + ' 个字符');
+    if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text))
+      throw new Error((label || '文字') + '含无效控制字符');
+    return text;
+  }
+
+  function safeBusinessId(value, label) {
+    const id = safeBusinessText(value, label || '标识', 160, true);
+    if (/[\u0000-\u001f]/.test(id)) throw new Error((label || '标识') + '含无效字符');
+    return id;
+  }
+
+  function boundedBusinessData(value) {
+    if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 1000000)
+      throw new Error('业务资料超出 1 MB 限制');
+    return value;
+  }
+
+  function businessRefKey(shipperId, marketId) {
+    return JSON.stringify([String(shipperId), String(marketId)]);
+  }
+
+  function normalizeLocation(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const result = {
+      placeId: safeBusinessText(source.placeId, '常用地点标识', 160, false),
+      region: safeBusinessText(source.region, '市县', 80, false),
+      name: safeBusinessText(source.name, '厂家或地点', 120, false),
+      roadNote: safeBusinessText(source.roadNote, '道路备注', 300, false),
+      handlingNote: safeBusinessText(source.handlingNote, '装卸备注', 300, false),
+      note: safeBusinessText(source.note, '地点提醒', 500, false)
+    };
+    if (source.latitude !== undefined && source.latitude !== null && source.latitude !== '') {
+      const latitude = Number(source.latitude), longitude = Number(source.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+          latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180)
+        throw new Error('地点坐标无效');
+      result.latitude = latitude;
+      result.longitude = longitude;
+    }
+    return result;
+  }
+
+  function normalizeBusinessSettings(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const shippers = (Array.isArray(source.shippers) ? source.shippers : []).map(shipper => ({
+      id: safeBusinessId(shipper && shipper.id, '货主标识'),
+      name: safeBusinessText(shipper && shipper.name, '货主名称', 60, true),
+      markets: (Array.isArray(shipper && shipper.markets) ? shipper.markets : []).map(market => ({
+        id: safeBusinessId(market && market.id, '市场标识'),
+        name: safeBusinessText(market && market.name, '市场名称', 100, true),
+        region: safeBusinessText(market && market.region, '市场市县', 80, false)
+      }))
+    }));
+    const shipperIds = new Set();
+    const marketKeys = new Set();
+    shippers.forEach(shipper => {
+      if (shipperIds.has(shipper.id)) throw new Error('货主标识重复');
+      shipperIds.add(shipper.id);
+      shipper.markets.forEach(market => {
+        const key = businessRefKey(shipper.id, market.id);
+        if (marketKeys.has(key)) throw new Error('同一货主的市场标识重复');
+        marketKeys.add(key);
+      });
+    });
+    const normalizeRef = ref => {
+      const result = {
+        shipperId: safeBusinessId(ref && ref.shipperId, '分组货主标识'),
+        marketId: safeBusinessId(ref && ref.marketId, '分组市场标识')
+      };
+      if (!marketKeys.has(businessRefKey(result.shipperId, result.marketId)))
+        throw new Error('货主分组引用了不存在的货主或市场');
+      return result;
+    };
+    const shipperGroups = (Array.isArray(source.shipperGroups) ? source.shipperGroups : []).map(group => {
+      const members = (Array.isArray(group && group.members) ? group.members : []).map(normalizeRef);
+      const seen = new Set();
+      members.forEach(ref => {
+        const key = businessRefKey(ref.shipperId, ref.marketId);
+        if (seen.has(key)) throw new Error('同一货主分组不能重复包含相同卸货点');
+        seen.add(key);
+      });
+      const mainRef = normalizeRef(group && group.mainRef);
+      if (!seen.has(businessRefKey(mainRef.shipperId, mainRef.marketId)))
+        throw new Error('主货主必须同时在分组成员中');
+      return {
+        id: safeBusinessId(group && group.id, '分组标识'),
+        name: safeBusinessText(group && group.name, '分组名称', 60, true),
+        mainRef,
+        members
+      };
+    });
+    const groupIds = new Set();
+    shipperGroups.forEach(group => {
+      if (groupIds.has(group.id)) throw new Error('货主分组标识重复');
+      groupIds.add(group.id);
+    });
+    const places = (Array.isArray(source.places) ? source.places : []).map(place => {
+      const normalized = normalizeLocation(place);
+      return Object.assign(normalized, {
+        id: safeBusinessId(place && place.id, '地点标识'),
+        updatedAt: place && place.updatedAt ? new Date(place.updatedAt).toISOString() : new Date(0).toISOString()
+      });
+    });
+    const placeIds = new Set();
+    places.forEach(place => {
+      if (placeIds.has(place.id)) throw new Error('地点标识重复');
+      placeIds.add(place.id);
+    });
+    return boundedBusinessData({ shippers, shipperGroups, places });
+  }
+
+  function normalizeTripBusiness(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const result = {};
+    if (source.outbound) {
+      const outbound = source.outbound;
+      const calculated = allocateOutboundFreight(outbound.totalFreight, outbound.allocations);
+      if (!calculated.ok) throw new Error(calculated.error.message);
+      result.outbound = {
+        cargoType: OUTBOUND_CARGO_TYPES.includes(outbound.cargoType) ? outbound.cargoType : 'produce',
+        totalFreight: calculated.totalFreight,
+        totalBoxSlots: calculated.totalBoxSlots,
+        allocatedTotal: calculated.allocatedTotal,
+        roundingTotal: calculated.roundingTotal,
+        finalTotal: calculated.finalTotal,
+        allocations: calculated.allocations.map(item => ({
+          id: safeBusinessId(item.id, '本趟货主清单标识'),
+          shipperId: safeBusinessId(item.shipperId, '货主标识'),
+          shipperName: safeBusinessText(item.shipperName, '货主名称', 60, true),
+          marketId: safeBusinessId(item.marketId, '市场标识'),
+          marketName: safeBusinessText(item.marketName, '市场名称', 100, true),
+          marketRegion: safeBusinessText(item.marketRegion, '市场市县', 80, false),
+          boxSlots: item.boxSlots,
+          allocatedAmount: item.allocatedAmount,
+          roundingAmount: item.roundingAmount,
+          finalAmount: item.finalAmount
+        }))
+      };
+    }
+    if (source.returnTrip) {
+      const back = source.returnTrip;
+      const calculated = calculateReturnFreight(back);
+      if (!calculated.ok) throw new Error(calculated.error.message);
+      const loss = calculateWeightLoss(back);
+      if (!loss.ok && loss.error) throw new Error(loss.error.message);
+      const unloaded = optionalStrictDecimal(back.unloadedTons, 3, MAX_WEIGHT_MILLI, '卸车吨位', false);
+      const weightGain = unloaded !== null && unloaded > decimalToUnits(calculated.loadedTons, 3);
+      if (weightGain && back.weightGainConfirmed !== true)
+        throw new Error('卸车吨位大于装车吨位，需先人工确认');
+      const lossKg = optionalStrictDecimal(back.lossKg, 3, MAX_WEIGHT_MILLI * 1000n, '确认掉称', true);
+      const deduction = optionalStrictDecimal(back.lossDeductionAmount, 2, MAX_AMOUNT_CENTS, '掉称扣款', true);
+      result.returnTrip = {
+        cargoType: RETURN_CARGO_TYPES.includes(back.cargoType) ? back.cargoType : 'corn',
+        loadedTons: calculated.loadedTons,
+        unitPrice: calculated.unitPrice,
+        receivableAmount: calculated.receivableAmount,
+        actualReceivedAmount: calculated.actualReceivedAmount,
+        effectiveAmount: calculated.effectiveAmount,
+        unloadedTons: unloaded === null ? '' : unitsToCanonical(unloaded, 3),
+        lossKg: lossKg === null ? '' : unitsToCanonical(lossKg, 3),
+        lossReferenceKg: loss.referenceLossKg === null ? '' : loss.referenceLossKg,
+        lossDeductionAmount: deduction === null ? null : unitsToNumber(deduction, 2),
+        weightGainConfirmed: weightGain,
+        pickupLocation: normalizeLocation(back.pickupLocation),
+        deliveryLocation: normalizeLocation(back.deliveryLocation)
+      };
+    }
+    return boundedBusinessData(result);
+  }
+
   function strictFuelUnits(value, scale) {
     let text;
     if (typeof value === 'number') {
@@ -259,6 +570,7 @@
     const oldVersion = d.schemaVersion || 1;
 
     d.settings = Object.assign({}, fallback.settings, d.settings || {});
+    d.settings.business = normalizeBusinessSettings(d.settings.business || fallback.settings.business || {});
     const ownerRecordsWritable = d.settings._ownerRecordsWritable !== false;
     d.categories = d.categories || fallback.categories;
     d.trips = Array.isArray(d.trips) ? d.trips : [];
@@ -315,6 +627,7 @@
       t.incomes = (t.incomes || []).map(e => Object.assign(e, {
         amount: migrationAmount(e.amount, '收入金额')
       }));
+      t.business = normalizeTripBusiness(t.business || {});
     });
     d.maintenance.forEach(m => {
       if (!validVehicleIds.has(m.vehicleId)) {
@@ -390,9 +703,21 @@
     );
   }
 
+  function tripIncomeUnits(trip) {
+    const business = trip && trip.business || {};
+    let total = (trip && trip.incomes || []).reduce((sum, entry) => {
+      if (business.outbound && entry.catId === 'cargo') return sum;
+      if (business.returnTrip && entry.catId === 'back') return sum;
+      return sum + amountUnits(entry.amount);
+    }, 0n);
+    if (business.outbound) total += amountUnits(business.outbound.finalTotal);
+    if (business.returnTrip) total += amountUnits(business.returnTrip.effectiveAmount);
+    return total;
+  }
+
   function tripTotals(trip) {
     const expUnits = (trip.expenses || []).reduce((sum, entry) => sum + amountUnits(entry.amount), 0n);
-    const incUnits = (trip.incomes || []).reduce((sum, entry) => sum + amountUnits(entry.amount), 0n);
+    const incUnits = tripIncomeUnits(trip);
     return {
       exp: unitsToNumber(expUnits, 2),
       inc: unitsToNumber(incUnits, 2),
@@ -412,7 +737,7 @@
     let incUnits = 0n;
     let expUnits = 0n;
     trips.forEach(t => {
-      incUnits += (t.incomes || []).reduce((sum, entry) => sum + amountUnits(entry.amount), 0n);
+      incUnits += tripIncomeUnits(t);
       expUnits += (t.expenses || []).reduce((sum, entry) => sum + amountUnits(entry.amount), 0n);
     });
     const maintenanceUnits = maintenanceInPeriod(state, start, end, vehicleId)
@@ -466,7 +791,7 @@
     closedTripsInPeriod(state, start, end, vehicleId).forEach(t => {
       const index = keys.indexOf(t.endDate.slice(0, 7));
       if (index >= 0) {
-        const income = (t.incomes || []).reduce((sum, entry) => sum + amountUnits(entry.amount), 0n);
+        const income = tripIncomeUnits(t);
         const expense = (t.expenses || []).reduce((sum, entry) => sum + amountUnits(entry.amount), 0n);
         valueUnits[index] += income - expense;
       }
@@ -705,6 +1030,11 @@
     legacyVehicle,
     cleanAmount,
     calculateFuelFields,
+    calculateReturnFreight,
+    calculateWeightLoss,
+    allocateOutboundFreight,
+    normalizeBusinessSettings,
+    normalizeTripBusiness,
     fuelConsistencyToleranceCents,
     migrate,
     tripDate,
@@ -714,6 +1044,7 @@
     closedTripsInPeriod,
     maintenanceInPeriod,
     tripTotals,
+    tripIncomeUnits,
     tripSeq,
     periodStats,
     monthKeys,

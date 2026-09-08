@@ -269,9 +269,46 @@ test("快记清单退出、重连和会话锁定都遵守草稿边界", () => {
   assert.match(extractFunction("requestSheetClose"), /await persistQuickDraft\(\)/);
   assert.match(extractFunction("requestSheetClose"), /history\.pushState/);
   assert.match(extractFunction("reconcileQuickBatchAfterReconnect"), /confirmedIds\.has\(entry\.id\)/);
-  assert.match(extractFunction("clearSensitiveClientState"), /clearQuickBatch\(\)/);
+  const clearSensitive = extractFunction("clearSensitiveClientState");
+  assert.match(clearSensitive, /clearQuickBatch\(\)/);
+  assert.match(clearSensitive, /startCtx = null/);
+  assert.match(clearSensitive, /returnCtx = null/);
+  assert.match(clearSensitive, /businessSettingsDraft = null/);
   assert.match(extractFunction("reconnectCloud"), /reconcileQuickBatchAfterReconnect\(\)/);
   assert.doesNotMatch(source, /localStorage[^\n]*(quickDraft|quickBatch)|sessionStorage[^\n]*(quickDraft|quickBatch)/i);
+});
+
+test("发车分组只是批量快捷入口，本趟移除只删单个成员", () => {
+  assert.match(source, /group\.members\.forEach\(member =>/);
+  assert.match(source, /startCtx\.selected = startCtx\.selected\.filter\(item => item\.id !== el\.dataset\.startRemove\)/);
+  assert.doesNotMatch(extractFunction("addStartRef"), /shipperGroups\s*=/);
+  assert.match(source, /data-start-add-ref/);
+  assert.match(source, /＋ 货主（每次添加一人）/);
+});
+
+test("去程和返程逐字段只写本机草稿，最终按钮各发一个原子提交", () => {
+  const persist = extractFunction("persistFlowDraft");
+  const fieldHandler = extractFunction("handleBusinessFieldEvent");
+  const saveStart = extractFunction("saveStartManifest");
+  const saveReturn = extractFunction("saveReturnManifest");
+  assert.match(persist, /vault\.save\(context\.id, kind, snapshot, expected\)/);
+  assert.doesNotMatch(fieldHandler, /submitBusinessMutation/);
+  assert.equal((saveStart.match(/submitBusinessMutation/g) || []).length, 1);
+  assert.equal((saveReturn.match(/submitBusinessMutation/g) || []).length, 1);
+  assert.match(saveStart, /await persistStartDraft\(\)/);
+  assert.match(saveReturn, /await persistReturnDraft\(\)/);
+  assert.doesNotMatch(saveStart, /已收车趟次不能修改/);
+});
+
+test("返程计费、实收、称重、扣款和两端地点在同一张清单", () => {
+  const sheet = source.slice(source.indexOf('<div class="sheet" id="sheet-return">'), source.indexOf('<!-- 记一笔'));
+  for (const id of ["returnLoadedTons", "returnUnitPrice", "returnActual", "returnUnloadedTons", "returnLossKg", "returnLossDeduction", "returnPickupLocation", "returnDeliveryLocation", "returnStage", "returnSave"])
+    assert.match(sheet, new RegExp(`id="${id}"`));
+  assert.match(extractFunction("updateReturnCalculation"), /TTQDomain\.calculateReturnFreight/);
+  assert.match(extractFunction("updateReturnCalculation"), /TTQDomain\.calculateWeightLoss/);
+  assert.match(extractFunction("saveReturnManifest"), /effectiveAmount/);
+  assert.match(source, /填 0 表示明确实收 0/);
+  assert.match(extractFunction("businessLocationSummaryHTML"), /notes\.map\(note => '<p class="biz-summary-note">' \+ esc\(note\)/);
 });
 
 test("油费数字键盘统一两位显示、智能油价和联算存储精度", () => {
@@ -361,13 +398,13 @@ test("首页、统计与三种报告 scope 统一使用净利润和 buildReportS
   assert.match(source, /本范围只有 ' \+ rows\.length \+ ' 个月，不作趋势比较/);
 });
 
-test("schema v3 备份在写入前后都执行 conservation，且不展示 fingerprint", () => {
+test("schema v4 备份在写入前后都执行 conservation，且不展示 fingerprint", () => {
   const exportEntry = extractFunction("exportData");
   const exported = extractFunction("exportSnapshot");
   const imported = extractFunction("importData");
   assert.match(exportEntry, /Store\.membership\.role !== 'owner'/);
   assert.match(exportEntry, /isPartialDriverSnapshot\(S\)/);
-  assert.match(exported, /format: 'tangtangqing-schema-v3'/);
+  assert.match(exported, /format: 'tangtangqing-schema-v4'/);
   assert.match(exported, /schemaVersion: TTQDomain\.SCHEMA_VERSION/);
   assert.match(exported, /backupScope: partial \? 'driver-visible-partial' : 'full-fleet'/);
   assert.match(exported, /restorable: !partial/);
@@ -439,6 +476,15 @@ test("顶层 v3 不能靠删除 meta 降级，真正 v2 仍兼容", () => {
   valid._backupMeta.backupScope = "full-fleet";
   valid._backupMeta.restorable = true;
   assert.equal(inspectBackupEnvelope(valid).ok, true);
+  const v4 = structuredClone(valid);
+  v4.schemaVersion = 4;
+  v4._backupMeta.format = "tangtangqing-schema-v4";
+  v4._backupMeta.schemaVersion = 4;
+  assert.equal(inspectBackupEnvelope(v4).ok, false, "v4 必须声明 business 守恒");
+  v4._backupMeta.conservation.business = {
+    shippers: 0, markets: 0, shipperGroups: 0, places: 0, outboundTrips: 0, returnTrips: 0, fingerprint: "",
+  };
+  assert.equal(inspectBackupEnvelope(v4).ok, true);
   delete valid._backupMeta.conservation;
   assert.equal(inspectBackupEnvelope(valid).ok, false);
 

@@ -1,0 +1,1963 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "bb45e6e3-fe80-47da-9deb-2d4014d53275",
+  "prevId": "0707d5a7-380a-4c9d-8364-60bf39301d8d",
+  "tables": {
+    "categories": {
+      "name": "categories",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "icon": {
+          "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "builtin": {
+          "name": "builtin",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "active": {
+          "name": "active",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "categories_fleet_kind_active_idx": {
+          "name": "categories_fleet_kind_active_idx",
+          "columns": [
+            "fleet_id",
+            "kind",
+            "active"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "categories_fleet_id_fleets_id_fk": {
+          "name": "categories_fleet_id_fleets_id_fk",
+          "tableFrom": "categories",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "categories_fleet_id_kind_id_pk": {
+          "columns": [
+            "fleet_id",
+            "kind",
+            "id"
+          ],
+          "name": "categories_fleet_id_kind_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "categories_kind_check": {
+          "name": "categories_kind_check",
+          "value": "\"categories\".\"kind\" IN ('expense', 'income')"
+        },
+        "categories_builtin_check": {
+          "name": "categories_builtin_check",
+          "value": "\"categories\".\"builtin\" IN (0, 1)"
+        },
+        "categories_active_check": {
+          "name": "categories_active_check",
+          "value": "\"categories\".\"active\" IN (0, 1)"
+        },
+        "categories_sort_order_check": {
+          "name": "categories_sort_order_check",
+          "value": "\"categories\".\"sort_order\" >= 0"
+        },
+        "categories_version_check": {
+          "name": "categories_version_check",
+          "value": "\"categories\".\"version\" > 0"
+        }
+      }
+    },
+    "fleet_members": {
+      "name": "fleet_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active": {
+          "name": "active",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "fleet_members_fleet_user_uq": {
+          "name": "fleet_members_fleet_user_uq",
+          "columns": [
+            "fleet_id",
+            "user_id"
+          ],
+          "isUnique": true
+        },
+        "fleet_members_user_idx": {
+          "name": "fleet_members_user_idx",
+          "columns": [
+            "user_id",
+            "active"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fleet_members_fleet_id_fleets_id_fk": {
+          "name": "fleet_members_fleet_id_fleets_id_fk",
+          "tableFrom": "fleet_members",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fleet_members_user_id_users_id_fk": {
+          "name": "fleet_members_user_id_users_id_fk",
+          "tableFrom": "fleet_members",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "fleet_members_role_check": {
+          "name": "fleet_members_role_check",
+          "value": "\"fleet_members\".\"role\" IN ('owner', 'driver')"
+        },
+        "fleet_members_active_check": {
+          "name": "fleet_members_active_check",
+          "value": "\"fleet_members\".\"active\" IN (0, 1)"
+        },
+        "fleet_members_version_check": {
+          "name": "fleet_members_version_check",
+          "value": "\"fleet_members\".\"version\" > 0"
+        }
+      }
+    },
+    "fleet_settings": {
+      "name": "fleet_settings",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "theme": {
+          "name": "theme",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'day'"
+        },
+        "last_report_seen": {
+          "name": "last_report_seen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "last_backup_at": {
+          "name": "last_backup_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "active_vehicle_id": {
+          "name": "active_vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'all'"
+        },
+        "period_start_date": {
+          "name": "period_start_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period_end_date": {
+          "name": "period_end_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "business_json": {
+          "name": "business_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "initialized_at": {
+          "name": "initialized_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "fleet_settings_fleet_id_fleets_id_fk": {
+          "name": "fleet_settings_fleet_id_fleets_id_fk",
+          "tableFrom": "fleet_settings",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "fleet_settings_theme_check": {
+          "name": "fleet_settings_theme_check",
+          "value": "\"fleet_settings\".\"theme\" IN ('day', 'night')"
+        },
+        "fleet_settings_business_json_check": {
+          "name": "fleet_settings_business_json_check",
+          "value": "json_valid(\"fleet_settings\".\"business_json\") AND json_type(\"fleet_settings\".\"business_json\") = 'object'"
+        },
+        "fleet_settings_version_check": {
+          "name": "fleet_settings_version_check",
+          "value": "\"fleet_settings\".\"version\" > 0"
+        }
+      }
+    },
+    "fleets": {
+      "name": "fleets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "fleets_created_by_user_id_users_id_fk": {
+          "name": "fleets_created_by_user_id_users_id_fk",
+          "tableFrom": "fleets",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "fleets_version_check": {
+          "name": "fleets_version_check",
+          "value": "\"fleets\".\"version\" > 0"
+        }
+      }
+    },
+    "identities": {
+      "name": "identities",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_subject": {
+          "name": "provider_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "identities_provider_subject_uq": {
+          "name": "identities_provider_subject_uq",
+          "columns": [
+            "provider",
+            "provider_subject"
+          ],
+          "isUnique": true
+        },
+        "identities_user_idx": {
+          "name": "identities_user_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "identities_user_id_users_id_fk": {
+          "name": "identities_user_id_users_id_fk",
+          "tableFrom": "identities",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "identities_version_check": {
+          "name": "identities_version_check",
+          "value": "\"identities\".\"version\" > 0"
+        }
+      }
+    },
+    "maintenance": {
+      "name": "maintenance",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "maintenance_fleet_vehicle_date_idx": {
+          "name": "maintenance_fleet_vehicle_date_idx",
+          "columns": [
+            "fleet_id",
+            "vehicle_id",
+            "date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "maintenance_fleet_id_fleets_id_fk": {
+          "name": "maintenance_fleet_id_fleets_id_fk",
+          "tableFrom": "maintenance",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "maintenance_vehicle_fk": {
+          "name": "maintenance_vehicle_fk",
+          "tableFrom": "maintenance",
+          "tableTo": "vehicles",
+          "columnsFrom": [
+            "fleet_id",
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "fleet_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "maintenance_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "maintenance_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "maintenance_amount_check": {
+          "name": "maintenance_amount_check",
+          "value": "\"maintenance\".\"amount_cents\" >= 0"
+        },
+        "maintenance_sort_order_check": {
+          "name": "maintenance_sort_order_check",
+          "value": "\"maintenance\".\"sort_order\" >= 0"
+        },
+        "maintenance_version_check": {
+          "name": "maintenance_version_check",
+          "value": "\"maintenance\".\"version\" > 0"
+        }
+      }
+    },
+    "restore_chunks": {
+      "name": "restore_chunks",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "restore_chunks_fleet_id_job_id_restore_jobs_fleet_id_id_fk": {
+          "name": "restore_chunks_fleet_id_job_id_restore_jobs_fleet_id_id_fk",
+          "tableFrom": "restore_chunks",
+          "tableTo": "restore_jobs",
+          "columnsFrom": [
+            "fleet_id",
+            "job_id"
+          ],
+          "columnsTo": [
+            "fleet_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "restore_chunks_fleet_id_job_id_ordinal_pk": {
+          "columns": [
+            "fleet_id",
+            "job_id",
+            "ordinal"
+          ],
+          "name": "restore_chunks_fleet_id_job_id_ordinal_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "restore_chunks_ordinal_check": {
+          "name": "restore_chunks_ordinal_check",
+          "value": "\"restore_chunks\".\"ordinal\" >= 0 AND \"restore_chunks\".\"ordinal\" < 256"
+        }
+      }
+    },
+    "restore_jobs": {
+      "name": "restore_jobs",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "membership_id": {
+          "name": "membership_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_version": {
+          "name": "base_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "manifest_json": {
+          "name": "manifest_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'uploading'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "restore_jobs_one_active": {
+          "name": "restore_jobs_one_active",
+          "columns": [
+            "fleet_id"
+          ],
+          "isUnique": true,
+          "where": "\"restore_jobs\".\"status\" IN ('uploading','ready')"
+        },
+        "restore_jobs_expiry": {
+          "name": "restore_jobs_expiry",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        },
+        "restore_jobs_membership": {
+          "name": "restore_jobs_membership",
+          "columns": [
+            "membership_id"
+          ],
+          "isUnique": false
+        },
+        "restore_jobs_user": {
+          "name": "restore_jobs_user",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "restore_jobs_fleet_id_fleets_id_fk": {
+          "name": "restore_jobs_fleet_id_fleets_id_fk",
+          "tableFrom": "restore_jobs",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "restore_jobs_membership_id_fleet_members_id_fk": {
+          "name": "restore_jobs_membership_id_fleet_members_id_fk",
+          "tableFrom": "restore_jobs",
+          "tableTo": "fleet_members",
+          "columnsFrom": [
+            "membership_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "restore_jobs_user_id_users_id_fk": {
+          "name": "restore_jobs_user_id_users_id_fk",
+          "tableFrom": "restore_jobs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "restore_jobs_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "restore_jobs_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "restore_jobs_version_check": {
+          "name": "restore_jobs_version_check",
+          "value": "\"restore_jobs\".\"base_version\" > 0"
+        },
+        "restore_jobs_status_check": {
+          "name": "restore_jobs_status_check",
+          "value": "\"restore_jobs\".\"status\" IN ('uploading','ready','complete','cancelled')"
+        }
+      }
+    },
+    "sync_assertions": {
+      "name": "sync_assertions",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ok": {
+          "name": "ok",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sync_assertions_fleet_id_fleets_id_fk": {
+          "name": "sync_assertions_fleet_id_fleets_id_fk",
+          "tableFrom": "sync_assertions",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sync_assertions_fleet_id_operation_id_ordinal_pk": {
+          "columns": [
+            "fleet_id",
+            "operation_id",
+            "ordinal"
+          ],
+          "name": "sync_assertions_fleet_id_operation_id_ordinal_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sync_assertions_ok_check": {
+          "name": "sync_assertions_ok_check",
+          "value": "\"sync_assertions\".\"ok\" = 1"
+        }
+      }
+    },
+    "sync_commits": {
+      "name": "sync_commits",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "response_json": {
+          "name": "response_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "sync_commits_created_at_idx": {
+          "name": "sync_commits_created_at_idx",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "sync_commits_fleet_id_fleets_id_fk": {
+          "name": "sync_commits_fleet_id_fleets_id_fk",
+          "tableFrom": "sync_commits",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sync_commits_fleet_id_operation_id_pk": {
+          "columns": [
+            "fleet_id",
+            "operation_id"
+          ],
+          "name": "sync_commits_fleet_id_operation_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "trip_expenses": {
+      "name": "trip_expenses",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trip_id": {
+          "name": "trip_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fuel_unit_price_x10000": {
+          "name": "fuel_unit_price_x10000",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fuel_volume_ml": {
+          "name": "fuel_volume_ml",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "trip_expenses_fleet_trip_idx": {
+          "name": "trip_expenses_fleet_trip_idx",
+          "columns": [
+            "fleet_id",
+            "trip_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "trip_expenses_fleet_id_fleets_id_fk": {
+          "name": "trip_expenses_fleet_id_fleets_id_fk",
+          "tableFrom": "trip_expenses",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trip_expenses_trip_fk": {
+          "name": "trip_expenses_trip_fk",
+          "tableFrom": "trip_expenses",
+          "tableTo": "trips",
+          "columnsFrom": [
+            "fleet_id",
+            "trip_id"
+          ],
+          "columnsTo": [
+            "fleet_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "trip_expenses_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "trip_expenses_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "trip_expenses_amount_check": {
+          "name": "trip_expenses_amount_check",
+          "value": "\"trip_expenses\".\"amount_cents\" >= 0"
+        },
+        "trip_expenses_fuel_metadata_check": {
+          "name": "trip_expenses_fuel_metadata_check",
+          "value": "(\"trip_expenses\".\"fuel_unit_price_x10000\" IS NULL AND \"trip_expenses\".\"fuel_volume_ml\" IS NULL) OR (\"trip_expenses\".\"category_id\" = 'fuel' AND \"trip_expenses\".\"fuel_unit_price_x10000\" IS NOT NULL AND \"trip_expenses\".\"fuel_volume_ml\" IS NOT NULL AND \"trip_expenses\".\"fuel_unit_price_x10000\" BETWEEN 1 AND 9999999 AND \"trip_expenses\".\"fuel_volume_ml\" BETWEEN 1 AND 100000000)"
+        },
+        "trip_expenses_sort_order_check": {
+          "name": "trip_expenses_sort_order_check",
+          "value": "\"trip_expenses\".\"sort_order\" >= 0"
+        },
+        "trip_expenses_version_check": {
+          "name": "trip_expenses_version_check",
+          "value": "\"trip_expenses\".\"version\" > 0"
+        }
+      }
+    },
+    "trip_incomes": {
+      "name": "trip_incomes",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trip_id": {
+          "name": "trip_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "trip_incomes_trip_category_uq": {
+          "name": "trip_incomes_trip_category_uq",
+          "columns": [
+            "fleet_id",
+            "trip_id",
+            "category_id"
+          ],
+          "isUnique": true
+        },
+        "trip_incomes_fleet_trip_idx": {
+          "name": "trip_incomes_fleet_trip_idx",
+          "columns": [
+            "fleet_id",
+            "trip_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "trip_incomes_fleet_id_fleets_id_fk": {
+          "name": "trip_incomes_fleet_id_fleets_id_fk",
+          "tableFrom": "trip_incomes",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trip_incomes_trip_fk": {
+          "name": "trip_incomes_trip_fk",
+          "tableFrom": "trip_incomes",
+          "tableTo": "trips",
+          "columnsFrom": [
+            "fleet_id",
+            "trip_id"
+          ],
+          "columnsTo": [
+            "fleet_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "trip_incomes_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "trip_incomes_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "trip_incomes_amount_check": {
+          "name": "trip_incomes_amount_check",
+          "value": "\"trip_incomes\".\"amount_cents\" >= 0"
+        },
+        "trip_incomes_sort_order_check": {
+          "name": "trip_incomes_sort_order_check",
+          "value": "\"trip_incomes\".\"sort_order\" >= 0"
+        },
+        "trip_incomes_version_check": {
+          "name": "trip_incomes_version_check",
+          "value": "\"trip_incomes\".\"version\" > 0"
+        }
+      }
+    },
+    "trips": {
+      "name": "trips",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_date": {
+          "name": "start_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "end_date": {
+          "name": "end_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "business_json": {
+          "name": "business_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "trips_fleet_vehicle_status_idx": {
+          "name": "trips_fleet_vehicle_status_idx",
+          "columns": [
+            "fleet_id",
+            "vehicle_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "trips_fleet_end_date_idx": {
+          "name": "trips_fleet_end_date_idx",
+          "columns": [
+            "fleet_id",
+            "end_date"
+          ],
+          "isUnique": false
+        },
+        "trips_one_open_per_vehicle_uq": {
+          "name": "trips_one_open_per_vehicle_uq",
+          "columns": [
+            "fleet_id",
+            "vehicle_id"
+          ],
+          "isUnique": true,
+          "where": "\"trips\".\"status\" = 'open'"
+        }
+      },
+      "foreignKeys": {
+        "trips_fleet_id_fleets_id_fk": {
+          "name": "trips_fleet_id_fleets_id_fk",
+          "tableFrom": "trips",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trips_vehicle_fk": {
+          "name": "trips_vehicle_fk",
+          "tableFrom": "trips",
+          "tableTo": "vehicles",
+          "columnsFrom": [
+            "fleet_id",
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "fleet_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "trips_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "trips_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "trips_status_check": {
+          "name": "trips_status_check",
+          "value": "\"trips\".\"status\" IN ('open', 'closed')"
+        },
+        "trips_business_json_check": {
+          "name": "trips_business_json_check",
+          "value": "json_valid(\"trips\".\"business_json\") AND json_type(\"trips\".\"business_json\") = 'object'"
+        },
+        "trips_sort_order_check": {
+          "name": "trips_sort_order_check",
+          "value": "\"trips\".\"sort_order\" >= 0"
+        },
+        "trips_version_check": {
+          "name": "trips_version_check",
+          "value": "\"trips\".\"version\" > 0"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_version_check": {
+          "name": "users_version_check",
+          "value": "\"users\".\"version\" > 0"
+        }
+      }
+    },
+    "vehicle_assignments": {
+      "name": "vehicle_assignments",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active": {
+          "name": "active",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "vehicle_assignments_user_active_idx": {
+          "name": "vehicle_assignments_user_active_idx",
+          "columns": [
+            "fleet_id",
+            "user_id",
+            "active"
+          ],
+          "isUnique": false
+        },
+        "vehicle_assignments_vehicle_active_idx": {
+          "name": "vehicle_assignments_vehicle_active_idx",
+          "columns": [
+            "fleet_id",
+            "vehicle_id",
+            "active"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "vehicle_assignments_fleet_id_fleets_id_fk": {
+          "name": "vehicle_assignments_fleet_id_fleets_id_fk",
+          "tableFrom": "vehicle_assignments",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "vehicle_assignments_user_id_users_id_fk": {
+          "name": "vehicle_assignments_user_id_users_id_fk",
+          "tableFrom": "vehicle_assignments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "vehicle_assignments_vehicle_fk": {
+          "name": "vehicle_assignments_vehicle_fk",
+          "tableFrom": "vehicle_assignments",
+          "tableTo": "vehicles",
+          "columnsFrom": [
+            "fleet_id",
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "fleet_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "vehicle_assignments_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "vehicle_assignments_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "vehicle_assignments_active_check": {
+          "name": "vehicle_assignments_active_check",
+          "value": "\"vehicle_assignments\".\"active\" IN (0, 1)"
+        },
+        "vehicle_assignments_version_check": {
+          "name": "vehicle_assignments_version_check",
+          "value": "\"vehicle_assignments\".\"version\" > 0"
+        }
+      }
+    },
+    "vehicles": {
+      "name": "vehicles",
+      "columns": {
+        "fleet_id": {
+          "name": "fleet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plate_no": {
+          "name": "plate_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "active": {
+          "name": "active",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "vehicles_fleet_active_idx": {
+          "name": "vehicles_fleet_active_idx",
+          "columns": [
+            "fleet_id",
+            "active"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "vehicles_fleet_id_fleets_id_fk": {
+          "name": "vehicles_fleet_id_fleets_id_fk",
+          "tableFrom": "vehicles",
+          "tableTo": "fleets",
+          "columnsFrom": [
+            "fleet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "vehicles_fleet_id_id_pk": {
+          "columns": [
+            "fleet_id",
+            "id"
+          ],
+          "name": "vehicles_fleet_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "vehicles_active_check": {
+          "name": "vehicles_active_check",
+          "value": "\"vehicles\".\"active\" IN (0, 1)"
+        },
+        "vehicles_sort_order_check": {
+          "name": "vehicles_sort_order_check",
+          "value": "\"vehicles\".\"sort_order\" >= 0"
+        },
+        "vehicles_version_check": {
+          "name": "vehicles_version_check",
+          "value": "\"vehicles\".\"version\" > 0"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

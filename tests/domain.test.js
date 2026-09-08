@@ -13,7 +13,8 @@ function baseData() {
       lastBackupAt: '',
       activeVehicleId: 'all',
       periodStartDate: '2026-03-15',
-      periodEndDate: '2027-03-14'
+      periodEndDate: '2027-03-14',
+      business: { shippers: [], shipperGroups: [], places: [] }
     },
     categories: { expense: [], income: [] },
     vehicles: [D.legacyVehicle()],
@@ -44,7 +45,7 @@ test('v1 数据迁移后保留账目并自动归入原有车辆', () => {
     maintenance: [{ id: 'm1', date: '2026-07-04', amount: '300', note: '补胎' }]
   };
   const migrated = D.migrate(legacy, baseData());
-  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.schemaVersion, 4);
   assert.equal(migrated.vehicles.length, 1);
   assert.equal(migrated.trips[0].vehicleId, migrated.vehicles[0].id);
   assert.equal(migrated.maintenance[0].vehicleId, migrated.vehicles[0].id);
@@ -52,12 +53,12 @@ test('v1 数据迁移后保留账目并自动归入原有车辆', () => {
   assert.equal(migrated.maintenance[0].amount, 300);
 });
 
-test('v2→v3 不回填旧油费，合法 fuel canonical 化且非法元数据拒绝', () => {
+test('v2→v4 不回填旧油费，合法 fuel canonical 化且非法元数据拒绝', () => {
   const legacy = baseData();
   legacy.schemaVersion = 2;
   legacy.trips = [trip('legacy', D.LEGACY_VEHICLE_ID, '2026-07-01', '2026-07-02', 0, 300)];
   const migratedLegacy = D.migrate(legacy, baseData());
-  assert.equal(migratedLegacy.schemaVersion, 3);
+  assert.equal(migratedLegacy.schemaVersion, 4);
   assert.equal(Object.prototype.hasOwnProperty.call(migratedLegacy.trips[0].expenses[0], 'fuel'), false);
 
   const structured = baseData();
@@ -72,6 +73,93 @@ test('v2→v3 不回填旧油费，合法 fuel canonical 化且非法元数据�
   const invalid = structured;
   invalid.trips[0].expenses[0].fuel = { unitPrice: '7.5', liters: '39' };
   assert.throws(() => D.migrate(invalid, baseData()), /无效 fuel 元数据/);
+});
+
+test('v1/v2/v3 升 v4 都补齐空业务资料，不改旧账金额', () => {
+  for (const version of [1, 2, 3]) {
+    const legacy = baseData();
+    legacy.schemaVersion = version;
+    delete legacy.settings.business;
+    legacy.trips = [trip('legacy-' + version, D.LEGACY_VEHICLE_ID, '2026-07-01', '2026-07-02', 2400, 800)];
+    const migrated = D.migrate(legacy, baseData());
+    assert.equal(migrated.schemaVersion, 4);
+    assert.deepEqual(migrated.settings.business, { shippers: [], shipperGroups: [], places: [] });
+    assert.deepEqual(migrated.trips[0].business, {});
+    assert.equal(D.tripTotals(migrated.trips[0]).profit, 1600);
+  }
+});
+
+test('去程整车运费按箱位定点分摊，分尾差稳定且抹零单独扣减', () => {
+  const exact = D.allocateOutboundFreight('6000', [
+    { id: 'a', boxSlots: '1', roundingAmount: '0' },
+    { id: 'b', boxSlots: '2', roundingAmount: '5.50' },
+    { id: 'c', boxSlots: '3', roundingAmount: '0' },
+  ]);
+  assert.equal(exact.ok, true);
+  assert.deepEqual(exact.allocations.map(item => [item.allocatedAmount, item.roundingAmount, item.finalAmount]), [
+    [1000, 0, 1000], [2000, 5.5, 1994.5], [3000, 0, 3000],
+  ]);
+  assert.equal(exact.allocatedTotal, 6000);
+  assert.equal(exact.roundingTotal, 5.5);
+  assert.equal(exact.finalTotal, 5994.5);
+
+  const tail = D.allocateOutboundFreight('100', [
+    { id: 'first', boxSlots: '1' }, { id: 'second', boxSlots: '1' }, { id: 'third', boxSlots: '1' },
+  ]);
+  assert.deepEqual(tail.allocations.map(item => item.allocatedAmount), [33.34, 33.33, 33.33]);
+  assert.throws(() => D.normalizeTripBusiness({ outbound: { totalFreight: 10, allocations: [
+    { id: 'same', shipperId: 's1', shipperName: 'A', marketId: 'm1', marketName: 'M', boxSlots: 1 },
+    { id: 'same', shipperId: 's2', shipperName: 'B', marketId: 'm2', marketName: 'N', boxSlots: 1 },
+  ] } }), /标识重复/);
+});
+
+test('货主与市场复合引用不会被标识中的分隔符混淆', () => {
+  const normalized = D.normalizeBusinessSettings({
+    shippers: [
+      { id: 'a:b', name: '甲', markets: [{ id: 'c', name: '一号市场' }] },
+      { id: 'a', name: '乙', markets: [{ id: 'b:c', name: '二号市场' }] },
+    ],
+    shipperGroups: [{
+      id: 'g|1', name: '同车组', mainRef: { shipperId: 'a:b', marketId: 'c' },
+      members: [{ shipperId: 'a:b', marketId: 'c' }, { shipperId: 'a', marketId: 'b:c' }],
+    }],
+    places: [],
+  });
+  assert.equal(normalized.shipperGroups[0].members.length, 2);
+});
+
+test('返程应收为吨位乘单价，实收 null 回退应收而数字 0 明确覆盖', () => {
+  const receivable = D.calculateReturnFreight({ loadedTons: '30.000', unitPrice: '240', actualReceivedAmount: '' });
+  assert.equal(receivable.ok, true);
+  assert.equal(receivable.receivableAmount, 7200);
+  assert.equal(receivable.effectiveAmount, 7200);
+  assert.equal(receivable.actualReceivedAmount, null);
+
+  const zero = D.calculateReturnFreight({ loadedTons: '30', unitPrice: '240.00', actualReceivedAmount: '0' });
+  assert.equal(zero.ok, true);
+  assert.equal(zero.actualReceivedAmount, 0);
+  assert.equal(zero.effectiveAmount, 0);
+  assert.equal(D.calculateReturnFreight({ loadedTons: '30', unitPrice: '241', actualReceivedAmount: '' }).effectiveAmount, 7230);
+  assert.equal(D.calculateReturnFreight({ loadedTons: '30', unitPrice: '240.001' }).ok, false);
+});
+
+test('称重只推导掉称参考，增重必须人工确认才能归一化', () => {
+  assert.deepEqual(D.calculateWeightLoss({ loadedTons: '30', unloadedTons: '29.950' }), {
+    ok: true, referenceLossKg: '50', confirmedLossKg: '50', usedReference: true,
+  });
+  const gain = { cargoType: 'corn', loadedTons: '30', unitPrice: '240', unloadedTons: '30.001', pickupLocation: {}, deliveryLocation: {} };
+  assert.throws(() => D.normalizeTripBusiness({ returnTrip: gain }), /需先人工确认/);
+  assert.equal(D.normalizeTripBusiness({ returnTrip: { ...gain, weightGainConfirmed: true } }).returnTrip.weightGainConfirmed, true);
+});
+
+test('结构化去返程是收入唯一口径，不与兼容收入重复累加', () => {
+  const item = trip('business-income', D.LEGACY_VEHICLE_ID, '2026-07-01', '2026-07-02', 9999, 1000);
+  item.incomes.push({ id: 'back-old', catId: 'back', amount: 8888, date: '2026-07-02' });
+  item.business = {
+    outbound: { finalTotal: 6000 },
+    returnTrip: { effectiveAmount: 0 },
+  };
+  assert.deepEqual(D.tripTotals(item), { inc: 6000, exp: 1000, profit: 5000 });
 });
 
 test('迁移严格拒绝非法金额，普通旧金额保留指数与逐条四舍五入兼容', () => {

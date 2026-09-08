@@ -4,7 +4,9 @@ import {
   expenseData,
   incomeData,
   maintenanceData,
+  settingsBusinessData,
   tripData,
+  tripBusinessData,
   vehicleData,
 } from "./bootstrap";
 import {
@@ -16,6 +18,8 @@ import {
   fuelDataFromScaled,
   isObject,
   normalizeFuelData,
+  normalizeBusinessSettingsData,
+  normalizeTripBusinessData,
   optionalIsoDateTime,
   optionalText,
   periodDays,
@@ -298,6 +302,7 @@ export async function applyAtomicSyncBatch(
           "同步记录缺少 data",
         );
       }
+      preserveStoredBusinessForLegacyPut(operation, current, normalized);
       if ("createdAt" in normalized && !normalized.createdAt) {
         normalized.createdAt =
           (current?.created_at as string | undefined) ??
@@ -511,6 +516,17 @@ function buildBatchProjection(
     }
   }
   return { puts, deletes, tripCreates };
+}
+
+function preserveStoredBusinessForLegacyPut(
+  operation: SyncOperation,
+  current: RawRow | null,
+  normalized: Normalized,
+): void {
+  if (!current || operation.op !== "put" ||
+      Object.prototype.hasOwnProperty.call(operation.data, "business")) return;
+  if (operation.type === "fleet_settings") normalized.business = settingsBusinessData(current);
+  if (operation.type === "trip") normalized.business = tripBusinessData(current);
 }
 
 export function batchTripCreateIds(
@@ -836,6 +852,7 @@ async function putRecord(
 ): Promise<SyncResult> {
   const normalized = normalizePut(operation);
   const current = await getCurrent(d1, actor.fleetId, operation);
+  preserveStoredBusinessForLegacyPut(operation, current, normalized);
   if ("createdAt" in normalized && !normalized.createdAt) {
     normalized.createdAt =
       (current?.created_at as string | undefined) ?? new Date().toISOString();
@@ -1070,6 +1087,7 @@ function normalizeSettings(
         : requiredId(data.activeVehicleId, "activeVehicleId"),
     periodStartDate: start,
     periodEndDate: end,
+    business: normalizeBusinessSettingsData(data.business),
   };
 }
 
@@ -1158,6 +1176,7 @@ function normalizeTrip(
     closedAt: optionalIsoDateTime(data.closedAt, "trip.closedAt"),
     sortOrder: sortOrder(data.sortOrder),
     createdAt: optionalIsoDateTime(data.createdAt, "trip.createdAt"),
+    business: normalizeTripBusinessData(data.business),
   };
 }
 
@@ -1892,7 +1911,7 @@ function prepareInsertRecord(
       // update. Keeping the insert path makes the repository independently safe.
       statement = d1
         .prepare(
-          "INSERT INTO fleet_settings (fleet_id, theme, last_report_seen, last_backup_at, active_vehicle_id, period_start_date, period_end_date, initialized_at, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)",
+          "INSERT INTO fleet_settings (fleet_id, theme, last_report_seen, last_backup_at, active_vehicle_id, period_start_date, period_end_date, business_json, initialized_at, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)",
         )
         .bind(
           fleetId,
@@ -1902,6 +1921,7 @@ function prepareInsertRecord(
           data.activeVehicleId,
           data.periodStartDate,
           data.periodEndDate,
+          JSON.stringify(data.business),
           now,
           now,
         );
@@ -1943,7 +1963,7 @@ function prepareInsertRecord(
     case "trip":
       statement = d1
         .prepare(
-          "INSERT INTO trips (fleet_id, id, vehicle_id, start_date, end_date, status, closed_at, sort_order, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+          "INSERT INTO trips (fleet_id, id, vehicle_id, start_date, end_date, status, closed_at, business_json, sort_order, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
         )
         .bind(
           fleetId,
@@ -1953,6 +1973,7 @@ function prepareInsertRecord(
           data.endDate,
           data.status,
           data.closedAt,
+          JSON.stringify(data.business),
           data.sortOrder,
           createdAt,
           now,
@@ -2050,7 +2071,7 @@ function prepareUpdateRecord(
     case "fleet_settings":
       statement = d1
         .prepare(
-          "UPDATE fleet_settings SET theme = ?, last_report_seen = ?, last_backup_at = ?, active_vehicle_id = ?, period_start_date = ?, period_end_date = ?, updated_at = ?, version = ? WHERE fleet_id = ? AND version = ?",
+          "UPDATE fleet_settings SET theme = ?, last_report_seen = ?, last_backup_at = ?, active_vehicle_id = ?, period_start_date = ?, period_end_date = ?, business_json = ?, updated_at = ?, version = ? WHERE fleet_id = ? AND version = ?",
         )
         .bind(
           data.theme,
@@ -2059,6 +2080,7 @@ function prepareUpdateRecord(
           data.activeVehicleId,
           data.periodStartDate,
           data.periodEndDate,
+          JSON.stringify(data.business),
           now,
           nextVersion,
           fleetId,
@@ -2104,7 +2126,7 @@ function prepareUpdateRecord(
     case "trip":
       statement = d1
         .prepare(
-          "UPDATE trips SET vehicle_id = ?, start_date = ?, end_date = ?, status = ?, closed_at = ?, sort_order = ?, updated_at = ?, version = ? WHERE fleet_id = ? AND id = ? AND version = ?",
+          "UPDATE trips SET vehicle_id = ?, start_date = ?, end_date = ?, status = ?, closed_at = ?, business_json = ?, sort_order = ?, updated_at = ?, version = ? WHERE fleet_id = ? AND id = ? AND version = ?",
         )
         .bind(
           data.vehicleId,
@@ -2112,6 +2134,7 @@ function prepareUpdateRecord(
           data.endDate,
           data.status,
           data.closedAt,
+          JSON.stringify(data.business),
           data.sortOrder,
           now,
           nextVersion,
@@ -2268,6 +2291,7 @@ function currentData(type: SyncType, row: RawRow): Record<string, unknown> {
         activeVehicleId: row.active_vehicle_id,
         periodStartDate: row.period_start_date,
         periodEndDate: row.period_end_date,
+        business: settingsBusinessData(row),
       };
     case "category":
       return {

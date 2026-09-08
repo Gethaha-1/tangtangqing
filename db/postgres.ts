@@ -230,9 +230,9 @@ export function getPostgresDatabase(): PostgresDatabase {
 
 export async function assertPostgresSchema(): Promise<void> {
   const { rows } = await getPostgresDatabase().pool.query(
-    "SELECT version, current_user AS role FROM ttq.schema_versions WHERE version IN (1, 2)",
+    "SELECT version, current_user AS role FROM ttq.schema_versions WHERE version IN (1, 2, 3)",
   );
-  if (rows.length !== 2 || rows.some(row => row.role !== "ttq_app")) {
-    throw new Error("请先验证并应用 ledger_recovery 增量迁移，使用 ttq_app 最小权限连接；不能重跑初始化脚本");
+  if (rows.length !== 3 || rows.some(row => row.role !== "ttq_app")) {
+    throw new Error("请先验证并应用 recovery 与 trip_business 增量迁移，使用 ttq_app 最小权限连接；不能重跑初始化脚本");
   }
 }

@@ -25,6 +25,18 @@ async function sync(actor, operations, operationId = randomUUID()) {
   return applyAtomicSyncBatch(database, actor, parsed.operationId, hash, parsed.operations, parsed.finalize);
 }
 
+test('real PostgreSQL: business migration is replay-safe and marker/object constraints are active', async () => {
+  const markers = await pool.query('SELECT version FROM ttq.schema_versions ORDER BY version');
+  assert.deepEqual(markers.rows.map(row => Number(row.version)), [1, 2, 3]);
+  const actor = await resolveOrCreateActor(database, identity());
+  const settings = (await loadBootstrap(database, actor)).records.find(row => row.type === 'fleet_settings');
+  assert.deepEqual(settings.data.business, { shippers: [], shipperGroups: [], places: [] });
+  await assert.rejects(
+    database.prepare("UPDATE fleet_settings SET business_json = '[]' WHERE fleet_id = ?").bind(actor.fleetId).run(),
+    /fleet_settings_business_json_check/,
+  );
+});
+
 test('real PostgreSQL: first-login race creates exactly one account and fleet', async () => {
   const person = identity();
   const actors = await Promise.all(Array.from({ length: 4 }, () => resolveOrCreateActor(database, person)));

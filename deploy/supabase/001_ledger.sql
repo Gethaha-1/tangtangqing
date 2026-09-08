@@ -134,6 +134,8 @@ CREATE TABLE IF NOT EXISTS fleet_settings (
     active_vehicle_id TEXT NOT NULL DEFAULT 'all',
     period_start_date TEXT NOT NULL,
     period_end_date TEXT NOT NULL,
+    business_json TEXT NOT NULL DEFAULT '{}'
+      CONSTRAINT fleet_settings_business_json_check CHECK (jsonb_typeof(business_json::jsonb) = 'object'),
     initialized_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -149,6 +151,8 @@ CREATE TABLE IF NOT EXISTS trips (
     end_date TEXT,
     status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
     closed_at TEXT,
+    business_json TEXT NOT NULL DEFAULT '{}'
+      CONSTRAINT trips_business_json_check CHECK (jsonb_typeof(business_json::jsonb) = 'object'),
     sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

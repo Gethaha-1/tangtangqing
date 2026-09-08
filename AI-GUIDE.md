@@ -6,7 +6,7 @@
 
 | 任务 | 必读 | 主要位置 |
 |---|---|---|
-| 趟号、账期、车辆、金额、统计 | `BUSINESS-RULES.md` | `src/domain.js`、`legacy/ledger.html` |
+| 去返程、货主分组、运费、趟号、账期与统计 | `BUSINESS-RULES.md` | `src/domain.js`、`legacy/ledger.html` |
 | 在线写入、冲突、原子性 | `ARCHITECTURE.md` §5–6 | `src/cloud-sync.js`、`app/api/sync`、`lib/server/sync-*` |
 | 迁移与 JSON | `DATA-MIGRATION.md` | `legacy/ledger.html`、`src/cloud-sync.js` |
 | 登录与退出 | `ARCHITECTURE.md` §3 | `app/current-user.ts`、`lib/server/supabase-*`、`lib/auth/logout.ts` |
@@ -39,6 +39,7 @@
 13. 恶意备份字段分别经过 `esc()`、`attrEsc()`、`safeIconText()`。
 14. `public/ledger/`、`.next/`、`.netlify/`、`dist/`、`node_modules/` 和本地数据库是生成物，不提交。
 15. 任何发布、环境变量更新或真实数据操作都需要用户明确授权，并先核对目标站点和 Supabase project ref。
+16. schema v4 的 `business_json` 必须由客户端预览、服务端用定点整数重算。结构化去程/返程存在时，兼容 `cargo`/`back` 收入行不得重复计入；实收 `null` 和数字 `0` 不得合并。
 
 ## 常见改动
 
@@ -50,7 +51,7 @@
 4. 只有 `result.ok` 才关闭、提示成功并重绘。
 5. 失败保留表单；未知回执走原请求核对。
 
-若入口包含“先加入清单”，加入阶段只能修改独立 UI 草稿；最终确认才提交。条目 ID 必须跨编辑和重试保持稳定。
+若入口包含“先加入清单”，加入阶段只能修改独立 UI 草稿；最终确认才提交。条目 ID 必须跨编辑和重试保持稳定。发车与返程逐字段不得上传；只有页面最终保存将目录、趟次清单与兼容收入放进同一个 proposal。
 
 ### 修改同步记录或数据库
 

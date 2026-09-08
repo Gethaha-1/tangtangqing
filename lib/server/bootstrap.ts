@@ -2,7 +2,9 @@ import type { TrustedIdentity } from "./auth";
 import {
   centsToAmount,
   fuelDataFromScaled,
+  normalizeBusinessSettingsData,
   normalizeFuelData,
+  normalizeTripBusinessData,
 } from "./sync-contract";
 
 export type Actor = {
@@ -201,6 +203,7 @@ export async function loadBootstrap(d1: D1Database, actor: Actor) {
           actor.role === "driver" ? "all" : settings.active_vehicle_id,
         periodStartDate: settings.period_start_date,
         periodEndDate: settings.period_end_date,
+        business: settingsBusinessData(settings),
         ...(actor.role === "driver"
           ? { _ownerRecordsWritable: false }
           : {}),
@@ -334,7 +337,26 @@ export function tripData(row: RawRow): Record<string, unknown> {
     closedAt: row.closed_at,
     sortOrder: Number(row.sort_order),
     createdAt: row.created_at,
+    business: tripBusinessData(row),
   };
+}
+
+function storedBusinessJson(row: RawRow): unknown {
+  const text = row.business_json == null ? "{}" : String(row.business_json);
+  if (text.length > 1_000_000) throw new Error("数据库中的业务资料超出支持范围");
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("数据库中的业务资料不是有效 JSON");
+  }
+}
+
+export function settingsBusinessData(row: RawRow): Record<string, unknown> {
+  return normalizeBusinessSettingsData(storedBusinessJson(row));
+}
+
+export function tripBusinessData(row: RawRow): Record<string, unknown> {
+  return normalizeTripBusinessData(storedBusinessJson(row));
 }
 
 export function expenseData(row: RawRow): Record<string, unknown> {

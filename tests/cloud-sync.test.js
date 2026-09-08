@@ -6,14 +6,15 @@ const Cloud = globalThis.TTQCloudSync;
 
 function stateFixture() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     settings: {
       theme: 'night',
       lastReportSeen: '2026-06',
       lastBackupAt: '2026-07-01',
       activeVehicleId: 'all',
       periodStartDate: '2026-03-15',
-      periodEndDate: '2027-03-14'
+      periodEndDate: '2027-03-14',
+      business: { shippers: [], shipperGroups: [], places: [] }
     },
     categories: {
       expense: [
@@ -43,7 +44,8 @@ function stateFixture() {
         ],
         incomes: [
           { id: 'i1', catId: 'cargo', amount: 2200.5, date: '2026-07-03' }
-        ]
+        ],
+        business: {}
       },
       {
         id: 't2',
@@ -53,7 +55,8 @@ function stateFixture() {
         status: 'open',
         createdAt: '2026-07-04T01:00:00.000Z',
         expenses: [],
-        incomes: []
+        incomes: [],
+        business: {}
       }
     ],
     maintenance: [
@@ -66,7 +69,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test('schema v3 拆成独立记录并能无损重组现有状态', () => {
+test('schema v4 拆成独立记录并能无损重组现有状态', () => {
   const state = stateFixture();
   const records = Cloud.normalizeState(state);
   assert.deepEqual(
@@ -87,6 +90,32 @@ test('schema v3 拆成独立记录并能无损重组现有状态', () => {
   assert.equal(records.find(item => item.type === 'category').id, 'expense:fuel');
   assert.equal(records.find(item => item.type === 'trip_expense').id, 't1:e1');
   assert.deepEqual(Cloud.recordsToState(records), state);
+});
+
+test('货主设置、去程分摊和返程实收 0 在云记录中无损往返', () => {
+  const state = stateFixture();
+  state.settings.business = {
+    shippers: [{ id: 's1', name: '王师傅', markets: [{ id: 'm1', name: '北市场', region: '济南' }] }],
+    shipperGroups: [{ id: 'g1', name: '早市组', mainRef: { shipperId: 's1', marketId: 'm1' }, members: [{ shipperId: 's1', marketId: 'm1' }] }],
+    places: [{ id: 'p1', name: '粮库', region: '德州', roadNote: '', handlingNote: '', note: '', placeId: '', updatedAt: '2026-09-08T00:00:00.000Z' }]
+  };
+  state.trips[0].business = {
+    outbound: { cargoType: 'produce', totalFreight: 6000, totalBoxSlots: '1', allocatedTotal: 6000, roundingTotal: 5, finalTotal: 5995,
+      allocations: [{ id: 'a1', shipperId: 's1', shipperName: '王师傅', marketId: 'm1', marketName: '北市场', marketRegion: '济南', boxSlots: '1', allocatedAmount: 6000, roundingAmount: 5, finalAmount: 5995 }] },
+    returnTrip: { cargoType: 'corn', loadedTons: '30', unitPrice: '240', receivableAmount: 7200, actualReceivedAmount: 0, effectiveAmount: 0,
+      unloadedTons: '29.95', lossKg: '50', lossReferenceKg: '50', lossDeductionAmount: 40, weightGainConfirmed: false, pickupLocation: {}, deliveryLocation: {} }
+  };
+  const records = Cloud.normalizeState(state);
+  assert.deepEqual(Cloud.recordsToState(records), state);
+  const summary = Cloud.summarizeState(state);
+  assert.deepEqual({ shippers: summary.business.shippers, markets: summary.business.markets, groups: summary.business.shipperGroups,
+    places: summary.business.places, outbound: summary.business.outboundTrips, returns: summary.business.returnTrips },
+  { shippers: 1, markets: 1, groups: 1, places: 1, outbound: 1, returns: 1 });
+
+  const changed = clone(state);
+  changed.trips[0].business.returnTrip.actualReceivedAmount = null;
+  changed.trips[0].business.returnTrip.effectiveAmount = 7200;
+  assert.deepEqual(Cloud.planSync(changed, records).map(item => [item.type, item.id]), [['trip', 't1']]);
 });
 
 test('不同车辆和不同子账目只产生自己的 put，不覆盖整趟或其他车辆', () => {
@@ -247,6 +276,17 @@ test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
       totalVolumeMl: 0,
       structuredCostCents: 0,
       fingerprint: Cloud.snapshotFingerprint([])
+    },
+    business: {
+      shippers: 0,
+      markets: 0,
+      shipperGroups: 0,
+      places: 0,
+      outboundTrips: 0,
+      returnTrips: 0,
+      fingerprint: Cloud.snapshotFingerprint([
+        'fleet_settings|{"places":[],"shipperGroups":[],"shippers":[]}'
+      ])
     }
   });
   assert.equal(restored.trips[0].expenses[0].amount, '800.25');
@@ -254,12 +294,12 @@ test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
   assert.deepEqual(Cloud.planSync(restored, records), []);
 });
 
-test('v2 hydrate 升 v3 不回填 fuel，也不产生全量 put', () => {
+test('v2 hydrate 升 v4 不回填 fuel，也不产生全量 put', () => {
   const v2 = stateFixture();
   v2.schemaVersion = 2;
   const records = Cloud.normalizeState(v2);
   const hydrated = Cloud.hydrateState(records);
-  assert.equal(hydrated.schemaVersion, 3);
+  assert.equal(hydrated.schemaVersion, 4);
   assert.equal(
     Object.prototype.hasOwnProperty.call(hydrated.trips[0].expenses[0], 'fuel'),
     false

@@ -1,6 +1,6 @@
 # 测试
 
-适用版本：**v1.7.0 开发中 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
+适用版本：**v1.8.0 开发中 · 严格在线写入**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
 
 ## 1. 自动化与构建
 
@@ -20,9 +20,9 @@ git diff --check
 
 | 文件 | 重点 |
 |---|---|
-| `tests/domain.test.js` | schema v3、日期、账期、净利润、fuel 定点联算、报告摘要 |
-| `tests/cloud-sync.test.js` | v3 record/fuel 守恒、expectedVersion、批量快记 diff、回执、严格状态机、JSON 账期安全 |
-| `tests/legacy-ui-contract.test.mjs` | fuel UI、快记清单/单批提交、净利润/报告接线、收车确认、模态栈与失败留层 |
+| `tests/domain.test.js` | schema v4、去程分摊、返程应收/实收、称重、不重复营收、fuel 与报告 |
+| `tests/cloud-sync.test.js` | v4 business/fuel 守恒、expectedVersion、批量快记 diff、回执、严格状态机、JSON 账期安全 |
+| `tests/legacy-ui-contract.test.mjs` | 发车/返程清单、本机草稿/单批提交、fuel UI、收车确认、模态栈与失败留层 |
 | `tests/auth-client.test.js` | 同源 POST、scope 存储、旧键隔离、BFCache 和多标签锁 |
 | `tests/auth-security.test.mjs` | Principal adapter、伪造头、Origin/marker/body limit、安全头、POST-only |
 | `tests/ui-transition.test.js` | 共享元素几何、关键帧、源失效、reduced motion、取消/焦点恢复 |
@@ -31,11 +31,11 @@ git diff --check
 | `tests/legacy-xss.test.mjs` | 恶意备份、fuel/报告新增渲染 sink 的持久化 XSS |
 | `tests/draft-recovery.test.mjs` | scope 隔离、原子草稿 CAS、锁定与上传续传 |
 | `tests/restore-integration.test.mjs` | 旧版本超过 500 条、万条费用守恒、整批回滚、过期、权限、并发版本保护 |
-| `tests/browser/recovery.spec.mjs` | 真实 IndexedDB、刷新恢复、回执丢失不重复、分块中断续传、跨标签冲突 |
+| `tests/browser/recovery.spec.mjs` | 真实发车/返程/实收 0 云端回读，以及 IndexedDB、刷新恢复、回执丢失、分块续传、跨标签冲突 |
 
 `test:browser` 使用已安装的 Google Chrome、390×844 视口、独立 loopback 3107 和自动清理的临时 SQLite，不读真实 Supabase。3107 必须空闲；不复用用户开发服务器。测试脚本仅在该隔离进程设置精确 `TTQ_ALLOWED_ORIGINS=http://127.0.0.1:3107`，不要复制到生产。浏览器失败产物在 gitignored `test-results/`；模拟断网用例出现预期网络错误日志不代表验收失败。
 
-本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；历史 `0002_lonely_shriek.sql` 保留原位 fuel 升级，新增 `0003_tranquil_lockjaw.sql` 只增加临时恢复表/索引和 revision triggers，不重建旧表。`recovery-schema.test.mjs` 对 migration/runtime 双路径验证旧行守恒、触发器幂等与事务回滚。线上 PostgreSQL 使用独立 `supabase/migrations/20260905164507_ledger_recovery.sql`，不能用 SQLite 输出替代。
+本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；`0002` 保留 fuel 升级，`0003` 增加恢复/revision，`0004` 原位增加两个带 JSON 对象约束的 `business_json` 列。`recovery-schema.test.mjs` 对旧行默认值、约束、触发器幂等与事务回滚做回归。线上 PostgreSQL 分别使用独立 recovery 和 `20260908120000_trip_business.sql` 增量，不能用 SQLite 输出替代。
 
 ## 2. 本地认证、POST 与退出
 
@@ -106,7 +106,18 @@ npm run dev:local
 - bootstrap 重连 scope 变化必须锁定旧页面，不向新身份重放旧账号请求；会话锁同时清内存恢复列表和 DOM，但不删除本机持久记录；
 - 云端已提交但回执丢失时，刷新后核对原 ID，不产生第二笔；待核对仍可看已核验正式账本，不能继续业务写入。
 
-## 5. 净利润与报告范围
+## 5. 去程、返程与业务草稿
+
+- 用 6000 元和 1/2/3 箱位验证 1000/2000/3000；用 100 元三等分验证固定 33.34/33.33/33.33。改箱位/总价后立即重算，分摊合计始终守恒到分。
+- 抹零不得超过个人分摊，分别核对分摊额/抹零/最终额；抹零不产生支出或债务记录。
+- 分组点击加入全部成员；对主货主和普通成员分别执行本趟移除，设置中分组都不变。`+货主` 一次只加一人。
+- 用 30.000 吨 × 240.00 验证应收 7200.00；实收空时回退应收，实收 0 时营收为 0，清空后再回退。编辑吨位/单价必须重算。
+- 装卸车吨位推导的掉称只是参考；协商扣款不重复减营收。增重未勾选时页面不加入清单，绕过页面时服务端返回 422。
+- 吨位/箱位超过 3 位小数、金额超过 2 位、指数、负数和越界都拒绝；`240` 必须解释为 240。
+- 逐字段修改只调用 IndexedDB 草稿，不调用业务 API。最终保存每页只调用一次 `submitBusinessMutation`；200 后清草稿，400/409/422/断网/未知回执按契约保留。
+- 原生定位成功只记录当次坐标；不支持、拒绝或超时均不影响手填与最终保存。
+
+## 6. 净利润与报告范围
 
 用两车、跨账期/月份/年份夹具验证：
 
@@ -117,7 +128,7 @@ npm run dev:local
 - 年报为完整自然年，年份只接受 1000–9999；
 - 油费跟随所属已收车趟次 `endDate`，维修跟随自身 `date`；在途趟不进入财务/fuel 摘要。
 
-## 6. Fuel 三项、聚合与数据库
+## 7. Fuel 三项、聚合与数据库
 
 | 场景 | 预期 |
 |---|---|
@@ -138,12 +149,12 @@ npm run dev:local
 - fuel 列成对、范围和 category update 触发器不能绕过；
 - repository 写入/回执含 canonical fuel；bootstrap 对部分列、错科目、越界或金额矛盾 fail closed。
 
-## 7. JSON schema v3
+## 8. JSON schema v4
 
-1. 导出 envelope 含 schema v3 和 conservation，但不含账号/token。
-2. v3 的记录数、整数分、结构化/旧 fuel 条数、总毫升、结构化金额和 fingerprint 在导入清洗前后及服务器确认后守恒。
-3. 顶层 v3 缺 meta、格式/版本不匹配或缺 conservation 时直接拒绝，不能伪装成 v2。
-4. 真正 v1/v2 可显式导入；缺 fuel 的旧油费保留为 legacy，不伪造元数据。
+1. 导出 envelope 含 schema v4 和 conservation，但不含账号/token。
+2. v4 的记录数、整数分、fuel 与 business 数量/fingerprint 在导入清洗前后及服务器确认后守恒。
+3. 顶层 v3/v4 缺 meta、格式/版本不匹配或缺必需 conservation 时直接拒绝，不能伪装成 v2。v3 不要求尚未定义的 business 组，v4 必须要求。
+4. 真正 v1/v2 与完整 v3 可显式导入；缺 fuel 的旧油费保留为 legacy，缺 business 的旧账补空对象，不伪造分摊/实收。
 5. 合法账期经确认恢复；缺失、伪日期、倒序或超过 366 天时保留当前账期。
 6. driver 裁剪视图不能导出可完整恢复的车队备份；带 `_ownerRecordsWritable:false`、`driver-visible-partial` 或 `restorable:false` 的文件在迁移/差异规划前拒绝，owner 不能因此删除其他车辆账目。
 7. 取消、服务器不可达、400/422/409 时正式状态不变；相同文件重复导入可安全再次执行，同一次失败重试复用原 operationId。
@@ -160,7 +171,7 @@ npm run dev:local
 node scripts/verify-backup.js /绝对路径/备份.json
 ```
 
-## 8. 收车、大屏单手与无障碍
+## 9. 收车、大屏单手与无障碍
 
 在 iPhone Max/普通尺寸以及左右手单手场景验证：
 
@@ -172,7 +183,7 @@ node scripts/verify-backup.js /绝对路径/备份.json
 - 键盘 Tab/Shift+Tab 圈在最顶层模态，底层 view/nav/sheet inert；焦点随逐层返回恢复；Escape、顶部返回和系统返回不越层；
 - VoiceOver 核对 dialog 名称、零收入 alert、保存 status、按钮 busy/disabled 和“返回检查”标签。
 
-## 9. 共享元素与移动浏览器
+## 10. 共享元素与移动浏览器
 
 - 趟次卡、更多、车辆、收入/支出/维修、在途快记和收车入口打开/返回时约 390ms 展开并回源；
 - 多层 sheet 用顶部返回和系统返回逐层关闭，栈与 History 各只变化一次；
@@ -181,7 +192,7 @@ node scripts/verify-backup.js /绝对路径/备份.json
 - 来源被重绘、删除、滚出视口或消失时轻缩放淡出且无残留遮罩；
 - 日/夜主题、`prefers-reduced-motion` 和无 `Element.animate` 分别验证。
 
-## 10. Netlify + Supabase 部署前检查
+## 11. Netlify + Supabase 部署前检查
 
 - `npm test`、lint、类型检查、`npm run build`、`npm run build:netlify` 和 `git diff --check` 全部通过；
 - 目标站点、分支、公开 HTTPS origin 与 Supabase project ref 已人工核对；

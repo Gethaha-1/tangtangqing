@@ -114,6 +114,7 @@ export const RUNTIME_SCHEMA_STATEMENTS = [
     active_vehicle_id TEXT NOT NULL DEFAULT 'all',
     period_start_date TEXT NOT NULL,
     period_end_date TEXT NOT NULL,
+    business_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(business_json) AND json_type(business_json) = 'object'),
     initialized_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -128,6 +129,7 @@ export const RUNTIME_SCHEMA_STATEMENTS = [
     end_date TEXT,
     status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
     closed_at TEXT,
+    business_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(business_json) AND json_type(business_json) = 'object'),
     sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -243,6 +245,11 @@ export const RUNTIME_FUEL_COLUMN_STATEMENTS = {
     "ALTER TABLE trip_expenses ADD COLUMN fuel_volume_ml INTEGER CHECK (fuel_volume_ml IS NULL OR fuel_volume_ml BETWEEN 1 AND 100000000)",
 } as const;
 
+export const RUNTIME_BUSINESS_COLUMN_STATEMENTS = {
+  fleet_settings: "ALTER TABLE fleet_settings ADD COLUMN business_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(business_json) AND json_type(business_json) = 'object')",
+  trips: "ALTER TABLE trips ADD COLUMN business_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(business_json) AND json_type(business_json) = 'object')",
+} as const;
+
 export const RUNTIME_FUEL_INVARIANT_STATEMENTS = [
   `CREATE TRIGGER IF NOT EXISTS trip_expenses_fuel_metadata_insert_check
     BEFORE INSERT ON trip_expenses
@@ -305,6 +312,21 @@ async function ensureFuelColumns(d1: D1Database): Promise<void> {
   );
 }
 
+async function ensureBusinessColumns(d1: D1Database): Promise<void> {
+  for (const [table, statement] of Object.entries(RUNTIME_BUSINESS_COLUMN_STATEMENTS)) {
+    const result = await d1.prepare(`PRAGMA table_info('${table}')`).all<{ name: string }>();
+    let existing = new Set((result.results || []).map((column) => String(column.name)));
+    if (existing.has("business_json")) continue;
+    try {
+      await d1.prepare(statement).run();
+    } catch (error: unknown) {
+      const retry = await d1.prepare(`PRAGMA table_info('${table}')`).all<{ name: string }>();
+      existing = new Set((retry.results || []).map((column) => String(column.name)));
+      if (!existing.has("business_json")) throw error;
+    }
+  }
+}
+
 let schemaPromise: Promise<void> | null = null;
 
 export function ensureSchema(): Promise<void> {
@@ -316,6 +338,7 @@ export function ensureSchema(): Promise<void> {
         RUNTIME_SCHEMA_STATEMENTS.map((statement) => d1.prepare(statement)),
       )
       .then(() => ensureFuelColumns(d1))
+      .then(() => ensureBusinessColumns(d1))
       .catch((error: unknown) => {
         schemaPromise = null;
         throw error;

@@ -26,6 +26,7 @@ try {
   if (existing.rows[0].schema || existing.rows[0].role) throw new Error('此项目已有 ttq schema。为避免影响已有数据，自动安装已停止；请使用新测试项目或人工审核已有状态。');
   await client.query(await readFile(new URL('../deploy/supabase/001_ledger.sql', import.meta.url), 'utf8'));
   await client.query(await readFile(new URL('../supabase/migrations/20260905164507_ledger_recovery.sql', import.meta.url), 'utf8'));
+  await client.query(await readFile(new URL('../supabase/migrations/20260908120000_trip_business.sql', import.meta.url), 'utf8'));
   const statement = await client.query("SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', $1::text, $2::text) AS sql", ['ttq_app', appPassword]);
   await client.query(statement.rows[0].sql);
   console.log('独立测试库 schema 和最小权限应用账号已准备。请配置 ttq_app 连接，并创建两个测试 Auth 用户。');

@@ -153,6 +153,12 @@ const MAX_AMOUNT_CENTS = 99_999_999_999n;
 const MAX_FUEL_UNIT_PRICE_X10000 = 9_999_999n;
 const MAX_FUEL_VOLUME_ML = 100_000_000n;
 const FUEL_AMOUNT_TOLERANCE_CENTS = 1n;
+const MAX_WEIGHT_MILLI = 100_000_000n;
+const MAX_BOX_SLOT_MILLI = 100_000_000n;
+const OUTBOUND_CARGO_TYPES = new Set(["produce", "general", "other"]);
+const RETURN_CARGO_TYPES = new Set([
+  "corn", "corn_flakes", "soybean", "rice", "general", "other",
+]);
 
 const PUT_ORDER: Record<SyncType, number> = {
   category: 0,
@@ -609,6 +615,247 @@ function scaledToCanonical(units: bigint, scale: number): string {
   return `${integer}.${fraction}`
     .replace(/\.0+$/, "")
     .replace(/(\.\d*?)0+$/, "$1");
+}
+
+function businessText(
+  value: unknown,
+  field: string,
+  maxLength: number,
+  required = false,
+): string {
+  const text = value == null ? "" : String(value).trim();
+  if ((required && !text) || text.length > maxLength || /[\u0000-\u001f\u007f]/.test(text)) {
+    throw new RecordValidationError(
+      "invalid_business_data",
+      `${field}${required ? "不能为空、" : ""}不能含控制字符且不能超过 ${maxLength} 个字符`,
+    );
+  }
+  return text;
+}
+
+function businessId(value: unknown, field: string): string {
+  return businessText(value, field, 160, true);
+}
+
+function boundedBusinessData(value: Record<string, unknown>): Record<string, unknown> {
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 1_000_000) {
+    throw new RecordValidationError(
+      "invalid_business_data",
+      "业务资料超出 1 MB 限制",
+    );
+  }
+  return value;
+}
+
+function businessRefKey(shipperId: string, marketId: string): string {
+  return JSON.stringify([shipperId, marketId]);
+}
+
+function optionalBusinessUnits(
+  value: unknown,
+  scale: number,
+  maximum: bigint,
+  field: string,
+  allowZero: boolean,
+): bigint | null {
+  if (value == null || value === "") return null;
+  return decimalUnits(value, scale, maximum, field, allowZero);
+}
+
+function businessLocation(value: unknown): Record<string, unknown> {
+  const source = isObject(value) ? value : {};
+  const result: Record<string, unknown> = {
+    placeId: businessText(source.placeId, "常用地点标识", 160),
+    region: businessText(source.region, "市县", 80),
+    name: businessText(source.name, "厂家或地点", 120),
+    roadNote: businessText(source.roadNote, "道路备注", 300),
+    handlingNote: businessText(source.handlingNote, "装卸备注", 300),
+    note: businessText(source.note, "地点提醒", 500),
+  };
+  if (source.latitude != null && source.latitude !== "") {
+    const latitude = Number(source.latitude);
+    const longitude = Number(source.longitude);
+    if (
+      !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+    ) {
+      throw new RecordValidationError("invalid_business_data", "地点坐标无效");
+    }
+    result.latitude = latitude;
+    result.longitude = longitude;
+  }
+  return result;
+}
+
+export function normalizeBusinessSettingsData(value: unknown): Record<string, unknown> {
+  const source = isObject(value) ? value : {};
+  const shippers = (Array.isArray(source.shippers) ? source.shippers : []).map((value) => {
+    if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "货主格式不正确");
+    return {
+      id: businessId(value.id, "货主标识"),
+      name: businessText(value.name, "货主名称", 60, true),
+      markets: (Array.isArray(value.markets) ? value.markets : []).map((market) => {
+        if (!isObject(market)) throw new RecordValidationError("invalid_business_data", "市场格式不正确");
+        return {
+          id: businessId(market.id, "市场标识"),
+          name: businessText(market.name, "市场名称", 100, true),
+          region: businessText(market.region, "市场市县", 80),
+        };
+      }),
+    };
+  });
+  const shipperIds = new Set<string>();
+  const marketKeys = new Set<string>();
+  for (const shipper of shippers) {
+    if (shipperIds.has(shipper.id)) throw new RecordValidationError("invalid_business_data", "货主标识重复");
+    shipperIds.add(shipper.id);
+    for (const market of shipper.markets) {
+      const key = businessRefKey(shipper.id, market.id);
+      if (marketKeys.has(key)) throw new RecordValidationError("invalid_business_data", "同一货主的市场标识重复");
+      marketKeys.add(key);
+    }
+  }
+  const normalizeRef = (value: unknown) => {
+    if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "分组成员格式不正确");
+    const ref = {
+      shipperId: businessId(value.shipperId, "分组货主标识"),
+      marketId: businessId(value.marketId, "分组市场标识"),
+    };
+    if (!marketKeys.has(businessRefKey(ref.shipperId, ref.marketId))) {
+      throw new RecordValidationError("invalid_business_data", "货主分组引用了不存在的货主或市场");
+    }
+    return ref;
+  };
+  const shipperGroups = (Array.isArray(source.shipperGroups) ? source.shipperGroups : []).map((value) => {
+    if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "货主分组格式不正确");
+    const members = (Array.isArray(value.members) ? value.members : []).map(normalizeRef);
+    const keys = new Set(members.map((ref) => businessRefKey(ref.shipperId, ref.marketId)));
+    if (keys.size !== members.length) throw new RecordValidationError("invalid_business_data", "分组成员重复");
+    const mainRef = normalizeRef(value.mainRef);
+    if (!keys.has(businessRefKey(mainRef.shipperId, mainRef.marketId))) {
+      throw new RecordValidationError("invalid_business_data", "主货主必须同时在分组成员中");
+    }
+    return {
+      id: businessId(value.id, "分组标识"),
+      name: businessText(value.name, "分组名称", 60, true),
+      mainRef,
+      members,
+    };
+  });
+  if (new Set(shipperGroups.map((group) => group.id)).size !== shipperGroups.length) {
+    throw new RecordValidationError("invalid_business_data", "货主分组标识重复");
+  }
+  const places = (Array.isArray(source.places) ? source.places : []).map((value) => {
+    if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "地点格式不正确");
+    const updatedAt = value.updatedAt == null || value.updatedAt === ""
+      ? new Date(0).toISOString()
+      : optionalIsoDateTime(value.updatedAt, "地点更新时间");
+    return {
+      ...businessLocation(value),
+      id: businessId(value.id, "地点标识"),
+      updatedAt,
+    };
+  });
+  if (new Set(places.map((place) => place.id)).size !== places.length) {
+    throw new RecordValidationError("invalid_business_data", "地点标识重复");
+  }
+  return boundedBusinessData({ shippers, shipperGroups, places });
+}
+
+export function normalizeTripBusinessData(value: unknown): Record<string, unknown> {
+  const source = isObject(value) ? value : {};
+  const result: Record<string, unknown> = {};
+  if (source.outbound != null) {
+    if (!isObject(source.outbound)) throw new RecordValidationError("invalid_business_data", "去程清单格式不正确");
+    const outbound = source.outbound;
+    const totalFreight = decimalUnits(outbound.totalFreight, 2, MAX_AMOUNT_CENTS, "整车原定运费", false);
+    const entries = Array.isArray(outbound.allocations) ? outbound.allocations : [];
+    if (!entries.length) throw new RecordValidationError("invalid_business_data", "去程清单至少需要一个货主卸货点");
+    const weighted = entries.map((value, index) => {
+      if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "去程货主格式不正确");
+      const boxSlots = decimalUnits(value.boxSlots, 3, MAX_BOX_SLOT_MILLI, "箱位", false);
+      return {
+        value,
+        index,
+        boxSlots,
+        share: 0n,
+        remainder: 0n,
+      };
+    });
+    const totalSlots = weighted.reduce((sum, item) => sum + item.boxSlots, 0n);
+    for (const item of weighted) {
+      const numerator = totalFreight * item.boxSlots;
+      item.share = numerator / totalSlots;
+      item.remainder = numerator % totalSlots;
+    }
+    let remaining = totalFreight - weighted.reduce((sum, item) => sum + item.share, 0n);
+    [...weighted].sort((a, b) => a.remainder === b.remainder
+      ? a.index - b.index
+      : (a.remainder > b.remainder ? -1 : 1)).forEach((item) => {
+        if (remaining > 0n) { item.share += 1n; remaining -= 1n; }
+      });
+    const allocations = weighted.sort((a, b) => a.index - b.index).map((item) => {
+      const value = item.value;
+      const rounding = optionalBusinessUnits(value.roundingAmount, 2, MAX_AMOUNT_CENTS, "协商抹零", true) ?? 0n;
+      if (rounding > item.share) throw new RecordValidationError("invalid_business_data", "协商抹零不能大于个人分摊运费");
+      return {
+        id: businessId(value.id, "本趟货主清单标识"),
+        shipperId: businessId(value.shipperId, "货主标识"),
+        shipperName: businessText(value.shipperName, "货主名称", 60, true),
+        marketId: businessId(value.marketId, "市场标识"),
+        marketName: businessText(value.marketName, "市场名称", 100, true),
+        marketRegion: businessText(value.marketRegion, "市场市县", 80),
+        boxSlots: scaledToCanonical(item.boxSlots, 3),
+        allocatedAmount: centsToAmount(Number(item.share)),
+        roundingAmount: centsToAmount(Number(rounding)),
+        finalAmount: centsToAmount(Number(item.share - rounding)),
+      };
+    });
+    if (new Set(allocations.map((item) => item.id)).size !== allocations.length) {
+      throw new RecordValidationError("invalid_business_data", "本趟货主清单标识重复");
+    }
+    const roundingTotal = allocations.reduce((sum, item) => sum + BigInt(amountToCents(item.roundingAmount)), 0n);
+    result.outbound = {
+      cargoType: OUTBOUND_CARGO_TYPES.has(String(outbound.cargoType)) ? outbound.cargoType : "produce",
+      totalFreight: centsToAmount(Number(totalFreight)),
+      totalBoxSlots: scaledToCanonical(totalSlots, 3),
+      allocatedTotal: centsToAmount(Number(totalFreight)),
+      roundingTotal: centsToAmount(Number(roundingTotal)),
+      finalTotal: centsToAmount(Number(totalFreight - roundingTotal)),
+      allocations,
+    };
+  }
+  if (source.returnTrip != null) {
+    if (!isObject(source.returnTrip)) throw new RecordValidationError("invalid_business_data", "返程清单格式不正确");
+    const back = source.returnTrip;
+    const loaded = decimalUnits(back.loadedTons, 3, MAX_WEIGHT_MILLI, "装车吨位", false);
+    const price = decimalUnits(back.unitPrice, 2, MAX_AMOUNT_CENTS, "返程单价", false);
+    const receivable = roundHalfUp(loaded * price, 1000n);
+    if (receivable > MAX_AMOUNT_CENTS) throw new RecordValidationError("invalid_business_data", "返程应收运费超出支持范围");
+    const actual = optionalBusinessUnits(back.actualReceivedAmount, 2, MAX_AMOUNT_CENTS, "实收运费", true);
+    const unloaded = optionalBusinessUnits(back.unloadedTons, 3, MAX_WEIGHT_MILLI, "卸车吨位", false);
+    const weightGain = unloaded != null && unloaded > loaded;
+    if (weightGain && back.weightGainConfirmed !== true) throw new RecordValidationError("invalid_business_data", "卸车吨位大于装车吨位，需先人工确认");
+    const referenceLossKg = unloaded == null || weightGain ? null : loaded - unloaded;
+    const lossKg = optionalBusinessUnits(back.lossKg, 3, MAX_WEIGHT_MILLI * 1000n, "确认掉称", true);
+    const deduction = optionalBusinessUnits(back.lossDeductionAmount, 2, MAX_AMOUNT_CENTS, "掉称扣款", true);
+    result.returnTrip = {
+      cargoType: RETURN_CARGO_TYPES.has(String(back.cargoType)) ? back.cargoType : "corn",
+      loadedTons: scaledToCanonical(loaded, 3),
+      unitPrice: scaledToCanonical(price, 2),
+      receivableAmount: centsToAmount(Number(receivable)),
+      actualReceivedAmount: actual == null ? null : centsToAmount(Number(actual)),
+      effectiveAmount: centsToAmount(Number(actual == null ? receivable : actual)),
+      unloadedTons: unloaded == null ? "" : scaledToCanonical(unloaded, 3),
+      lossKg: lossKg == null ? "" : scaledToCanonical(lossKg, 3),
+      lossReferenceKg: referenceLossKg == null ? "" : scaledToCanonical(referenceLossKg, 0),
+      lossDeductionAmount: deduction == null ? null : centsToAmount(Number(deduction)),
+      weightGainConfirmed: weightGain,
+      pickupLocation: businessLocation(back.pickupLocation),
+      deliveryLocation: businessLocation(back.deliveryLocation),
+    };
+  }
+  return boundedBusinessData(result);
 }
 
 export function periodDays(start: string, end: string): number {

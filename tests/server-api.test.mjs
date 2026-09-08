@@ -14,6 +14,8 @@ import {
   dateValue,
   fuelDataFromScaled,
   normalizeFuelData,
+  normalizeBusinessSettingsData,
+  normalizeTripBusinessData,
   orderSyncOperations,
   parseSyncOperations,
   parseSyncRequest,
@@ -344,6 +346,58 @@ test("油费契约兼容旧记录，并拒绝越界、超精度、矛盾或错�
   for (const vector of invalid) assert.throws(vector);
 });
 
+test("业务设置契约校验货主多市场引用和主货主成员关系", () => {
+  const settings = normalizeBusinessSettingsData({
+    shippers: [{ id: "s1", name: "王师傅", markets: [
+      { id: "m1", name: "北市场", region: "济南" },
+      { id: "m2", name: "南市场", region: "泰安" },
+    ] }],
+    shipperGroups: [{ id: "g1", name: "早市组", mainRef: { shipperId: "s1", marketId: "m1" }, members: [
+      { shipperId: "s1", marketId: "m1" }, { shipperId: "s1", marketId: "m2" },
+    ] }],
+    places: [],
+  });
+  assert.equal(settings.shippers.length, 1);
+  assert.equal(settings.shipperGroups[0].members.length, 2);
+  assert.equal(normalizeBusinessSettingsData({
+    shippers: [
+      { id: "a:b", name: "甲", markets: [{ id: "c", name: "一号市场" }] },
+      { id: "a", name: "乙", markets: [{ id: "b:c", name: "二号市场" }] },
+    ],
+    shipperGroups: [{ id: "g|1", name: "同车组", mainRef: { shipperId: "a:b", marketId: "c" }, members: [
+      { shipperId: "a:b", marketId: "c" }, { shipperId: "a", marketId: "b:c" },
+    ] }],
+    places: [],
+  }).shipperGroups[0].members.length, 2);
+  assert.throws(() => normalizeBusinessSettingsData({ ...settings, shipperGroups: [{
+    id: "bad", name: "错组", mainRef: { shipperId: "s1", marketId: "m1" }, members: [{ shipperId: "s1", marketId: "m2" }],
+  }] }), /主货主/);
+});
+
+test("服务端重算去程分摊和返程应收，保留实收 0 并拒绝未确认增重", () => {
+  const business = normalizeTripBusinessData({
+    outbound: { cargoType: "produce", totalFreight: "100", allocations: [
+      { id: "a", shipperId: "s1", shipperName: "A", marketId: "m1", marketName: "M", boxSlots: "1", roundingAmount: "0" },
+      { id: "b", shipperId: "s2", shipperName: "B", marketId: "m2", marketName: "N", boxSlots: "1", roundingAmount: "0" },
+      { id: "c", shipperId: "s3", shipperName: "C", marketId: "m3", marketName: "O", boxSlots: "1", roundingAmount: "0" },
+    ] },
+    returnTrip: { cargoType: "corn", loadedTons: "30.000", unitPrice: "240", actualReceivedAmount: "0",
+      unloadedTons: "29.950", lossDeductionAmount: "40", pickupLocation: {}, deliveryLocation: {} },
+  });
+  assert.deepEqual(business.outbound.allocations.map((item) => item.allocatedAmount), [33.34, 33.33, 33.33]);
+  assert.equal(business.returnTrip.receivableAmount, 7200);
+  assert.equal(business.returnTrip.actualReceivedAmount, 0);
+  assert.equal(business.returnTrip.effectiveAmount, 0);
+  assert.equal(business.returnTrip.lossReferenceKg, "50");
+  assert.throws(() => normalizeTripBusinessData({ returnTrip: {
+    cargoType: "corn", loadedTons: "30", unitPrice: "240", unloadedTons: "30.001",
+    pickupLocation: {}, deliveryLocation: {},
+  } }), /人工确认/);
+  assert.throws(() => normalizeTripBusinessData({ returnTrip: {
+    cargoType: "corn", loadedTons: "30.0001", unitPrice: "240", pickupLocation: {}, deliveryLocation: {},
+  } }), /3 位小数/);
+});
+
 test("日期、账期和 id 输入按业务边界校验", () => {
   assert.equal(dateValue("2026-02-28", "date"), "2026-02-28");
   assert.throws(() => dateValue("2026-02-30", "date"), /不是有效日期/);
@@ -639,6 +693,16 @@ test("repository/bootstrap 接线覆盖 fuel 校验、持久化、回执与 fail
   assert.match(
     bootstrapSource,
     /\.\.\.\(fuel === undefined \? \{\} : \{ fuel \}\)/,
+  );
+  assert.match(syncRepositorySource, /normalizeBusinessSettingsData\(data\.business\)/);
+  assert.match(syncRepositorySource, /normalizeTripBusinessData\(data\.business\)/);
+  assert.match(syncRepositorySource, /business_json/);
+  assert.match(bootstrapSource, /settingsBusinessData\(settings\)/);
+  assert.match(bootstrapSource, /tripBusinessData\(row\)/);
+  assert.match(bootstrapSource, /function storedBusinessJson[\s\S]*JSON\.parse\(text\)/);
+  assert.match(
+    syncRepositorySource,
+    /function preserveStoredBusinessForLegacyPut[\s\S]*hasOwnProperty\.call\(operation\.data, "business"\)[\s\S]*settingsBusinessData\(current\)[\s\S]*tripBusinessData\(current\)/,
   );
 
   const fuel = fuelDataFromScaled(75000, 40000);

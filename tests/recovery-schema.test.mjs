@@ -35,3 +35,19 @@ for (const mode of ['migration', 'runtime']) test(`SQLite recovery ${mode}: addi
     assert.deepEqual(db.prepare('SELECT * FROM categories').all(), old);
   } finally { db.close(); }
 });
+
+test('SQLite business migration 为旧设置与趟次补齐空对象，并拒绝非对象 JSON', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec('PRAGMA foreign_keys=ON');
+    for (const name of ['0000_public_wildside', '0001_smart_the_twelve', '0002_lonely_shriek', '0003_tranquil_lockjaw'])
+      db.exec(readFileSync(new URL(`../drizzle/${name}.sql`, import.meta.url), 'utf8'));
+    db.exec("INSERT INTO users(id) VALUES('u'); INSERT INTO fleets(id,name,created_by_user_id) VALUES('f','测试','u'); INSERT INTO fleet_members(id,fleet_id,user_id,role) VALUES('m','f','u','owner'); INSERT INTO vehicles(fleet_id,id,name) VALUES('f','v','测试车'); INSERT INTO fleet_settings(fleet_id,period_start_date,period_end_date) VALUES('f','2026-01-01','2026-12-31'); INSERT INTO trips(fleet_id,id,vehicle_id,start_date,status) VALUES('f','t','v','2026-09-08','open');");
+    db.exec(readFileSync(new URL('../drizzle/0004_material_doctor_spectrum.sql', import.meta.url), 'utf8'));
+    assert.equal(db.prepare("SELECT business_json FROM fleet_settings WHERE fleet_id='f'").get().business_json, '{}');
+    assert.equal(db.prepare("SELECT business_json FROM trips WHERE id='t'").get().business_json, '{}');
+    db.exec("UPDATE fleet_settings SET business_json='{\"shippers\":[]}' WHERE fleet_id='f'; UPDATE trips SET business_json='{\"returnTrip\":{}}' WHERE id='t';");
+    assert.throws(() => db.exec("UPDATE fleet_settings SET business_json='[]' WHERE fleet_id='f'"), /CHECK/);
+    assert.throws(() => db.exec("UPDATE trips SET business_json='not-json' WHERE id='t'"), /CHECK/);
+  } finally { db.close(); }
+});
