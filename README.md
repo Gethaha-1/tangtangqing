@@ -4,7 +4,7 @@
 
 # 趟趟清 · 货运趟次云账本
 
-当前代码版本：**v1.9.0 · 清单后台上传、装卸市县定位与业务大键盘**。线上发布状态见 [本次交付说明](ITERATION-2-BUSINESS.md)。
+当前代码版本：**v2.0.0 · 运输收入单一口径、可配置货物与高德服务端定位**。本轮边界见 [v2.0.0 交付说明](ITERATION-3-TRANSPORT.md)，线上发布状态见 [Netlify/Supabase 部署说明](deploy/NETLIFY-SUPABASE.md)。
 
 趟趟清面向货运车主和司机，提供多车辆、一趟往返、发车货主清单、按箱位分摊去程运费、返程应收/实收与称重、批量快记、二次确认收车、账期统计、结构化油费和维修体验。线上由 Netlify 承载完整 Next.js 应用与服务端 API，Supabase Auth 提供邮箱密码会话，Supabase PostgreSQL 的私有 `ttq` schema 保存正式业务状态。
 
@@ -23,7 +23,7 @@
 
 草稿按已核验账号/车队暂存在 IndexedDB。刷新后可在首页继续填写或丢弃；未知回执先查询服务器，再按原操作 ID 核对，不能重复入账。它不是自动上传的离线队列。退出/401 清内存但保留本机草稿供同账号恢复；清除浏览器数据或存储回收会丢失本机暂存。存储失败时不发送业务请求，仍允许用户明确放弃，不强制保存。
 
-去返程金额、吨位、箱位、抹零和掉称用网页大键盘输入。装卸位置的市、区县分栏；“使用当前位置”经本次同意后向 BigDataCloud 查询，缺失项/弱网可手填。定位不发送账号、账目或历史坐标，详见 [业务规则](BUSINESS-RULES.md)。
+去返程金额、吨位、箱位、抹零和掉称用网页大键盘输入。装卸位置的市、区县分栏；点击“使用当前位置”后，浏览器取得本次坐标并交给已登录的同源服务端，由服务端通过高德 Web 服务补全市县。应用不再额外弹出查询说明，只有失败才提示；浏览器自身的位置权限提示仍由系统控制。定位不发送账号、账目或历史坐标，详见 [业务规则](BUSINESS-RULES.md)。
 
 主题可作为全设备偏好；当前车辆筛选、已查看报告和待核对状态只保存在 bootstrap 确认的 `fleet.id + membership.id` scope。未归属的旧 localStorage 不会自动读取或迁移。账号、密码和认证 token 不写入 localStorage。
 
@@ -37,7 +37,7 @@
 
 ## JSON 导出与恢复
 
-本版本继续保留完整 JSON 导出/恢复。schema v4 在 v3 的金额和 fuel 守恒上，新增货主/市场/分组/地点数量及去返程清单 fingerprint；仍能导入 v1/v2 旧文件和带完整 envelope 的 v3 备份。
+本版本继续保留完整 JSON 导出/恢复。schema v5 在 v4 的业务守恒上增加去返程货物目录计数，并为趟次保留稳定货物 ID 与名称快照；仍能导入 v1/v2 旧文件和带完整 envelope 的 v3/v4 备份。
 
 只有车主可以导出可完整恢复的车队备份。司机裁剪视图或待核对状态若生成部分数据文件，会明确标记为不可完整恢复；导入端在迁移和差异规划前直接拒绝，避免把未分配车辆误当成应删除数据。
 
@@ -48,7 +48,7 @@
 - 导入通过同一个原子在线提交；服务器拒绝、不可达或版本冲突时保持原正式状态。
 - 完整恢复使用专用临时任务：最多 20 MiB 文件/变更数据、30000 条变更、256 块，每块不超过 128 KiB/250 条；分块只写临时区，最后一个事务生效。普通 `/api/sync` 仍限制 500 条。
 - 上传中断后可按原任务续传；最终提交包含整车队版本检查，别的设备新增记录也会阻止覆盖。完成后回读守恒，不能把“分块上传成功”当成“恢复成功”。
-- 本机已验证一万条费用的 PostgreSQL 恢复；生产网络、Netlify 时限和手机容量需上线前另行验收。恢复边界见 [第一轮交付说明](ITERATION-1-RECOVERY.md)，新业务清单与待上线项见 [第二轮交付说明](ITERATION-2-BUSINESS.md)。
+- 本机已验证一万条费用的 PostgreSQL 恢复；生产网络、Netlify 时限和手机容量需上线前另行验收。恢复边界见 [第一轮交付说明](ITERATION-1-RECOVERY.md)，去返程基础清单见 [第二轮交付说明](ITERATION-2-BUSINESS.md)，现行运输收入、货物目录与定位见 [v2.0.0 交付说明](ITERATION-3-TRANSPORT.md)。
 
 ## 本地开发
 
@@ -94,14 +94,16 @@ db/postgres.ts          线上 PostgreSQL 适配器与 SERIALIZABLE 批次
 db/sqlite.ts            仅本地开发/兼容测试的 SQLite 适配器
 deploy/supabase/        当前 PostgreSQL 初始 schema
 legacy/ledger.html      成熟账本 UI 与浏览器网络适配
-src/domain.js           schema v4、去返程/fuel 定点联算、净利润和报告摘要
-src/cloud-sync.js       v4 状态/记录、业务/fuel 守恒、差异、回执和在线状态机
+src/domain.js           schema v5、去返程/fuel 定点联算、净利润和报告摘要
+src/cloud-sync.js       v5 状态/记录、业务/fuel 守恒、差异、回执和在线状态机
+src/location-client.js  浏览器实时定位与同源地址查询
+lib/server/location-providers.ts  高德服务端转换、逆地理编码与显式备用服务商
 src/auth-client.js      同源 POST、scope 存储、多标签与 BFCache 会话锁
 src/ui-transition.js    共享元素几何、WAAPI 转场与旧浏览器降级
 tests/                  业务、XSS、认证、原子写入、迁移测试
 ```
 
-构建前脚本把 `legacy/ledger.html` 和 `src/domain.js`、`src/cloud-sync.js`、`src/auth-client.js`、`src/ui-transition.js` 复制到 gitignored 的 `public/ledger/`。不要直接修改生成目录。
+构建前脚本把 `legacy/ledger.html` 和 `src/` 下的账本浏览器模块（包括草稿、恢复与定位）复制到 gitignored 的 `public/ledger/`。不要直接修改生成目录。
 
 ## 运行依赖
 

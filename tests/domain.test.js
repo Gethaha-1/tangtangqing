@@ -6,7 +6,7 @@ const D = globalThis.TTQDomain;
 
 function baseData() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 5,
     settings: {
       theme: 'day',
       lastReportSeen: '',
@@ -14,7 +14,7 @@ function baseData() {
       activeVehicleId: 'all',
       periodStartDate: '2026-03-15',
       periodEndDate: '2027-03-14',
-      business: { shippers: [], shipperGroups: [], places: [] }
+      business: { shippers: [], shipperGroups: [], places: [], cargoCatalogs: structuredClone(D.DEFAULT_CARGO_CATALOGS) }
     },
     categories: { expense: [], income: [] },
     vehicles: [D.legacyVehicle()],
@@ -45,7 +45,7 @@ test('v1 数据迁移后保留账目并自动归入原有车辆', () => {
     maintenance: [{ id: 'm1', date: '2026-07-04', amount: '300', note: '补胎' }]
   };
   const migrated = D.migrate(legacy, baseData());
-  assert.equal(migrated.schemaVersion, 4);
+  assert.equal(migrated.schemaVersion, 5);
   assert.equal(migrated.vehicles.length, 1);
   assert.equal(migrated.trips[0].vehicleId, migrated.vehicles[0].id);
   assert.equal(migrated.maintenance[0].vehicleId, migrated.vehicles[0].id);
@@ -53,12 +53,12 @@ test('v1 数据迁移后保留账目并自动归入原有车辆', () => {
   assert.equal(migrated.maintenance[0].amount, 300);
 });
 
-test('v2→v4 不回填旧油费，合法 fuel canonical 化且非法元数据拒绝', () => {
+test('v2→v5 不回填旧油费，合法 fuel canonical 化且非法元数据拒绝', () => {
   const legacy = baseData();
   legacy.schemaVersion = 2;
   legacy.trips = [trip('legacy', D.LEGACY_VEHICLE_ID, '2026-07-01', '2026-07-02', 0, 300)];
   const migratedLegacy = D.migrate(legacy, baseData());
-  assert.equal(migratedLegacy.schemaVersion, 4);
+  assert.equal(migratedLegacy.schemaVersion, 5);
   assert.equal(Object.prototype.hasOwnProperty.call(migratedLegacy.trips[0].expenses[0], 'fuel'), false);
 
   const structured = baseData();
@@ -75,15 +75,17 @@ test('v2→v4 不回填旧油费，合法 fuel canonical 化且非法元数据�
   assert.throws(() => D.migrate(invalid, baseData()), /无效 fuel 元数据/);
 });
 
-test('v1/v2/v3 升 v4 都补齐空业务资料，不改旧账金额', () => {
-  for (const version of [1, 2, 3]) {
+test('v1/v2/v3/v4 升 v5 都补齐货物目录，不改旧账金额', () => {
+  for (const version of [1, 2, 3, 4]) {
     const legacy = baseData();
     legacy.schemaVersion = version;
     delete legacy.settings.business;
     legacy.trips = [trip('legacy-' + version, D.LEGACY_VEHICLE_ID, '2026-07-01', '2026-07-02', 2400, 800)];
     const migrated = D.migrate(legacy, baseData());
-    assert.equal(migrated.schemaVersion, 4);
-    assert.deepEqual(migrated.settings.business, { shippers: [], shipperGroups: [], places: [] });
+    assert.equal(migrated.schemaVersion, 5);
+    assert.deepEqual(migrated.settings.business, {
+      shippers: [], shipperGroups: [], places: [], cargoCatalogs: structuredClone(D.DEFAULT_CARGO_CATALOGS)
+    });
     assert.deepEqual(migrated.trips[0].business, {});
     assert.equal(D.tripTotals(migrated.trips[0]).profit, 1600);
   }
@@ -111,6 +113,39 @@ test('去程整车运费按箱位定点分摊，分尾差稳定且抹零单独�
     { id: 'same', shipperId: 's1', shipperName: 'A', marketId: 'm1', marketName: 'M', boxSlots: 1 },
     { id: 'same', shipperId: 's2', shipperName: 'B', marketId: 'm2', marketName: 'N', boxSlots: 1 },
   ] } }), /标识重复/);
+
+  const wholeTruckOnly = D.normalizeTripBusiness({ outbound: {
+    cargoTypeId: '', cargoTypeName: '', totalFreight: '6000', allocations: []
+  } }).outbound;
+  assert.equal(wholeTruckOnly.finalTotal, 6000);
+  assert.equal(wholeTruckOnly.totalBoxSlots, '');
+  assert.deepEqual(wholeTruckOnly.allocations, []);
+});
+
+test('v5 货物目录使用稳定 id 和趟次名称快照，并复用同车最近值', () => {
+  const settings = D.normalizeBusinessSettings({
+    cargoCatalogs: {
+      outbound: [{ id: 'veg', name: '蔬菜', active: true, sortOrder: 0 }],
+      return: [{ id: 'grain', name: '粮食', active: true, sortOrder: 0 }]
+    }
+  });
+  assert.equal(settings.cargoCatalogs.outbound[0].id, 'veg');
+  const outbound = D.normalizeTripBusiness({ outbound: {
+    cargoTypeId: 'veg', cargoTypeName: '蔬菜', totalFreight: 6000, allocations: []
+  } }).outbound;
+  settings.cargoCatalogs.outbound[0].name = '新鲜蔬菜';
+  assert.equal(outbound.cargoTypeName, '蔬菜', '历史趟次名称不随目录改名');
+
+  const state = baseData();
+  state.vehicles.push({ id: 'v2', name: '二号车', active: true, createdAt: '2' });
+  state.trips = [
+    { ...trip('old-a', D.LEGACY_VEHICLE_ID, '2026-07-01', '2026-07-02', 0, 0), business: { outbound: { ...outbound, totalFreight: 6000 } } },
+    { ...trip('old-b', D.LEGACY_VEHICLE_ID, '2026-07-03', '2026-07-04', 0, 0), business: { outbound: { ...outbound, totalFreight: 6200 } } },
+    { ...trip('old-c', D.LEGACY_VEHICLE_ID, '2026-07-05', '2026-07-06', 0, 0), business: { outbound: { ...outbound, totalFreight: 6000 } } },
+    { ...trip('other', 'v2', '2026-07-07', '2026-07-08', 0, 0), business: { outbound: { ...outbound, cargoTypeId: 'other', cargoTypeName: '其他车货物', totalFreight: 9999 } } }
+  ];
+  assert.deepEqual(D.recentOutboundFreights(state, D.LEGACY_VEHICLE_ID, 5), [6000, 6200]);
+  assert.deepEqual(D.lastUsedCargo(state, D.LEGACY_VEHICLE_ID, 'outbound'), { id: 'veg', name: '蔬菜' });
 });
 
 test('货主与市场复合引用不会被标识中的分隔符混淆', () => {

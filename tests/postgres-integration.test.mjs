@@ -6,7 +6,7 @@ import { startTestPostgres } from './helpers/postgres.mjs';
 import { PostgresDatabase, postgresPoolOptions } from '../db/postgres.ts';
 import { resolveOrCreateActor, loadBootstrap } from '../lib/server/bootstrap.ts';
 import { applyAtomicSyncBatch, hashSyncPayload } from '../lib/server/sync-repository.ts';
-import { canonicalSyncPayload, parseSyncRequest } from '../lib/server/sync-contract.ts';
+import { canonicalSyncPayload, orderSyncOperations, parseSyncOperations, parseSyncRequest } from '../lib/server/sync-contract.ts';
 import '../src/domain.js';
 import '../src/cloud-sync.js';
 
@@ -20,9 +20,14 @@ after(async () => { await pool?.end(); await fixture?.stop(); });
 const identity = (name = '测试车主') => ({ issuer: 'supabase', subject: randomUUID(), displayName: name, email: 'test@example.com', loginName: 'test@example.com' });
 const vehicle = (id = 'v1', name = '测试车辆', expectedVersion = 0) => ({ op: 'put', type: 'vehicle', id, expectedVersion, data: { id, name, plateNo: '', active: true, sortOrder: 0 } });
 async function sync(actor, operations, operationId = randomUUID()) {
-  const parsed = parseSyncRequest({ operationId, operations, finalize: true });
+  const parsed = parseSyncRequest({ clientSchemaVersion: 5, operationId, operations, finalize: true });
   const hash = await hashSyncPayload(canonicalSyncPayload(parsed.operations, parsed.finalize));
   return applyAtomicSyncBatch(database, actor, parsed.operationId, hash, parsed.operations, parsed.finalize);
+}
+async function restoreSync(actor, operations, operationId = randomUUID()) {
+  const parsed = orderSyncOperations(parseSyncOperations({ operations }));
+  const hash = await hashSyncPayload(canonicalSyncPayload(parsed, true));
+  return applyAtomicSyncBatch(database, actor, operationId, hash, parsed, true);
 }
 
 test('real PostgreSQL: business migration is replay-safe and marker/object constraints are active', async () => {
@@ -30,7 +35,10 @@ test('real PostgreSQL: business migration is replay-safe and marker/object const
   assert.deepEqual(markers.rows.map(row => Number(row.version)), [1, 2, 3]);
   const actor = await resolveOrCreateActor(database, identity());
   const settings = (await loadBootstrap(database, actor)).records.find(row => row.type === 'fleet_settings');
-  assert.deepEqual(settings.data.business, { shippers: [], shipperGroups: [], places: [] });
+  assert.deepEqual(settings.data.business, {
+    shippers: [], shipperGroups: [], places: [],
+    cargoCatalogs: structuredClone(globalThis.TTQDomain.DEFAULT_CARGO_CATALOGS),
+  });
   await assert.rejects(
     database.prepare("UPDATE fleet_settings SET business_json = '[]' WHERE fleet_id = ?").bind(actor.fleetId).run(),
     /fleet_settings_business_json_check/,
@@ -126,7 +134,7 @@ test('real PostgreSQL: driver assignment filtering and transaction-time revocati
   const maintenance = id => ({ op: 'put', type: 'maintenance', id, expectedVersion: 0, data: { id, vehicleId: 'hidden', date: '2026-08-27', amount: 20, note: '' } });
   await assert.rejects(sync(driver, [maintenance('denied')]), error => error.status === 422);
   const operation = maintenance('revoked'); operation.data.vehicleId = 'allowed';
-  const batch = parseSyncRequest({ operationId: randomUUID(), operations: [operation], finalize: false });
+  const batch = parseSyncRequest({ clientSchemaVersion: 5, operationId: randomUUID(), operations: [operation], finalize: false });
   let guardedBatchCalls = 0;
   const guardedDb = {
     prepare: database.prepare.bind(database),
@@ -192,10 +200,10 @@ test('real PostgreSQL: v1/v2/v3 mixed ledger restores conserve data without per-
       pool.query = (...args) => { singleQueries++; return query(...args); };
       const id = randomUUID();
       try {
-        await sync(actor, operations, id);
+        await restoreSync(actor, operations, id);
         assert.equal(singleQueries, 0, `v${version}: preflight must batch related reads`);
       } finally { pool.query = query; }
-      assert.equal((await sync(actor, operations, id)).replayed, true);
+      assert.equal((await restoreSync(actor, operations, id)).replayed, true);
       const after = await loadBootstrap(database, actor);
       assert.equal(Cloud.compareConservation(target, Cloud.hydrateState(after.records, defaults)).equal, true);
       assert.equal(after.records.filter(row => row.type === 'trip_expense').length, 200);

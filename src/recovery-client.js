@@ -31,7 +31,7 @@
   }
   async function resume(request, task, progress, check) {
     const assert = check || (() => {}), report = progress || (() => {});
-    let remote = await request('/api/restore', { action: 'start', id: task.id, baseVersion: task.baseVersion, manifest: task.manifest });
+    let remote = await request('/api/restore', { clientSchemaVersion: 5, action: 'start', id: task.id, baseVersion: task.baseVersion, manifest: task.manifest });
     assert();
     if (remote.id !== task.id) throw new Error('恢复任务回执不匹配，请核对原任务');
     if (remote.status === 'complete') return remote;
@@ -40,12 +40,12 @@
     for (let ordinal = 0; ordinal < task.payloads.length; ordinal++) {
       if (!received.has(ordinal)) {
         report('正在上传备份 ' + (ordinal + 1) + '/' + task.payloads.length + '，原账本尚未替换');
-        await request('/api/restore', { action: 'chunk', id: task.id, ordinal, payload: task.payloads[ordinal] });
+        await request('/api/restore', { clientSchemaVersion: 5, action: 'chunk', id: task.id, ordinal, payload: task.payloads[ordinal] });
         assert();
       }
     }
     report('分块上传完成，正在校验并一次性恢复，请等待服务器确认…');
-    remote = await request('/api/restore', { action: 'commit', id: task.id });
+    remote = await request('/api/restore', { clientSchemaVersion: 5, action: 'commit', id: task.id });
     assert();
     if (remote.status !== 'complete' || remote.id !== task.id) throw new Error('恢复结果尚未确认，请核对原任务');
     return remote;

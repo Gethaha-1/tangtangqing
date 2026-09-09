@@ -41,6 +41,7 @@ async function sync(request: Request): Promise<Response> {
       canonicalSyncPayload(
         syncRequest.operations,
         syncRequest.finalize,
+        syncRequest.clientSchemaVersion,
       ),
     );
 

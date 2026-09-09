@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 4;
+  const SCHEMA_VERSION = 5;
   const SETTINGS_ID = 'settings';
   const ORDER_FIELD = 'sortOrder';
   const RECORD_TYPES = [
@@ -138,7 +138,7 @@
 
   function normalizeState(state, versions) {
     if (!state || typeof state !== 'object')
-      throw new TypeError('需要 schema v4 账本状态');
+      throw new TypeError('需要 schema v5 账本状态');
 
     const records = [];
     const settings = clone(state.settings || {});
@@ -568,6 +568,8 @@
         markets: 0,
         shipperGroups: 0,
         places: 0,
+        outboundCargoTypes: 0,
+        returnCargoTypes: 0,
         outboundTrips: 0,
         returnTrips: 0,
         fingerprint: ''
@@ -653,6 +655,12 @@
       ? settingBusiness.shipperGroups.length : 0;
     summary.business.places = Array.isArray(settingBusiness.places)
       ? settingBusiness.places.length : 0;
+    const cargoCatalogs = settingBusiness.cargoCatalogs && typeof settingBusiness.cargoCatalogs === 'object'
+      ? settingBusiness.cargoCatalogs : {};
+    summary.business.outboundCargoTypes = Array.isArray(cargoCatalogs.outbound)
+      ? cargoCatalogs.outbound.length : 0;
+    summary.business.returnCargoTypes = Array.isArray(cargoCatalogs.return)
+      ? cargoCatalogs.return.length : 0;
     businessFingerprints.push('fleet_settings|' + canonical(settingBusiness));
     summary.business.fingerprint = snapshotFingerprint(businessFingerprints.sort());
     return summary;

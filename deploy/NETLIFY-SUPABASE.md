@@ -18,6 +18,8 @@ SQLite、固定测试车主和 `dev:local` 只用于本地 development + loopbac
 
 ## 2. 发布前验证
 
+v2.0.0 继续复用现有 `business_json` 和数据库 marker `[1,2,3]`，不执行新 DDL。发布必须把 `TTQ_LOCATION_PROVIDER=amap` 与高德 Web 服务 Key 配置到 Netlify Functions 环境，并将客户端、`/api/location/reverse` 和 schema v5 同一次部署。上线后由已登录用户点击定位，确认真实设备坐标能自动写入市、区/县；成功不弹应用 toast，错误才提示。Key 和精确坐标不得写入部署日志。
+
 v1.9.0 已于 2026-09-09 发布到原生产站。生产 recovery 和 trip-business 增量此前已按所有者授权执行，marker `[1,2,3]` 已核验。v1.9.0 在现有 JSON 中增加可选市县，并调整后台上传与大键盘，不新增生产变量或 DDL。其他环境仍需按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量；不能发布到缺少 schema marker 2 或 3 的数据库。
 
 ### v1.9.0 发布记录（2026-09-09）
@@ -103,6 +105,7 @@ npx netlify deploy --no-build --dir .netlify/static --functions .netlify/functio
 4. 写入一条可清理的测试记录，核对完整回执、刷新回读和相同 operationId 幂等回放。
 5. 验证跨源/伪造身份头被拒绝，退出后受保护页面重新锁定。
 6. 清理全部测试记录，并在国内手机网络复测登录、保存、刷新、断网只读和恢复网络。
+7. 在返程装/卸车位置各点击一次“使用当前位置”，确认市、区/县自动写入且成功无提示；拒绝系统位置权限或模拟地址服务错误时才显示失败提醒。
 
 隔离账号的自动化入口仍为 `npm run verify:cloud -- --confirm-new-project=项目ref`。该脚本会在测试账号 A 中保留一辆“部署验证用测试车辆”供人工检查，运行后需要手动清理；它只能指向明确授权的隔离测试资源，不能直接对真实账本账号运行。
 

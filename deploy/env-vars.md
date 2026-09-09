@@ -2,7 +2,7 @@
 
 线上变量在 Netlify 站点环境中配置，并确保 Node Functions 可读取。不要把真实值写入仓库、截图、日志或前端代码。
 
-v1.9.0 不增加生产环境变量，但要求数据库内部 schema marker 1/2/3 齐全。当前生产已完成经授权的 recovery 和 trip-business 增量，见 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 和 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md)。新增市县使用已有 JSON，无新数据库迁移。BigDataCloud 仅按次在浏览器调用免密钥的实时设备定位接口，无服务器密钥。不放宽 Origin、关闭认证或增加管理员权限。
+v2.0.0 不增加数据库 migration，但新增高德服务端定位配置。当前生产已完成经授权的 recovery 和 trip-business 增量，数据库 marker 1/2/3 齐全。高德 Web 服务 Key 只能保存到 Netlify Functions 环境，不能写入仓库、前端 bundle、截图或日志。不放宽 Origin、关闭认证或增加管理员权限。
 
 ## 生产必填
 
@@ -15,6 +15,8 @@ v1.9.0 不增加生产环境变量，但要求数据库内部 schema marker 1/2/
 | `TTQ_INTERNAL_AUTH_SECRET` | 至少 32 字符的独立随机内部边界密钥 | 不与其他站点或数据库密码复用 |
 | `TTQ_DATABASE_URL` | `ttq_app` 后端角色的 PostgreSQL 连接串 | 仅服务端；密码需 URL 编码 |
 | `TTQ_ALLOWED_ORIGINS` | 当前公开 HTTPS origin；多个值以逗号分隔 | 精确 origin，不带路径或末尾斜杠 |
+| `TTQ_LOCATION_PROVIDER` | 生产固定为 `amap` | 服务商必须显式选择，不在运行时自动回退 |
+| `TTQ_AMAP_WEB_SERVICE_KEY` | 高德 Web 服务 Key | 仅服务端；不得使用 JS API Key 或暴露到浏览器 |
 
 ## 按需配置
 
@@ -22,6 +24,9 @@ v1.9.0 不增加生产环境变量，但要求数据库内部 schema marker 1/2/
 |---|---|---|
 | `TTQ_DATABASE_CA` | 自定义 PostgreSQL 根 CA PEM | 仅在平台证书链需要时设置；不能关闭 TLS 校验 |
 | `NODE_EXTRA_CA_CERTS` | Node 额外 CA 文件路径 | 只用于受控运行环境，不把私钥或凭据放入文件 |
+| `TTQ_AMAP_WEB_SERVICE_PRIVATE_KEY` | 高德数字签名私钥 | 仅在高德控制台为该 Key 开启数字签名时配置；与 Key 一样仅服务端保存 |
+
+`TTQ_LOCATION_PROVIDER=bigdatacloud` 只保留为明确选择的兼容备用模式，不是高德请求失败后的自动转发。切换会改变本次坐标的接收方，必须单独审核并更新隐私说明。
 
 Netlify 构建使用 `netlify.toml` 中的 `NODE_VERSION=24` 和 `NEXT_TELEMETRY_DISABLED=1`。它们不是业务身份或数据库配置。
 
@@ -49,6 +54,8 @@ TTQ_SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_ME
 TTQ_INTERNAL_AUTH_SECRET=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
 TTQ_DATABASE_URL=postgresql://ttq_app.PROJECT_REF:PASSWORD@POOLER_HOST:6543/postgres
 TTQ_ALLOWED_ORIGINS=https://YOUR_SITE.example
+TTQ_LOCATION_PROVIDER=amap
+TTQ_AMAP_WEB_SERVICE_KEY=REPLACE_WITH_SERVER_SIDE_KEY
 ```
 
 变更任何生产变量前先记录当前部署版本与旧值的安全备份位置；更新后立即验证登录、bootstrap、账号隔离、保存和退出。不得在认证故障时切换成本地模式。

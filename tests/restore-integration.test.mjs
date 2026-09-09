@@ -19,7 +19,7 @@ before(async () => { fixture = await startTestPostgres(); pool = new pg.Pool(pos
 after(async () => { await pool?.end(); await fixture?.stop(); });
 async function actor() { return resolveOrCreateActor(database, { issuer: 'supabase', subject: randomUUID(), displayName: '隔离恢复测试' }); }
 async function write(who, ops) {
-  const parsed = parseSyncRequest({ operationId: randomUUID(), operations: ops, finalize: true });
+  const parsed = parseSyncRequest({ clientSchemaVersion: 5, operationId: randomUUID(), operations: ops, finalize: true });
   return applyAtomicSyncBatch(database, who, parsed.operationId, await hashSyncPayload(canonicalSyncPayload(parsed.operations, true)), parsed.operations, true);
 }
 async function prepare(who, target) {

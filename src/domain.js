@@ -5,15 +5,28 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 4;
+  const SCHEMA_VERSION = 5;
   const LEGACY_VEHICLE_ID = 'vehicle_legacy';
   const MAX_AMOUNT_CENTS = 99999999999n;
   const MAX_UNIT_PRICE_X10000 = 9999999n;
   const MAX_VOLUME_ML = 100000000n;
   const MAX_WEIGHT_MILLI = 100000000n;
   const MAX_BOX_SLOT_MILLI = 100000000n;
-  const OUTBOUND_CARGO_TYPES = ['produce', 'general', 'other'];
-  const RETURN_CARGO_TYPES = ['corn', 'corn_flakes', 'soybean', 'rice', 'general', 'other'];
+  const DEFAULT_CARGO_CATALOGS = Object.freeze({
+    outbound: Object.freeze([
+      Object.freeze({ id: 'produce', name: '拉菜', active: true, builtin: true, sortOrder: 0 }),
+      Object.freeze({ id: 'general', name: '普货', active: true, builtin: true, sortOrder: 1 }),
+      Object.freeze({ id: 'other', name: '其他', active: true, builtin: true, sortOrder: 2 })
+    ]),
+    return: Object.freeze([
+      Object.freeze({ id: 'corn', name: '玉米', active: true, builtin: true, sortOrder: 0 }),
+      Object.freeze({ id: 'corn_flakes', name: '玉米片', active: true, builtin: true, sortOrder: 1 }),
+      Object.freeze({ id: 'soybean', name: '大豆', active: true, builtin: true, sortOrder: 2 }),
+      Object.freeze({ id: 'rice', name: '稻谷', active: true, builtin: true, sortOrder: 3 }),
+      Object.freeze({ id: 'general', name: '普货', active: true, builtin: true, sortOrder: 4 }),
+      Object.freeze({ id: 'other', name: '其他', active: true, builtin: true, sortOrder: 5 })
+    ])
+  });
 
   function localDateString(date) {
     const d = date || new Date();
@@ -223,7 +236,17 @@
     try {
       const total = strictDecimalUnits(totalFreight, 2, MAX_AMOUNT_CENTS, '整车原定运费', false);
       const source = Array.isArray(entries) ? entries : [];
-      if (!source.length) throw new Error('请至少选择一个货主卸货点');
+      if (!source.length) {
+        return {
+          ok: true,
+          totalFreight: unitsToNumber(total, 2),
+          totalBoxSlots: '',
+          allocatedTotal: 0,
+          roundingTotal: 0,
+          finalTotal: unitsToNumber(total, 2),
+          allocations: []
+        };
+      }
       const slots = source.map((entry, index) => ({
         entry,
         index,
@@ -390,7 +413,48 @@
       if (placeIds.has(place.id)) throw new Error('地点标识重复');
       placeIds.add(place.id);
     });
-    return boundedBusinessData({ shippers, shipperGroups, places });
+    const cargoSource = source.cargoCatalogs && typeof source.cargoCatalogs === 'object' &&
+      !Array.isArray(source.cargoCatalogs) ? source.cargoCatalogs : {};
+    const normalizeCargoCatalog = direction => {
+      const configured = Array.isArray(cargoSource[direction]) ? cargoSource[direction] : null;
+      const list = (configured === null ? DEFAULT_CARGO_CATALOGS[direction] : configured).map((item, index) => ({
+        id: safeBusinessId(item && item.id, (direction === 'outbound' ? '去程' : '返程') + '货物标识'),
+        name: safeBusinessText(item && item.name, '货物名称', 60, true),
+        active: item && item.active !== false,
+        builtin: item && item.builtin === true,
+        sortOrder: Number.isSafeInteger(Number(item && item.sortOrder)) && Number(item.sortOrder) >= 0
+          ? Number(item.sortOrder) : index
+      }));
+      if (!list.length || !list.some(item => item.active))
+        throw new Error((direction === 'outbound' ? '去程' : '返程') + '货物目录至少需要一个启用项');
+      if (new Set(list.map(item => item.id)).size !== list.length)
+        throw new Error((direction === 'outbound' ? '去程' : '返程') + '货物标识重复');
+      return list.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
+    };
+    return boundedBusinessData({
+      shippers,
+      shipperGroups,
+      places,
+      cargoCatalogs: {
+        outbound: normalizeCargoCatalog('outbound'),
+        return: normalizeCargoCatalog('return')
+      }
+    });
+  }
+
+  function cargoSnapshot(source, direction) {
+    const legacyDefaults = direction === 'outbound'
+      ? DEFAULT_CARGO_CATALOGS.outbound : DEFAULT_CARGO_CATALOGS.return;
+    const hasV5Id = Object.prototype.hasOwnProperty.call(source, 'cargoTypeId');
+    const id = hasV5Id
+      ? safeBusinessText(source.cargoTypeId, '货物标识', 160, false)
+      : safeBusinessText(source.cargoType, '货物标识', 160, false) || legacyDefaults[0].id;
+    if (!id) return { cargoTypeId: '', cargoTypeName: '' };
+    const legacy = legacyDefaults.find(item => item.id === id);
+    const suppliedName = safeBusinessText(source.cargoTypeName, '货物名称', 60, false);
+    const name = suppliedName || (legacy && legacy.name) || '';
+    if (hasV5Id && !name) throw new Error('已选货物缺少名称快照');
+    return { cargoTypeId: id, cargoTypeName: name || id };
   }
 
   function normalizeTripBusiness(value) {
@@ -400,8 +464,8 @@
       const outbound = source.outbound;
       const calculated = allocateOutboundFreight(outbound.totalFreight, outbound.allocations);
       if (!calculated.ok) throw new Error(calculated.error.message);
-      result.outbound = {
-        cargoType: OUTBOUND_CARGO_TYPES.includes(outbound.cargoType) ? outbound.cargoType : 'produce',
+      result.outbound = Object.assign({
+        ...cargoSnapshot(outbound, 'outbound'),
         totalFreight: calculated.totalFreight,
         totalBoxSlots: calculated.totalBoxSlots,
         allocatedTotal: calculated.allocatedTotal,
@@ -419,7 +483,7 @@
           roundingAmount: item.roundingAmount,
           finalAmount: item.finalAmount
         }))
-      };
+      });
     }
     if (source.returnTrip) {
       const back = source.returnTrip;
@@ -433,8 +497,8 @@
         throw new Error('卸车吨位大于装车吨位，需先人工确认');
       const lossKg = optionalStrictDecimal(back.lossKg, 3, MAX_WEIGHT_MILLI * 1000n, '确认掉称', true);
       const deduction = optionalStrictDecimal(back.lossDeductionAmount, 2, MAX_AMOUNT_CENTS, '掉称扣款', true);
-      result.returnTrip = {
-        cargoType: RETURN_CARGO_TYPES.includes(back.cargoType) ? back.cargoType : 'corn',
+      result.returnTrip = Object.assign({
+        ...cargoSnapshot(back, 'return'),
         loadedTons: calculated.loadedTons,
         unitPrice: calculated.unitPrice,
         receivableAmount: calculated.receivableAmount,
@@ -447,7 +511,7 @@
         weightGainConfirmed: weightGain,
         pickupLocation: normalizeLocation(back.pickupLocation),
         deliveryLocation: normalizeLocation(back.deliveryLocation)
-      };
+      });
     }
     return boundedBusinessData(result);
   }
@@ -717,6 +781,44 @@
     if (business.outbound) total += amountUnits(business.outbound.finalTotal);
     if (business.returnTrip) total += amountUnits(business.returnTrip.effectiveAmount);
     return total;
+  }
+
+  function legacyIncomeSummary(trip) {
+    const business = trip && trip.business || {};
+    return (trip && trip.incomes || []).reduce((summary, entry) => {
+      if (entry.catId === 'cargo' && !business.outbound) summary.outbound += cleanAmount(entry.amount);
+      else if (entry.catId === 'back' && !business.returnTrip) summary.return += cleanAmount(entry.amount);
+      else if (entry.catId !== 'cargo' && entry.catId !== 'back') summary.other += cleanAmount(entry.amount);
+      return summary;
+    }, { outbound: 0, return: 0, other: 0 });
+  }
+
+  function recentOutboundFreights(state, vehicleId, limit) {
+    const maximum = Number.isSafeInteger(Number(limit)) && Number(limit) > 0 ? Number(limit) : 5;
+    const seen = new Set();
+    return (state && Array.isArray(state.trips) ? state.trips : [])
+      .filter(trip => trip.vehicleId === vehicleId && trip.business && trip.business.outbound)
+      .slice().sort(compareTripsDesc)
+      .reduce((result, trip) => {
+        const amount = cleanAmount(trip.business.outbound.totalFreight);
+        const key = amount.toFixed(2);
+        if (amount > 0 && !seen.has(key) && result.length < maximum) {
+          seen.add(key);
+          result.push(amount);
+        }
+        return result;
+      }, []);
+  }
+
+  function lastUsedCargo(state, vehicleId, direction, excludeTripId) {
+    const field = direction === 'return' ? 'returnTrip' : 'outbound';
+    const trip = (state && Array.isArray(state.trips) ? state.trips : [])
+      .filter(item => item.id !== excludeTripId && item.vehicleId === vehicleId &&
+        item.business && item.business[field] && item.business[field].cargoTypeId)
+      .slice().sort(compareTripsDesc)[0];
+    if (!trip) return null;
+    const cargo = trip.business[field];
+    return { id: cargo.cargoTypeId, name: cargo.cargoTypeName || cargo.cargoTypeId };
   }
 
   function tripTotals(trip) {
@@ -1027,6 +1129,7 @@
   return {
     SCHEMA_VERSION,
     LEGACY_VEHICLE_ID,
+    DEFAULT_CARGO_CATALOGS,
     defaultPeriod,
     isDateString,
     isInRange,
@@ -1049,6 +1152,9 @@
     maintenanceInPeriod,
     tripTotals,
     tripIncomeUnits,
+    legacyIncomeSummary,
+    recentOutboundFreights,
+    lastUsedCargo,
     tripSeq,
     periodStats,
     monthKeys,

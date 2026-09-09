@@ -1,6 +1,6 @@
 # 测试
 
-适用版本：**v1.9.0 · 清单后台提交、服务器确认后生效**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
+适用版本：**v2.0.0 · 运输收入单一口径、货物目录与高德服务端定位**。自动化使用本地 SQLite 或临时 PostgreSQL 与测试车队；不得用线上真实账本做破坏性验证。
 
 ## 1. 自动化与构建
 
@@ -20,9 +20,10 @@ git diff --check
 
 | 文件 | 重点 |
 |---|---|
-| `tests/domain.test.js` | schema v4、去程分摊、返程应收/实收、称重、不重复营收、fuel 与报告 |
-| `tests/location-client.test.mjs` | 中国行政市县/直辖市、GPS-only、定位拒绝/取消/失败、可选字段与旧备份 fingerprint、安全头 |
-| `tests/cloud-sync.test.js` | v4 business/fuel 守恒、expectedVersion、批量快记 diff、回执、严格状态机、JSON 账期安全 |
+| `tests/domain.test.js` | schema v5、可选去程分摊、货物目录/快照、返程应收/实收、历史收入去重、fuel 与报告 |
+| `tests/location-client.test.mjs` | 浏览器实时坐标、同源地址 API、中国行政市县/直辖市、取消/失败、旧字段兼容 |
+| `tests/location-provider.test.mjs` | 高德坐标转换、逆地理编码、数字签名、直辖市与服务商不自动回退 |
+| `tests/cloud-sync.test.js` | v5 business/fuel 守恒、expectedVersion、批量快记 diff、回执、严格状态机、JSON 账期安全 |
 | `tests/legacy-ui-contract.test.mjs` | 发车/返程清单、本机草稿/单批提交、fuel UI、收车确认、模态栈与失败留层 |
 | `tests/auth-client.test.js` | 同源 POST、scope 存储、旧键隔离、BFCache 和多标签锁 |
 | `tests/auth-security.test.mjs` | Principal adapter、伪造头、Origin/marker/body limit、安全头、POST-only |
@@ -36,7 +37,7 @@ git diff --check
 
 `test:browser` 使用已安装的 Google Chrome、390×844 视口、独立 loopback 3107 和自动清理的临时 SQLite，不读真实 Supabase。3107 必须空闲；不复用用户开发服务器。测试脚本仅在该隔离进程设置精确 `TTQ_ALLOWED_ORIGINS=http://127.0.0.1:3107`，不要复制到生产。浏览器失败产物在 gitignored `test-results/`；模拟断网用例出现预期网络错误日志不代表验收失败。
 
-v1.9.0 浏览器新增：空返程与改回原样在 IndexedDB 不可用时直接退出、放弃后无上传/无残留草稿、慢回执之前关闭清单、账号重载市县、返程回执丢失仅一条日志且不重复营收、快记返回上传并保留未加入输入、定位结果晚到不覆盖手填、网页大键盘的 0/空值/三位吨位。地理服务只拦截请求使用夹具，测试禁止用服务器或脚本向免费客户端接口发送伪造/预存坐标。
+v2.0.0 浏览器新增：登记去程统一文案、无货主分摊整车运费、同车最近 5 个不重复运费、最近货物、可配置目录、历史收入只读，以及定位成功静默/失败提示。自动化用协议夹具验证高德调用链，不向真实高德接口发送伪造或预存坐标；国内手机的系统权限、真实 GPS 与生产 Key 只做经用户操作的设备验收。
 
 本地 SQLite 兼容 schema 改动另运行 `npm run db:generate`，确认没有意外新 migration；`0002` 保留 fuel 升级，`0003` 增加恢复/revision，`0004` 原位增加两个带 JSON 对象约束的 `business_json` 列。`recovery-schema.test.mjs` 对旧行默认值、约束、触发器幂等与事务回滚做回归。线上 PostgreSQL 分别使用独立 recovery 和 `20260908120000_trip_business.sql` 增量，不能用 SQLite 输出替代。
 
@@ -118,7 +119,7 @@ npm run dev:local
 - 装卸车吨位推导的掉称只是参考；协商扣款不重复减营收。增重未勾选时页面不加入清单，绕过页面时服务端返回 422。
 - 吨位/箱位超过 3 位小数、金额超过 2 位、指数、负数和越界都拒绝；`240` 必须解释为 240。
 - 逐字段修改只调用 IndexedDB 草稿，不调用业务 API。最终保存每页只调用一次 `submitBusinessMutation`；200 后清草稿，400/409/422/断网/未知回执按契约保留。
-- 原生定位成功只记录当次坐标；不支持、拒绝或超时均不影响手填与最终保存。
+- 点击定位不会先弹应用确认，系统权限由浏览器处理；成功后必须自动填入市、区/县且不弹 toast，不支持、拒绝、地址服务失败或超时才提醒，手填与最终保存不受影响。
 
 ## 6. 净利润与报告范围
 
@@ -152,12 +153,12 @@ npm run dev:local
 - fuel 列成对、范围和 category update 触发器不能绕过；
 - repository 写入/回执含 canonical fuel；bootstrap 对部分列、错科目、越界或金额矛盾 fail closed。
 
-## 8. JSON schema v4
+## 8. JSON schema v5
 
-1. 导出 envelope 含 schema v4 和 conservation，但不含账号/token。
-2. v4 的记录数、整数分、fuel 与 business 数量/fingerprint 在导入清洗前后及服务器确认后守恒。
-3. 顶层 v3/v4 缺 meta、格式/版本不匹配或缺必需 conservation 时直接拒绝，不能伪装成 v2。v3 不要求尚未定义的 business 组，v4 必须要求。
-4. 真正 v1/v2 与完整 v3 可显式导入；缺 fuel 的旧油费保留为 legacy，缺 business 的旧账补空对象，不伪造分摊/实收。
+1. 导出 envelope 含 schema v5 和 conservation，但不含账号/token。
+2. v5 的记录数、整数分、fuel、business 数量/fingerprint 和两套货物目录计数在导入清洗前后及服务器确认后守恒。
+3. 顶层 v3/v4/v5 缺 meta、格式/版本不匹配或缺必需 conservation 时直接拒绝，不能伪装成 v2。v3 不要求 business，v4 要求基础 business，v5 还要求货物目录计数。
+4. 真正 v1/v2 与完整 v3/v4 可显式导入；缺 fuel 的旧油费保留为 legacy，缺 business 的旧账补空对象，缺货物目录的旧账补内置目录，不伪造分摊/实收。
 5. 合法账期经确认恢复；缺失、伪日期、倒序或超过 366 天时保留当前账期。
 6. driver 裁剪视图不能导出可完整恢复的车队备份；带 `_ownerRecordsWritable:false`、`driver-visible-partial` 或 `restorable:false` 的文件在迁移/差异规划前拒绝，owner 不能因此删除其他车辆账目。
 7. 取消、服务器不可达、400/422/409 时正式状态不变；相同文件重复导入可安全再次执行，同一次失败重试复用原 operationId。

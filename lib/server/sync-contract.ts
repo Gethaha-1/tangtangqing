@@ -20,6 +20,7 @@ export type SyncOperation = {
 };
 
 export type SyncRequest = {
+  clientSchemaVersion: number;
   operationId: string;
   operations: SyncOperation[];
   finalize: boolean;
@@ -155,10 +156,21 @@ const MAX_FUEL_VOLUME_ML = 100_000_000n;
 const FUEL_AMOUNT_TOLERANCE_CENTS = 1n;
 const MAX_WEIGHT_MILLI = 100_000_000n;
 const MAX_BOX_SLOT_MILLI = 100_000_000n;
-const OUTBOUND_CARGO_TYPES = new Set(["produce", "general", "other"]);
-const RETURN_CARGO_TYPES = new Set([
-  "corn", "corn_flakes", "soybean", "rice", "general", "other",
-]);
+const DEFAULT_CARGO_CATALOGS = {
+  outbound: [
+    { id: "produce", name: "拉菜", active: true, builtin: true, sortOrder: 0 },
+    { id: "general", name: "普货", active: true, builtin: true, sortOrder: 1 },
+    { id: "other", name: "其他", active: true, builtin: true, sortOrder: 2 },
+  ],
+  return: [
+    { id: "corn", name: "玉米", active: true, builtin: true, sortOrder: 0 },
+    { id: "corn_flakes", name: "玉米片", active: true, builtin: true, sortOrder: 1 },
+    { id: "soybean", name: "大豆", active: true, builtin: true, sortOrder: 2 },
+    { id: "rice", name: "稻谷", active: true, builtin: true, sortOrder: 3 },
+    { id: "general", name: "普货", active: true, builtin: true, sortOrder: 4 },
+    { id: "other", name: "其他", active: true, builtin: true, sortOrder: 5 },
+  ],
+} as const;
 
 const PUT_ORDER: Record<SyncType, number> = {
   category: 0,
@@ -298,11 +310,30 @@ export function parseSyncRequest(input: unknown): SyncRequest {
       "请求必须是 JSON 对象",
     );
   }
+  const clientSchemaVersion = requireClientSchemaVersion(input.clientSchemaVersion);
+  const operations = orderSyncOperations(parseSyncOperations(input));
+  if (operations.some((operation) => operation.op === "put" && operation.type === "trip_income")) {
+    throw new RecordValidationError(
+      "legacy_income_read_only",
+      "旧版手工收入保持只读；请通过去程或返程清单登记运输收入",
+    );
+  }
   return {
+    clientSchemaVersion,
     operationId: requiredOperationId(input.operationId),
-    operations: orderSyncOperations(parseSyncOperations(input)),
+    operations,
     finalize: !("finalize" in input) || input.finalize !== false,
   };
+}
+
+export function requireClientSchemaVersion(value: unknown): number {
+  if (value !== 5) {
+    throw new RecordValidationError(
+      "client_upgrade_required",
+      "页面版本已过期，请刷新后再继续记账；本次没有写入",
+    );
+  }
+  return 5;
 }
 
 export function requiredOperationId(value: unknown): string {
@@ -323,8 +354,9 @@ export function requiredOperationId(value: unknown): string {
 export function canonicalSyncPayload(
   operations: SyncOperation[],
   finalize: boolean,
+  clientSchemaVersion = 5,
 ): string {
-  return canonicalJson({ finalize, operations });
+  return canonicalJson({ clientSchemaVersion, finalize, operations });
 }
 
 function canonicalJson(value: unknown): string {
@@ -762,7 +794,54 @@ export function normalizeBusinessSettingsData(value: unknown): Record<string, un
   if (new Set(places.map((place) => place.id)).size !== places.length) {
     throw new RecordValidationError("invalid_business_data", "地点标识重复");
   }
-  return boundedBusinessData({ shippers, shipperGroups, places });
+  const cargoSource = isObject(source.cargoCatalogs) ? source.cargoCatalogs : {};
+  const normalizeCargoCatalog = (direction: "outbound" | "return") => {
+    const configured = Array.isArray(cargoSource[direction]) ? cargoSource[direction] : null;
+    const values: readonly unknown[] = configured ?? DEFAULT_CARGO_CATALOGS[direction];
+    const result = values.map((value, index) => {
+      if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "货物目录格式不正确");
+      const requestedOrder = Number(value.sortOrder);
+      return {
+        id: businessId(value.id, `${direction === "outbound" ? "去程" : "返程"}货物标识`),
+        name: businessText(value.name, "货物名称", 60, true),
+        active: value.active !== false,
+        builtin: value.builtin === true,
+        sortOrder: Number.isSafeInteger(requestedOrder) && requestedOrder >= 0 ? requestedOrder : index,
+      };
+    });
+    if (!result.length || !result.some((item) => item.active)) {
+      throw new RecordValidationError("invalid_business_data", `${direction === "outbound" ? "去程" : "返程"}货物目录至少需要一个启用项`);
+    }
+    if (new Set(result.map((item) => item.id)).size !== result.length) {
+      throw new RecordValidationError("invalid_business_data", `${direction === "outbound" ? "去程" : "返程"}货物标识重复`);
+    }
+    return result.sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id));
+  };
+  return boundedBusinessData({
+    shippers,
+    shipperGroups,
+    places,
+    cargoCatalogs: {
+      outbound: normalizeCargoCatalog("outbound"),
+      return: normalizeCargoCatalog("return"),
+    },
+  });
+}
+
+function businessCargoSnapshot(source: Record<string, unknown>, direction: "outbound" | "return") {
+  const defaults = DEFAULT_CARGO_CATALOGS[direction];
+  const hasV5Id = Object.prototype.hasOwnProperty.call(source, "cargoTypeId");
+  const id = hasV5Id
+    ? businessText(source.cargoTypeId, "货物标识", 160)
+    : businessText(source.cargoType, "货物标识", 160) || defaults[0].id;
+  if (!id) return { cargoTypeId: "", cargoTypeName: "" };
+  const legacy = defaults.find((item) => item.id === id);
+  const suppliedName = businessText(source.cargoTypeName, "货物名称", 60);
+  const name = suppliedName || legacy?.name || "";
+  if (hasV5Id && !name) {
+    throw new RecordValidationError("invalid_business_data", "已选货物缺少名称快照");
+  }
+  return { cargoTypeId: id, cargoTypeName: name || id };
 }
 
 export function normalizeTripBusinessData(value: unknown): Record<string, unknown> {
@@ -773,7 +852,18 @@ export function normalizeTripBusinessData(value: unknown): Record<string, unknow
     const outbound = source.outbound;
     const totalFreight = decimalUnits(outbound.totalFreight, 2, MAX_AMOUNT_CENTS, "整车原定运费", false);
     const entries = Array.isArray(outbound.allocations) ? outbound.allocations : [];
-    if (!entries.length) throw new RecordValidationError("invalid_business_data", "去程清单至少需要一个货主卸货点");
+    if (!entries.length) {
+      result.outbound = {
+        ...businessCargoSnapshot(outbound, "outbound"),
+        totalFreight: centsToAmount(Number(totalFreight)),
+        totalBoxSlots: "",
+        allocatedTotal: 0,
+        roundingTotal: 0,
+        finalTotal: centsToAmount(Number(totalFreight)),
+        allocations: [],
+      };
+    }
+    if (entries.length) {
     const weighted = entries.map((value, index) => {
       if (!isObject(value)) throw new RecordValidationError("invalid_business_data", "去程货主格式不正确");
       const boxSlots = decimalUnits(value.boxSlots, 3, MAX_BOX_SLOT_MILLI, "箱位", false);
@@ -819,7 +909,7 @@ export function normalizeTripBusinessData(value: unknown): Record<string, unknow
     }
     const roundingTotal = allocations.reduce((sum, item) => sum + BigInt(amountToCents(item.roundingAmount)), 0n);
     result.outbound = {
-      cargoType: OUTBOUND_CARGO_TYPES.has(String(outbound.cargoType)) ? outbound.cargoType : "produce",
+      ...businessCargoSnapshot(outbound, "outbound"),
       totalFreight: centsToAmount(Number(totalFreight)),
       totalBoxSlots: scaledToCanonical(totalSlots, 3),
       allocatedTotal: centsToAmount(Number(totalFreight)),
@@ -827,6 +917,7 @@ export function normalizeTripBusinessData(value: unknown): Record<string, unknow
       finalTotal: centsToAmount(Number(totalFreight - roundingTotal)),
       allocations,
     };
+    }
   }
   if (source.returnTrip != null) {
     if (!isObject(source.returnTrip)) throw new RecordValidationError("invalid_business_data", "返程清单格式不正确");
@@ -843,7 +934,7 @@ export function normalizeTripBusinessData(value: unknown): Record<string, unknow
     const lossKg = optionalBusinessUnits(back.lossKg, 3, MAX_WEIGHT_MILLI * 1000n, "确认掉称", true);
     const deduction = optionalBusinessUnits(back.lossDeductionAmount, 2, MAX_AMOUNT_CENTS, "掉称扣款", true);
     result.returnTrip = {
-      cargoType: RETURN_CARGO_TYPES.has(String(back.cargoType)) ? back.cargoType : "corn",
+      ...businessCargoSnapshot(back, "return"),
       loadedTons: scaledToCanonical(loaded, 3),
       unitPrice: scaledToCanonical(price, 2),
       receivableAmount: centsToAmount(Number(receivable)),

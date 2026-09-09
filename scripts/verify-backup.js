@@ -15,7 +15,7 @@ if (!backupPath) {
 const original = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
 const period = D.defaultPeriod();
 const base = {
-  schemaVersion: 4,
+  schemaVersion: D.SCHEMA_VERSION,
   settings: {
     theme: 'day',
     lastReportSeen: '',
@@ -23,7 +23,10 @@ const base = {
     activeVehicleId: 'all',
     periodStartDate: period.start,
     periodEndDate: period.end,
-    business: { shippers: [], shipperGroups: [], places: [] }
+    business: {
+      shippers: [], shipperGroups: [], places: [],
+      cargoCatalogs: structuredClone(D.DEFAULT_CARGO_CATALOGS)
+    }
   },
   categories: { expense: [], income: [] },
   vehicles: [D.legacyVehicle()],
@@ -44,7 +47,7 @@ function sumMaintenance(items) {
   return items.reduce((sum, item) => sum + D.cleanAmount(item.amount), 0);
 }
 
-assert.equal(migrated.schemaVersion, 4);
+assert.equal(migrated.schemaVersion, D.SCHEMA_VERSION);
 assert.equal(migrated.trips.length, original.trips.length);
 assert.equal(migrated.maintenance.length, original.maintenance.length);
 assert.equal(migrated.categories.expense.length, original.categories.expense.length);

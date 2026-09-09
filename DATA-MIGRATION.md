@@ -1,12 +1,12 @@
 # 数据迁移与恢复
 
-适用版本：**v1.9.0**。页面快照和云同步为 `schemaVersion = 4`；数据库内部 marker 2 表示恢复任务增量，marker 3 表示去返程业务 JSON 增量，与 JSON schema 版本不是同一计数器。
+适用版本：**v2.0.0**。页面快照和云同步为 `schemaVersion = 5`；数据库内部 marker 2 表示恢复任务增量，marker 3 表示去返程业务 JSON 增量，与 JSON schema 版本不是同一计数器。
 
-v1.9.0 在装卸地点和常用地点的 v4 JSON 中增加可选 `city`（市）、`county`（区县），保留兼容显示字段 `region`。没有这两个可选字段的旧 v4 数据规范化结果不变，旧 fingerprint 不失效；新导出携带两字段及其业务守恒摘要。v1/v2/v3/v4 均继续向前恢复，旧应用不理解新字段，不应拿旧版程序恢复新备份。该增量不改 PostgreSQL 表结构、无需新迁移或清空数据。
+v2.0.0 在 v5 业务设置中增加可维护的去程/返程货物目录，并把趟次货物保存为稳定 ID + 名称快照。v1/v2/v3/v4 均继续向前恢复；迁移只补安全默认目录，不从历史备注或收入猜测货物。该增量继续复用已有 `business_json`，不改 PostgreSQL 表结构、无需新 migration 或清空数据。
 
-版本含义：v1 为单车旧账；v2 增加车辆与 `vehicleId` 归属；v3 增加结构化油费 `fuel` 与对应守恒；v4 增加货主/市场/分组/地点及去返程清单与业务守恒。版本号描述数据格式，不是一次程序更新的全部页面代码。备份携带业务数据，不携带程序界面代码。
+版本含义：v1 为单车旧账；v2 增加车辆与 `vehicleId` 归属；v3 增加结构化油费 `fuel` 与对应守恒；v4 增加货主/市场/分组/地点及去返程清单与业务守恒；v5 增加货物目录计数与趟次货物快照。版本号描述数据格式，不是一次程序更新的全部页面代码。备份携带业务数据，不携带程序界面代码。
 
-## v1 / v2 / v3 → schema v4
+## v1 / v2 / v3 / v4 → schema v5
 
 历史 JSON 只有在用户显式选择导入文件后才经过 `TTQDomain.migrate()`：
 
@@ -15,7 +15,8 @@ v1.9.0 在装卸地点和常用地点的 v4 JSON 中增加可选 `city`（市）
 - 没有 `fuel` 的历史油费保留为旧油费，只计总金额，不伪造单价或升数；
 - 已有 `fuel` 必须同时包含 `unitPrice`、`liters`，并与总价在固定 1 分误差内一致，否则拒绝导入；
 - v1/v2/v3 缺少新业务字段时，`settings.business` 补为空货主/分组/地点目录，每趟 `business` 补为空对象；不从旧收入行猜测去程分摊、实收或称重；
-- 目标统一为 schema v4，原有金额、趟号、fuel 和账期口径不变。
+- v1/v2/v3/v4 缺少货物目录时补 v5 内置目录；已有旧 `cargoType` 规范化为稳定货物 ID 与名称快照；
+- 目标统一为 schema v5，原有金额、趟号、fuel 和账期口径不变。
 
 导入预检必须先检查原文件账期。缺失、伪日期、倒序或超过 366 天时明确提示，并保留当前合法账期。
 
@@ -25,7 +26,7 @@ v1.9.0 在装卸地点和常用地点的 v4 JSON 中增加可选 `city`（市）
 
 账号相关设备状态只能在成功 POST bootstrap 后写入 `tangtangqing-scope-v1:<fleet+membership>:<slot>`。需要恢复旧账时，先从可信旧版本显式导出 JSON，再在当前账号中人工导入、核对摘要并确认完整替换。
 
-## schema v4 → PostgreSQL
+## schema v5 → PostgreSQL
 
 适配层拆分：
 
@@ -51,7 +52,7 @@ maintenance
 - `fleet_settings.business_json`：货主、每个货主的市场、分组主入口/成员和常用地点；
 - `trips.business_json`：同一趟的去程货主分摊与返程计费/称重/地点快照。
 
-数据库要求顶层 JSON 为对象；服务端将其限制在 1 MB，校验稳定 ID/引用/精度，并从原始吨位、单价、箱位和抹零重算汇总。兼容的 `cargo`/`back` 收入行仅为旧界面/旧备份连续性，统计以结构化业务值为唯一口径。
+数据库要求顶层 JSON 为对象；服务端将其限制在 1 MB，校验稳定 ID/引用/精度，并从原始吨位、单价、箱位和抹零重算汇总。兼容的 `cargo`/`back` 收入行仅为旧界面/旧备份连续性，统计以结构化业务值为唯一口径。普通 schema v5 同步拒绝 `trip_income put`，但完整恢复仍允许历史收入原样落库。
 
 ## 当前 PostgreSQL schema 与本地兼容迁移
 
@@ -67,14 +68,14 @@ maintenance
 
 `0002` 不重建表、不复制或删除旧行、不回填历史油费；旧字段和值保持不变。runtime schema 逐列检查并补齐旧本地表。任何业务 schema 更新都要同步审查线上 PostgreSQL migration、本地兼容 schema、约束和自动化测试，不能用 `npm run db:generate` 的 SQLite 结果代替线上迁移。
 
-## JSON v4 导出
+## JSON v5 导出
 
-导出 envelope 使用 `tangtangqing-schema-v4`，并在 `_backupMeta` 保存：
+导出 envelope 使用 `tangtangqing-schema-v5`，并在 `_backupMeta` 保存：
 
 - format、schemaVersion、appVersion、exportedAt、sourceFleetId；
 - conservation：各类记录数、普通金额和整数分；
 - fuel：结构化/旧记录数、总毫升、结构化金额和稳定逐记录 fingerprint。
-- business：货主、市场、分组、地点、去程趟、返程趟数和稳定 fingerprint。
+- business：货主、市场、分组、地点、去程/返程货物目录数量、去程趟、返程趟数和稳定 fingerprint。
 
 fingerprint 只用于机器守恒比较，不作为业务内容展示。导出允许在已加载账本后离线进行，不改变云端数据。
 
@@ -82,9 +83,9 @@ fingerprint 只用于机器守恒比较，不作为业务内容展示。导出�
 
 恢复是业务写入，必须在线：
 
-1. 区分真正 v1/v2 旧备份与完整 v3/v4 envelope；顶层 v3/v4 缺少版本匹配 meta 或 conservation 时直接拒绝，不能降级伪装成旧格式；driver 裁剪视图或 `restorable:false` 的部分文件同样在迁移前拒绝；
-2. 在迁移前检查原始账期，再清洗为 schema v4；
-3. 对 v3 声明核对 fuel/金额/数量，对 v4 再加上 business 守恒比较；
+1. 区分真正 v1/v2 旧备份与完整 v3/v4/v5 envelope；顶层 v3/v4/v5 缺少版本匹配 meta 或 conservation 时直接拒绝，不能降级伪装成旧格式；driver 裁剪视图或 `restorable:false` 的部分文件同样在迁移前拒绝；
+2. 在迁移前检查原始账期，再清洗为 schema v5；
+3. 对 v3 声明核对 fuel/金额/数量，对 v4 再加上 business 守恒，对 v5 继续核对两套货物目录数量；
 4. 显示当前与目标车辆、趟次、收入、支出、维修及结构化/旧油费摘要；
 5. 提示来源 fleet 可能不同，明确登录身份不会改变；
 6. 用户确认“完整替换当前账本”；
@@ -95,7 +96,7 @@ fingerprint 只用于机器守恒比较，不作为业务内容展示。导出�
 
 恢复增量为 `supabase/migrations/20260905164507_ledger_recovery.sql`；业务 JSON 增量为 `supabase/migrations/20260908120000_trip_business.sql`。必须按顺序验证，并只在项目所有者明确授权后对生产应用；详见 `deploy/RECOVERY-MIGRATION.md` 和 `deploy/TRIP-BUSINESS-MIGRATION.md`。SQLite 兼容迁移不能代替 PostgreSQL migration。
 
-本机 IndexedDB 草稿保持账号隔离，不能直接当 JSON 完整备份导入。未归属的旧 localStorage 仍不自动读取或上传。本轮只在代码和本地迁移回归中实施；生产迁移、部署和真实数据操作仍待单独授权。
+本机 IndexedDB 草稿保持账号隔离，不能直接当 JSON 完整备份导入。未归属的旧 localStorage 仍不自动读取或上传。v5 不需要数据库 DDL；部署时必须同时发布客户端、API 和服务端 schema gate，避免新旧写入口并存。
 
 ## 只读验证
 
@@ -117,4 +118,4 @@ node scripts/verify-backup.js /绝对路径/备份.json
 git diff --check
 ```
 
-`verify-backup.js` 会把 v1/v2/v3/v4 清洗为 schema v4，核对记录数、收入/支出/维修金额和完整 fuel 守恒；原文件为 v4 时另核对 business 守恒。真实备份不得复制进仓库、写回原文件或上传第三方。
+`verify-backup.js` 会把 v1/v2/v3/v4/v5 清洗为 schema v5，核对记录数、收入/支出/维修金额和完整 fuel 守恒；原文件为 v4/v5 时另核对 business 守恒。真实备份不得复制进仓库、写回原文件或上传第三方。

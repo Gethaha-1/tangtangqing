@@ -1,9 +1,14 @@
 (function (root) {
   'use strict';
-  const endpoint = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
+  const endpoint = '/api/location/reverse';
   const name = value => typeof value === 'string' ? value.trim().slice(0, 40) : '';
 
   function addressFromResponse(data) {
+    if (data && (data.provider === 'amap' || data.provider === 'bigdatacloud')) {
+      const city = name(data.city), county = name(data.county);
+      if (!city && !county) throw new Error('地址服务未返回市县名称');
+      return { city, county: county === city ? '' : county };
+    }
     if (!data || /ip/i.test(String(data.lookupSource || ''))) throw new Error('未取得 GPS 对应地址');
     const rows = (data.localityInfo && data.localityInfo.administrative || []).filter(row => row && name(row.name));
     let city = '', county = '';
@@ -42,11 +47,15 @@
     config.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, 8000);
     try {
-      // Client-only provider: fresh device GPS only, never saved coordinates or an IP fallback.
-      const url = new URL(endpoint);
-      url.search = new URLSearchParams({ latitude, longitude, localityLanguage: 'zh' }).toString();
-      const response = await (config.fetch || root.fetch.bind(root))(url.toString(), {
-        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: controller.signal
+      // Same-origin server proxy: fresh device GPS only, never saved coordinates or an IP fallback.
+      const response = await (config.fetch || root.fetch.bind(root))(endpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        referrerPolicy: 'no-referrer',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', 'X-TTQ-Request': 'ledger-v1' },
+        body: JSON.stringify(coordinates),
+        signal: controller.signal
       });
       if (!response.ok) throw new Error('地址查询暂不可用');
       return Object.assign(coordinates, addressFromResponse(await response.json()));

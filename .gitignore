@@ -2,6 +2,7 @@
 *备份*.json
 node_modules/
 .next/
+.next-browser-test/
 dist/
 .wrangler/
 public/ledger/

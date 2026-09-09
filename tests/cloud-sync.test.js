@@ -6,7 +6,7 @@ const Cloud = globalThis.TTQCloudSync;
 
 function stateFixture() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     settings: {
       theme: 'night',
       lastReportSeen: '2026-06',
@@ -14,7 +14,13 @@ function stateFixture() {
       activeVehicleId: 'all',
       periodStartDate: '2026-03-15',
       periodEndDate: '2027-03-14',
-      business: { shippers: [], shipperGroups: [], places: [] }
+      business: {
+        shippers: [], shipperGroups: [], places: [],
+        cargoCatalogs: {
+          outbound: [{ id: 'produce', name: '拉菜', active: true, builtin: true, sortOrder: 0 }],
+          return: [{ id: 'corn', name: '玉米', active: true, builtin: true, sortOrder: 0 }]
+        }
+      }
     },
     categories: {
       expense: [
@@ -69,7 +75,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test('schema v4 拆成独立记录并能无损重组现有状态', () => {
+test('schema v5 拆成独立记录并能无损重组现有状态', () => {
   const state = stateFixture();
   const records = Cloud.normalizeState(state);
   assert.deepEqual(
@@ -97,20 +103,25 @@ test('货主设置、去程分摊和返程实收 0 在云记录中无损往返',
   state.settings.business = {
     shippers: [{ id: 's1', name: '王师傅', markets: [{ id: 'm1', name: '北市场', region: '济南' }] }],
     shipperGroups: [{ id: 'g1', name: '早市组', mainRef: { shipperId: 's1', marketId: 'm1' }, members: [{ shipperId: 's1', marketId: 'm1' }] }],
-    places: [{ id: 'p1', name: '粮库', region: '德州', roadNote: '', handlingNote: '', note: '', placeId: '', updatedAt: '2026-09-08T00:00:00.000Z' }]
+    places: [{ id: 'p1', name: '粮库', region: '德州', roadNote: '', handlingNote: '', note: '', placeId: '', updatedAt: '2026-09-08T00:00:00.000Z' }],
+    cargoCatalogs: {
+      outbound: [{ id: 'produce', name: '拉菜', active: true, builtin: true, sortOrder: 0 }],
+      return: [{ id: 'corn', name: '玉米', active: true, builtin: true, sortOrder: 0 }]
+    }
   };
   state.trips[0].business = {
-    outbound: { cargoType: 'produce', totalFreight: 6000, totalBoxSlots: '1', allocatedTotal: 6000, roundingTotal: 5, finalTotal: 5995,
+    outbound: { cargoTypeId: 'produce', cargoTypeName: '拉菜', totalFreight: 6000, totalBoxSlots: '1', allocatedTotal: 6000, roundingTotal: 5, finalTotal: 5995,
       allocations: [{ id: 'a1', shipperId: 's1', shipperName: '王师傅', marketId: 'm1', marketName: '北市场', marketRegion: '济南', boxSlots: '1', allocatedAmount: 6000, roundingAmount: 5, finalAmount: 5995 }] },
-    returnTrip: { cargoType: 'corn', loadedTons: '30', unitPrice: '240', receivableAmount: 7200, actualReceivedAmount: 0, effectiveAmount: 0,
+    returnTrip: { cargoTypeId: 'corn', cargoTypeName: '玉米', loadedTons: '30', unitPrice: '240', receivableAmount: 7200, actualReceivedAmount: 0, effectiveAmount: 0,
       unloadedTons: '29.95', lossKg: '50', lossReferenceKg: '50', lossDeductionAmount: 40, weightGainConfirmed: false, pickupLocation: {}, deliveryLocation: {} }
   };
   const records = Cloud.normalizeState(state);
   assert.deepEqual(Cloud.recordsToState(records), state);
   const summary = Cloud.summarizeState(state);
   assert.deepEqual({ shippers: summary.business.shippers, markets: summary.business.markets, groups: summary.business.shipperGroups,
-    places: summary.business.places, outbound: summary.business.outboundTrips, returns: summary.business.returnTrips },
-  { shippers: 1, markets: 1, groups: 1, places: 1, outbound: 1, returns: 1 });
+    places: summary.business.places, outboundCargo: summary.business.outboundCargoTypes, returnCargo: summary.business.returnCargoTypes,
+    outbound: summary.business.outboundTrips, returns: summary.business.returnTrips },
+  { shippers: 1, markets: 1, groups: 1, places: 1, outboundCargo: 1, returnCargo: 1, outbound: 1, returns: 1 });
 
   const changed = clone(state);
   changed.trips[0].business.returnTrip.actualReceivedAmount = null;
@@ -242,6 +253,7 @@ test('独立 versions 参数优先于 baseline 版本', () => {
 test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
   const before = stateFixture();
   before.schemaVersion = 2;
+  delete before.settings.business.cargoCatalogs;
   before.trips[0].expenses[0].amount = '800.25';
   before.maintenance[0].amount = '300.10';
   const records = Cloud.normalizeState(before);
@@ -282,6 +294,8 @@ test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
       markets: 0,
       shipperGroups: 0,
       places: 0,
+      outboundCargoTypes: 0,
+      returnCargoTypes: 0,
       outboundTrips: 0,
       returnTrips: 0,
       fingerprint: Cloud.snapshotFingerprint([
@@ -294,12 +308,12 @@ test('旧 v2 数据上传再重组时数量和金额完全守恒', () => {
   assert.deepEqual(Cloud.planSync(restored, records), []);
 });
 
-test('v2 hydrate 升 v4 不回填 fuel，也不产生全量 put', () => {
+test('v2 hydrate 升 v5 不回填 fuel，也不产生全量 put', () => {
   const v2 = stateFixture();
   v2.schemaVersion = 2;
   const records = Cloud.normalizeState(v2);
   const hydrated = Cloud.hydrateState(records);
-  assert.equal(hydrated.schemaVersion, 4);
+  assert.equal(hydrated.schemaVersion, 5);
   assert.equal(
     Object.prototype.hasOwnProperty.call(hydrated.trips[0].expenses[0], 'fuel'),
     false

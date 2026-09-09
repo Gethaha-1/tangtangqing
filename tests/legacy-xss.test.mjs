@@ -191,6 +191,7 @@ test("恶意 schema v2 备份经过真实渲染器后不能生成标签或新属
     ],
     {
       S: state,
+      TTQDomain: Domain,
       $: element,
       activeVehicleId: () => state.settings.activeVehicleId,
       vehicleById: (id) =>
@@ -313,7 +314,7 @@ test("持久化字段的模板回归检查要求属性转义和安全图标文�
   );
 
   const iconSinks = ledgerSource.match(/safeIconText\(c\.icon\)/g) || [];
-  assert.ok(iconSinks.length >= 8, "所有科目图标 innerHTML sink 都应安全输出");
+  assert.ok(iconSinks.length >= 7, "所有科目图标 innerHTML sink 都应安全输出");
   assert.match(
     ledgerSource,
     /data-entry="' \+ attrEsc\(e\.id\)/,

@@ -300,6 +300,10 @@ test("bootstrap/logout 路由 POST-only，Next proxy 明确接入 adapter 与全
     new URL("../app/api/sync/route.ts", import.meta.url),
     "utf8",
   );
+  const location = readFileSync(
+    new URL("../app/api/location/reverse/route.ts", import.meta.url),
+    "utf8",
+  );
   const proxy = readFileSync(
     new URL("../proxy.ts", import.meta.url),
     "utf8",
@@ -312,6 +316,11 @@ test("bootstrap/logout 路由 POST-only，Next proxy 明确接入 adapter 与全
     /await requestIdentity\(request\)/,
   );
   assert.match(sync, /await requestIdentity\(request\)/);
+  assert.match(location, /export async function GET[\s\S]*status: 405/);
+  assert.match(location, /enforceMutationRequest\(request\)/);
+  assert.match(location, /await requestIdentity\(request\)/);
+  assert.match(location, /readJsonWithinLimit\(request, 1_024\)/);
+  assert.doesNotMatch(location, /TTQ_AMAP_WEB_SERVICE_KEY[^\n]*secureJson/);
   assert.doesNotMatch(logout, /export function GET/);
   assert.match(logout, /export function POST/);
   // The Next.js proxy must wire up every authentication primitive it depends on.

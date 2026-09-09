@@ -69,7 +69,7 @@ try {
   assert.equal((await a('/ledger/auth-client.js')).status,200);
   const a0=await a('/api/bootstrap',{}),b0=await b('/api/bootstrap',{});
   assert.equal(a0.status,200);assert.equal(b0.status,200);assert.notEqual(a0.payload.fleet.id,b0.payload.fleet.id);
-  const batch={operationId:randomUUID(),finalize:true,operations:[{op:'put',type:'vehicle',id:'http-v1',expectedVersion:0,data:{id:'http-v1',name:'HTTP测试车',active:true,plateNo:'',sortOrder:0}}]};
+  const batch={clientSchemaVersion:5,operationId:randomUUID(),finalize:true,operations:[{op:'put',type:'vehicle',id:'http-v1',expectedVersion:0,data:{id:'http-v1',name:'HTTP测试车',active:true,plateNo:'',sortOrder:0}}]};
   const saved=await a('/api/sync',batch);assert.equal(saved.status,200,JSON.stringify(saved.payload));
   assert.equal((await a('/api/sync',batch)).payload.replayed,true);
   const receipt = await a('/api/sync/status', batch);
@@ -79,12 +79,12 @@ try {
   assert.match(receipt.headers.get('cache-control'), /no-store/);
   const operations = Array.from({length:514}, (_, index) => ({op:'put',type:'maintenance',id:'http-m-'+index,expectedVersion:0,data:{id:'http-m-'+index,vehicleId:'http-v1',date:'2026-09-01',amount:12.34,note:'隔离恢复'}}));
   const task = {id:randomUUID(),baseVersion:(await a('/api/bootstrap',{})).payload.fleet.version,...await globalThis.TTQRecovery.prepare(operations)};
-  assert.equal((await a('/api/restore',{action:'start',...task})).status,200);
-  assert.equal((await b('/api/restore',{action:'status',id:task.id})).status,400);
-  assert.equal((await a('/api/restore',{action:'commit',id:task.id})).status,400);
-  for (let ordinal=0;ordinal<task.payloads.length;ordinal++) assert.equal((await a('/api/restore',{action:'chunk',id:task.id,ordinal,payload:task.payloads[ordinal]})).status,200);
-  assert.equal((await a('/api/restore',{action:'commit',id:task.id})).payload.status,'complete');
-  assert.equal((await a('/api/restore',{action:'commit',id:task.id})).payload.replayed,true);
+  assert.equal((await a('/api/restore',{clientSchemaVersion:5,action:'start',...task})).status,200);
+  assert.equal((await b('/api/restore',{clientSchemaVersion:5,action:'status',id:task.id})).status,400);
+  assert.equal((await a('/api/restore',{clientSchemaVersion:5,action:'commit',id:task.id})).status,400);
+  for (let ordinal=0;ordinal<task.payloads.length;ordinal++) assert.equal((await a('/api/restore',{clientSchemaVersion:5,action:'chunk',id:task.id,ordinal,payload:task.payloads[ordinal]})).status,200);
+  assert.equal((await a('/api/restore',{clientSchemaVersion:5,action:'commit',id:task.id})).payload.status,'complete');
+  assert.equal((await a('/api/restore',{clientSchemaVersion:5,action:'commit',id:task.id})).payload.replayed,true);
   assert.equal((await a('/api/bootstrap',{})).payload.records.filter(row=>row.type==='maintenance').length,514);
   for (const path of ['/api/restore','/api/sync/status']) {
     assert.equal((await a(path)).status,405);

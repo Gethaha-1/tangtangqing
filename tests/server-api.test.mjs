@@ -443,6 +443,7 @@ test("同步外层契约拒绝客户端自造类型与无效版本", () => {
 
 test("严格同步要求稳定 operationId，且相同语义生成稳定哈希输入", () => {
   const first = parseSyncRequest({
+    clientSchemaVersion: 5,
     operationId: "write-12345678",
     operations: [
       {
@@ -455,6 +456,7 @@ test("严格同步要求稳定 operationId，且相同语义生成稳定哈希�
     ],
   });
   const second = parseSyncRequest({
+    clientSchemaVersion: 5,
     operations: [
       {
         data: { id: "v1", name: "一号车" },
@@ -471,7 +473,7 @@ test("严格同步要求稳定 operationId，且相同语义生成稳定哈希�
     canonicalSyncPayload(second.operations, second.finalize),
   );
   assert.throws(
-    () => parseSyncRequest({ operations: [] }),
+    () => parseSyncRequest({ clientSchemaVersion: 5, operations: [] }),
     (error) =>
       error instanceof RecordValidationError &&
       error.code === "invalid_operation_id",
@@ -479,11 +481,32 @@ test("严格同步要求稳定 operationId，且相同语义生成稳定哈希�
   assert.throws(
     () =>
       parseSyncRequest({
+        clientSchemaVersion: 5,
         operationId: "new id with spaces",
         operations: [],
       }),
     /operationId/,
   );
+  assert.throws(
+    () => parseSyncRequest({ clientSchemaVersion: 4, operationId: "write-12345678", operations: [] }),
+    (error) => error instanceof RecordValidationError && error.code === "client_upgrade_required",
+  );
+});
+
+test("schema v5 普通同步拒绝新增或修改旧版手工收入，恢复解析仍可读取历史记录", () => {
+  const legacyIncome = {
+    op: "put",
+    type: "trip_income",
+    id: "trip-1:income-1",
+    expectedVersion: 0,
+    data: { id: "income-1", tripId: "trip-1", categoryId: "cargo", amount: 100, date: "2026-09-09" },
+  };
+  assert.throws(
+    () => parseSyncRequest({ clientSchemaVersion: 5, operationId: "write-legacy-income", operations: [legacyIncome] }),
+    (error) => error instanceof RecordValidationError && error.code === "legacy_income_read_only",
+  );
+  assert.equal(parseSyncOperations({ operations: [legacyIncome] })[0].type, "trip_income",
+    "恢复链路仍需保留历史收入记录");
 });
 
 test("服务端拒绝客户端指定车队、身份、成员、角色或车辆分配", () => {

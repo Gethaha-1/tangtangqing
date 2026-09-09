@@ -307,9 +307,33 @@ test("返程计费、实收、称重、扣款和两端地点在同一张清单",
     assert.match(sheet, new RegExp(`id="${id}"`));
   assert.match(extractFunction("updateReturnCalculation"), /TTQDomain\.calculateReturnFreight/);
   assert.match(extractFunction("updateReturnCalculation"), /TTQDomain\.calculateWeightLoss/);
-  assert.match(extractFunction("saveReturnManifest"), /effectiveAmount/);
+  assert.match(extractFunction("saveReturnManifest"), /returnTrip: normalizedReturn/);
+  assert.doesNotMatch(extractFunction("saveReturnManifest"), /trip\.incomes|upsertBusinessIncome/);
   assert.match(source, /填 0 表示明确实收 0/);
   assert.match(extractFunction("businessLocationSummaryHTML"), /notes\.map\(note => '<p class="biz-summary-note">' \+ esc\(note\)/);
+});
+
+test("v2 运输收入只有去返程清单一个写入口，旧收入保持只读", () => {
+  const startSave = extractFunction("saveStartManifest");
+  const returnSave = extractFunction("saveReturnManifest");
+  const closeSave = extractFunction("confirmCloseTrip");
+  assert.match(startSave, /cargoTypeId: startCtx\.cargoTypeId/);
+  assert.match(startSave, /cargoTypeName: startCtx\.cargoTypeName/);
+  assert.doesNotMatch(startSave + returnSave + closeSave, /upsertBusinessIncome|trip\.incomes\s*=|nextTrip\.incomes\s*=/);
+  assert.doesNotMatch(source, /data-inccat=|data-closeinc=|id="btnAddIncCat"/);
+  assert.match(source, /旧版兼容记录/);
+  assert.match(source, /data-act="editoutbound"[^>]*>登记去程</);
+});
+
+test("货物目录只允许车主设置，定位查询成功静默且只在失败时提醒", () => {
+  assert.match(extractFunction("openBusinessSettings"), /Store\.membership\.role !== 'owner'/);
+  assert.match(source, /id="businessOutboundCargo"/);
+  assert.match(source, /id="businessReturnCargo"/);
+  assert.match(source, /data-business-add-cargo="outbound"/);
+  const locate = extractFunction("locateReturn");
+  assert.doesNotMatch(locate, /\bask\s*\(/);
+  assert.doesNotMatch(locate, /已填写|查询成功/);
+  assert.match(locate, /catch[\s\S]*toast\(coordinates \?/);
 });
 
 test("油费数字键盘统一两位显示、智能油价和联算存储精度", () => {
@@ -399,13 +423,13 @@ test("首页、统计与三种报告 scope 统一使用净利润和 buildReportS
   assert.match(source, /本范围只有 ' \+ rows\.length \+ ' 个月，不作趋势比较/);
 });
 
-test("schema v4 备份在写入前后都执行 conservation，且不展示 fingerprint", () => {
+test("schema v5 备份在写入前后都执行 conservation，且不展示 fingerprint", () => {
   const exportEntry = extractFunction("exportData");
   const exported = extractFunction("exportSnapshot");
   const imported = extractFunction("importData");
   assert.match(exportEntry, /Store\.membership\.role !== 'owner'/);
   assert.match(exportEntry, /isPartialDriverSnapshot\(S\)/);
-  assert.match(exported, /format: 'tangtangqing-schema-v4'/);
+  assert.match(exported, /format: 'tangtangqing-schema-v5'/);
   assert.match(exported, /schemaVersion: TTQDomain\.SCHEMA_VERSION/);
   assert.match(exported, /backupScope: partial \? 'driver-visible-partial' : 'full-fleet'/);
   assert.match(exported, /restorable: !partial/);
@@ -537,7 +561,9 @@ test("fuel 与报告新增 innerHTML sink 对持久化文本执行转义", () =>
 });
 
 test("收车 preview 拒绝缺失和倒序日期，并明确区分零收入与正收入", () => {
-  const { buildCloseTripPreview } = compile(["buildCloseTripPreview"]);
+  const { buildCloseTripPreview } = compile(["buildCloseTripPreview"], {
+    TTQDomain: { tripTotals: trip => ({ inc: trip.business?.outbound?.finalTotal || 0 }) },
+  });
   const state = {
     trips: [{
       id: "trip-1",
@@ -558,24 +584,17 @@ test("收车 preview 拒绝缺失和倒序日期，并明确区分零收入与�
   assert.equal(zero.income, 0);
   assert.equal(zero.expense, 120.5);
   assert.equal(zero.profit, -120.5);
-  assert.deepEqual(Array.from(zero.incomeEntries), []);
 
+  state.trips[0].business = { outbound: { finalTotal: 350 } };
   const ready = buildCloseTripPreview(
     state,
-    { tripId: "trip-1", inc: { cargo: 300, other: 50, ignored: 0 } },
+    { tripId: "trip-1" },
     "2026-08-06",
   );
   assert.equal(ready.code, "ready");
   assert.equal(ready.income, 350);
   assert.equal(ready.expense, 120.5);
   assert.equal(ready.profit, 229.5);
-  assert.deepEqual(
-    Array.from(ready.incomeEntries, (entry) => ({ ...entry })),
-    [
-      { catId: "cargo", amount: 300, date: "2026-08-06" },
-      { catId: "other", amount: 50, date: "2026-08-06" },
-    ],
-  );
 });
 
 test("两处滑轨被可访问的全宽按钮和嵌套确认 sheet 完整替换", () => {
@@ -792,18 +811,18 @@ test("收车最终提交快速连点只执行一次，失败留在确认层，�
       endDate: null,
       status: "open",
       expenses: [{ amount: 100 }],
-      incomes: [],
+      incomes: [{ id: "legacy-income", catId: "other", amount: 300, date: "2026-08-05" }],
     }],
   });
   const base = (state, elements) => ({
     S: state,
-    closeCtx: { tripId: "trip-1", inc: { cargo: 300 } },
+    closeCtx: { tripId: "trip-1" },
     $: (selector) => elements.get(selector),
     vehicleById: () => ({ name: "一号车" }),
     vehicleLabel: () => "一号车",
     fmt: (value) => String(value),
     syncBusinessWriteControls() {},
-    uid: () => "income-1",
+    TTQDomain: { tripTotals: trip => ({ inc: (trip.business?.outbound?.finalTotal || 0) + trip.incomes.reduce((sum, entry) => sum + entry.amount, 0) }) },
     tripTotals: (trip) => ({ profit: trip.incomes.reduce((sum, entry) => sum + entry.amount, 0) - 100 }),
     tripSeq: () => 1,
     toast() {},

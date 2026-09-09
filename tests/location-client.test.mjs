@@ -27,7 +27,7 @@ test('位置解析按行政区划区分地级市、县级市和直辖市，不�
   assert.throws(() => L.addressFromResponse({ ...cityData, lookupSource: 'ipGeolocation' }), /GPS/);
 });
 
-test('地址查询只用本次设备 GPS、无密钥/账号/cookie，拒绝定位时不请求第三方', async () => {
+test('地址查询只把本次设备 GPS 发给本源服务端，浏览器不持有高德密钥', async () => {
   let calls = 0;
   const result = await L.currentAddress({
     geolocation: { getCurrentPosition(resolve, _reject, options) {
@@ -36,10 +36,14 @@ test('地址查询只用本次设备 GPS、无密钥/账号/cookie，拒绝定�
     } },
     fetch: async (url, options) => {
       calls++;
-      assert.equal(new URL(url).searchParams.get('localityLanguage'), 'zh');
-      assert.equal(options.credentials, 'omit');
+      assert.equal(url, '/api/location/reverse');
+      assert.equal(options.method, 'POST');
+      assert.equal(options.credentials, 'same-origin');
       assert.equal(options.referrerPolicy, 'no-referrer');
-      return Response.json(cityData);
+      assert.equal(options.headers['Content-Type'], 'application/json');
+      assert.deepEqual(JSON.parse(options.body), { latitude: 36.6, longitude: 117.1 });
+      assert.doesNotMatch(options.body, /key|token|account/i);
+      return Response.json({ provider: 'amap', city: '济南市', county: '历城区' });
     }
   });
   assert.equal(result.county, '历城区');

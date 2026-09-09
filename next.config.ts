@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  distDir: process.env.TTQ_NEXT_DIST_DIR || ".next",
   turbopack: { root: process.cwd() },
   outputFileTracingRoot: process.cwd(),
   // Next.js loads .env files during the build. They are runtime configuration,

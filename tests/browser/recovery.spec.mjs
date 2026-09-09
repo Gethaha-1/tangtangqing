@@ -51,13 +51,13 @@ test.beforeEach(async ({ page }) => {
   const operations = await page.evaluate(({ target, records }) => window.TTQCloudSync.planSync(window.TTQDomain.migrate(target, target), records), { target, records: remote.records });
   // Fixture cleanup may exceed the normal batch bound after the large restore
   // test; use its real staged protocol, never bypass the 500-operation API.
-  if (operations.length <= 500) await post(page, '/api/sync', { operationId: crypto.randomUUID(), operations, finalize: true });
+  if (operations.length <= 500) await post(page, '/api/sync', { clientSchemaVersion: 5, operationId: crypto.randomUUID(), operations, finalize: true });
   else {
     const prepared = await page.evaluate(operations => window.TTQRecovery.prepare(operations), operations);
     const id = crypto.randomUUID();
-    await post(page, '/api/restore', { action: 'start', id, baseVersion: remote.fleet.version, manifest: prepared.manifest });
-    for (let ordinal = 0; ordinal < prepared.payloads.length; ordinal++) await post(page, '/api/restore', { action: 'chunk', id, ordinal, payload: prepared.payloads[ordinal] });
-    await post(page, '/api/restore', { action: 'commit', id });
+    await post(page, '/api/restore', { clientSchemaVersion: 5, action: 'start', id, baseVersion: remote.fleet.version, manifest: prepared.manifest });
+    for (let ordinal = 0; ordinal < prepared.payloads.length; ordinal++) await post(page, '/api/restore', { clientSchemaVersion: 5, action: 'chunk', id, ordinal, payload: prepared.payloads[ordinal] });
+    await post(page, '/api/restore', { clientSchemaVersion: 5, action: 'commit', id });
   }
   await page.reload(); await ready(page);
 });
@@ -65,7 +65,7 @@ test.beforeEach(async ({ page }) => {
 test('one round trip saves outbound allocation and treats explicit return actual 0 as 0', async ({ page }) => {
   const initial = await post(page, '/api/bootstrap');
   const initialTrip = initial.records.find(row => row.type === 'trip' && row.id === 'test-trip');
-  await post(page, '/api/sync', { operationId: crypto.randomUUID(), finalize: true, operations: [
+  await post(page, '/api/sync', { clientSchemaVersion: 5, operationId: crypto.randomUUID(), finalize: true, operations: [
     { op: 'delete', type: 'trip', id: initialTrip.id, expectedVersion: initialTrip.version },
   ] });
   await page.reload(); await ready(page);
@@ -112,7 +112,7 @@ test('one round trip saves outbound allocation and treats explicit return actual
   const remote = await post(page, '/api/bootstrap');
   expect(remote.records.find(row => row.type === 'fleet_settings').data.business.shippers[0].markets[0].region).toBe('济南');
   expect(remote.records.find(row => row.type === 'fleet_settings').data.business.places).toHaveLength(2);
-  expect(remote.records.find(row => row.type === 'trip_income' && row.data.categoryId === 'back').data.amount).toBe(0);
+  expect(remote.records.filter(row => row.type === 'trip_income')).toHaveLength(0);
   await page.locator('#nav [data-v="trips"]').click();
   await page.locator('#tripList [data-trip]').click();
   await expect(page.locator('#tripDetail')).toContainText('装车位置');
@@ -234,7 +234,7 @@ test('browser back submits once; discarding a later edit preserves the cloud man
 test('empty new start closes directly and discard clears unfinished shipper controls', async ({ page }) => {
   const initial = await post(page, '/api/bootstrap');
   const trip = initial.records.find(row => row.type === 'trip');
-  await post(page, '/api/sync', { operationId: crypto.randomUUID(), finalize: true, operations: [
+  await post(page, '/api/sync', { clientSchemaVersion: 5, operationId: crypto.randomUUID(), finalize: true, operations: [
     { op: 'delete', type: 'trip', id: trip.id, expectedVersion: trip.version }
   ] });
   await page.reload(); await ready(page);
@@ -277,7 +277,7 @@ test('background return rejection remains recoverable and editable without a rev
   await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.returnTrip?.unitPrice).toBe('250');
 });
 
-test('background return lost response has one journal and one income after receipt recovery', async ({ page }) => {
+test('background return lost response has one journal and one business update after receipt recovery', async ({ page }) => {
   await page.locator('[data-act="return"]').first().click();
   await number(page, '#returnLoadedTons', '30');
   await number(page, '#returnUnitPrice', '240');
@@ -291,7 +291,11 @@ test('background return lost response has one journal and one income after recei
   await page.reload(); await ready(page);
   await page.getByRole('button', { name: '核对并继续', exact: true }).click();
   await expect(page.locator('#recoveryPanel')).toBeHidden();
-  expect((await post(page, '/api/bootstrap')).records.filter(row => row.type === 'trip_income')).toHaveLength(1);
+  const remote = await post(page, '/api/bootstrap');
+  expect(remote.records.filter(row => row.type === 'trip_income')).toHaveLength(0);
+  expect(remote.records.find(row => row.type === 'trip').data.business.returnTrip).toMatchObject({
+    loadedTons: '30', unitPrice: '240', effectiveAmount: 7200,
+  });
   expect(writes).toBe(1);
 });
 
@@ -324,22 +328,21 @@ test('location fills split city/county and ignores late responses after manual e
     navigator.geolocation.getCurrentPosition = resolve => resolve({ coords: { latitude: 36.6, longitude: 117.1 } });
   });
   await page.reload(); await ready(page);
-  const response = { countryCode: 'CN', lookupSource: 'coordinates', localityInfo: { administrative: [
-    { name: '济南市', chinaAdminCode: '370100' }, { name: '历城区', chinaAdminCode: '370112' }
-  ] } };
-  await page.route('https://api.bigdatacloud.net/**', route => route.fulfill({ json: response, headers: { 'access-control-allow-origin': '*' } }));
+  const response = { provider: 'amap', coordinateSystem: 'WGS84', city: '济南市', county: '历城区' };
+  let calls = 0, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/location/reverse', async route => {
+    calls++;
+    if (calls === 2) await gate;
+    await route.fulfill({ json: response });
+  });
   await page.locator('[data-act="return"]').first().click();
   await page.locator('[data-return-location-current="pickup"]').click();
-  await page.locator('#confirmYes').click();
   await expect(page.locator('#returnPickupCity')).toHaveValue('济南市');
   await expect(page.locator('#returnPickupCounty')).toHaveValue('历城区');
   await page.locator('#returnPickupCity').scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('split-location.png') });
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
-  await page.route('https://api.bigdatacloud.net/**', async route => { await gate; await route.fulfill({ json: response, headers: { 'access-control-allow-origin': '*' } }); });
   await page.locator('[data-return-location-current="delivery"]').click();
-  await page.locator('#confirmYes').click();
   await page.locator('#returnDeliveryCity').fill('手工城市');
   release();
   await expect(page.locator('[data-return-location-current="delivery"]')).toBeEnabled();
@@ -426,7 +429,7 @@ test('large backup upload interruption preserves the old ledger; reload resumes 
   await page.getByRole('button', { name: '核对并继续', exact: true }).click();
   await expect(page.locator('#recoveryPanel')).toBeHidden();
   expect((await post(page, '/api/bootstrap')).records.filter(row => row.type === 'trip_expense')).toHaveLength(514);
-  expect((await post(page, '/api/restore', { action: 'status', id })).status).toBe('complete');
+  expect((await post(page, '/api/restore', { clientSchemaVersion: 5, action: 'status', id })).status).toBe('complete');
 });
 
 test('two tabs cannot silently overwrite the same recovered draft', async ({ page, context }) => {
@@ -456,7 +459,7 @@ test('a completed restore with later cloud edits can be acknowledged without rep
   await page.locator('#confirmYes').click();
   await expect.poll(() => interrupted).toBe(true);
   await expect(page.locator('body')).toHaveClass(/is-readonly/);
-  await post(page, '/api/sync', { operationId:crypto.randomUUID(), finalize:true, operations:[{op:'put',type:'maintenance',id:'after-restore',expectedVersion:0,data:{id:'after-restore',vehicleId:'vehicle_default',date:'2026-09-03',amount:123,note:'后续记账'}}] });
+  await post(page, '/api/sync', { clientSchemaVersion:5, operationId:crypto.randomUUID(), finalize:true, operations:[{op:'put',type:'maintenance',id:'after-restore',expectedVersion:0,data:{id:'after-restore',vehicleId:'vehicle_default',date:'2026-09-03',amount:123,note:'后续记账'}}] });
   await page.reload(); await ready(page);
   await page.getByRole('button', {name:'核对并继续',exact:true}).click();
   await expect(page.locator('body')).toHaveClass(/is-readonly/);

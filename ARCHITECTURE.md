@@ -10,6 +10,7 @@ browser
   → Next.js pages + Node route handlers
   → Supabase Auth（核验登录用户）
   → Supabase PostgreSQL（ttq 私有 schema）
+  → 高德 Web 服务（仅定位 API 按次发送实时坐标）
 ```
 
 - Netlify 托管完整 Next.js 应用，不把 `public/ledger` 单独当静态站发布。
@@ -25,10 +26,11 @@ browser
 | 认证边界 | `proxy.ts`、`lib/server/supabase-auth.ts`、`lib/server/request-identity.ts`、`lib/server/auth*.ts` | Auth 用户核验、内部 `Principal`、模式隔离 |
 | 客户端会话 | `src/auth-client.js` | 同源 POST、会话 scope、多标签和 BFCache 锁定 |
 | 账本 UI | `legacy/ledger.html` | 一趟往返、货主清单、运费试算、批量快记、fuel、收车与 JSON 交互 |
-| 业务规则 | `src/domain.js` | schema v4、去返程定点公式、金额/fuel、账期、趟号和报告摘要 |
+| 业务规则 | `src/domain.js` | schema v5、货物目录、去返程定点公式、金额/fuel、账期、趟号和报告摘要 |
 | 同步规划 | `src/cloud-sync.js` | 状态↔记录、diff、守恒、回执与严格在线状态机 |
 | 本机恢复 | `src/draft-store.js`、`src/recovery-client.js` | IndexedDB scope/CAS、原请求日志、恢复分块与 SHA-256 |
-| API | `app/api/bootstrap`、`app/api/sync`、`app/auth/*` | POST 边界、身份核验、原子写入与退出 |
+| 定位 | `src/location-client.js`、`app/api/location/reverse`、`lib/server/location-providers.ts` | 实时设备坐标、同源认证、坐标转换和逆地理编码 |
+| API | `app/api/bootstrap`、`app/api/sync`、`app/api/restore`、`app/auth/*` | POST 边界、身份核验、原子写入与退出 |
 | 服务端业务 | `lib/server/bootstrap.ts`、`lib/server/sync-repository.ts` | fleet/role/assignment 授权、校验、幂等与并发控制 |
 | 线上持久化 | `db/postgres.ts`、`deploy/supabase/001_ledger.sql` | PostgreSQL 参数适配、SERIALIZABLE 事务、正式 schema |
 | 本地兼容 | `db/sqlite.ts`、`db/runtime-schema.ts`、`drizzle/` | 本地 SQLite 与旧 schema/migration 回归 |
@@ -83,8 +85,8 @@ network/server failure → keep old S + readonly + scoped IndexedDB request jour
 - 同 fleet + operationId + payload hash 可安全回放；同 ID 不同 payload 返回冲突。
 - membership、assignment、父记录、版本与业务写在同一事务内守卫；任何一步失败整批回滚。
 - 批量快记与当前未加入的输入暂存本机 IndexedDB；“保存全部”才生成一次原子请求。原请求和对应快记存于同一条本机记录，确认后整体清除，避免清请求/清草稿之间崩溃导致重复记账。
-- 发车与返程页面也只把逐字段变更写入 scope 隔离的 IndexedDB 草稿；最终按钮将趟次 `business`、兼容收入行和必要的货主/地点设置作为一个原子提案。回执未知时保留原提案和表单，重连核对已确认的结构化清单后才清草稿。
-- PostgreSQL/SQLite 在 `fleet_settings.business_json` 保存货主、市场、分组和常用地点，在 `trips.business_json` 保存去程与返程快照。数据库限定顶层必须为 JSON 对象，服务端限 1 MB 并重算分摊/应收；历史客户端在更新其他趟次字段时会保留已有业务 JSON。
+- 去程与返程页面也只把逐字段变更写入 scope 隔离的 IndexedDB 草稿；最终按钮将趟次 `business` 和必要的货主/地点/货物目录设置作为一个原子提案，不再创建兼容收入行。回执未知时保留原提案和表单，重连核对已确认的结构化清单后才清草稿。
+- PostgreSQL/SQLite 在 `fleet_settings.business_json` 保存货主、市场、分组、常用地点和货物目录，在 `trips.business_json` 保存去程与返程快照。数据库限定顶层必须为 JSON 对象，服务端限 1 MB 并重算分摊/应收；普通 schema v5 同步拒绝 `trip_income put`，完整恢复保留历史收入。
 - `/api/sync/status` 只返回当前 fleet 对应 ID/hash 是否已有回执，不暴露历史记录内容；司机分配变化后也不会因此泄露旧回执中的账目。
 - JSON 恢复走 `/api/restore`：start/chunk/status/commit/cancel/list。临时 `restore_jobs`/`restore_chunks` 与正式业务表隔离，owner-only，一车队一个活动任务，7 天有效期，按访问清理过期临时区；无后台定时清理器。
 - SHA-256 绑定不可变分块，序号唯一；单块 128 KiB/250 条，总 20 MiB/30000 条/256 块。普通 sync 仍为 500 条。恢复七类记录的预检采用按表集合读取，最终复用原业务校验、版本/权限守卫和一个 SERIALIZABLE 写事务。
@@ -97,7 +99,7 @@ network/server failure → keep old S + readonly + scoped IndexedDB request jour
 - 未归属旧 localStorage 不自动读取或迁移，避免前一个账号的数据进入后一个账号。
 - IndexedDB 草稿只在 bootstrap 核验后按 fleet+membership 读取；记录 ID 区分不同输入，revision CAS 防同一草稿多标签覆盖。401/BFCache/退出清内存并锁库句柄，但保留磁盘暂存；无跨设备恢复、无浏览器清理后的恢复保证。
 - JSON 导出只由 owner 生成可完整恢复文件；driver 裁剪视图标记为不可完整恢复。
-- schema v4 导入在清洗、提交和服务器回读阶段核对记录数、整数分、fuel 与业务 JSON 守恒；v1/v2/v3 仍按原规则迁移。
+- schema v5 导入在清洗、提交和服务器回读阶段核对记录数、整数分、fuel、业务 JSON 与货物目录守恒；v1/v2/v3/v4 仍按原规则迁移。
 
 ## 8. 报告与 UI 边界
 
