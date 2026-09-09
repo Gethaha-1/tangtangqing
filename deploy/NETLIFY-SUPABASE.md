@@ -20,6 +20,15 @@ SQLite、固定测试车主和 `dev:local` 只用于本地 development + loopbac
 
 v2.0.0 继续复用现有 `business_json` 和数据库 marker `[1,2,3]`，不执行新 DDL。发布必须把 `TTQ_LOCATION_PROVIDER=amap` 与高德 Web 服务 Key 配置到 Netlify Functions 环境，并将客户端、`/api/location/reverse` 和 schema v5 同一次部署。上线后由已登录用户点击定位，确认真实设备坐标能自动写入市、区/县；成功不弹应用 toast，错误才提示。Key 和精确坐标不得写入部署日志。
 
+### v2.0.0 发布记录（2026-09-09）
+
+- 运行代码来自 `develop@9e962c0`；当前 GitHub `develop@c89ce42` 另含发布授权规则文档。没有合并或修改 `main`。
+- 生产站继续使用原地址，Netlify 部署 `6aa162902cf3f09406aa6906` 已在项目所有者明确授权后恢复为生产别名。
+- Netlify 已设置 `TTQ_LOCATION_PROVIDER=amap`；高德 Web 服务 Key 仅以生产 Secret 保存，不在仓库、前端资源或日志中。
+- 本机 194 项 Node 自动化、18 项手机尺寸浏览器回归、lint、TypeScript、Next.js/Netlify 构建和生产 HTTP 协议夹具全部通过。
+- 线上只读冒烟：首页、登录会话、账本 v2.0.0 与 deployment-info 正常；未认证定位 POST 返回 401，证明新路由存在且认证边界生效。未创建测试趟次或改动真实账本。
+- 真实设备 GPS → 高德 → 市/区县自动填写仍需车主在已有返程清单中点击一次验收；本地 `dev:local` 不读取生产 Secret，不能用它代替生产链路测试。
+
 v1.9.0 已于 2026-09-09 发布到原生产站。生产 recovery 和 trip-business 增量此前已按所有者授权执行，marker `[1,2,3]` 已核验。v1.9.0 在现有 JSON 中增加可选市县，并调整后台上传与大键盘，不新增生产变量或 DDL。其他环境仍需按 [RECOVERY-MIGRATION.md](RECOVERY-MIGRATION.md) 与 [TRIP-BUSINESS-MIGRATION.md](TRIP-BUSINESS-MIGRATION.md) 审核、授权并顺序应用增量；不能发布到缺少 schema marker 2 或 3 的数据库。
 
 ### v1.9.0 发布记录（2026-09-09）
