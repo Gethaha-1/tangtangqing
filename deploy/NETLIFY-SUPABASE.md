@@ -18,6 +18,15 @@ SQLite、固定测试车主和 `dev:local` 只用于本地 development + loopbac
 
 ## 2. 发布前验证
 
+### v2.0.1 发布记录（2026-09-12）
+
+- 发布前本地与 GitHub `develop@932270b` 一致；生产 v2.0.0 的账本页面、领域脚本 SHA-1 与本地逐文件相同，确认问题不来自版本不同步。
+- 修复代码 `develop@a8336d5b20fa955ddab29f96fa3833c932661b53` 已按本次明确授权推送 GitHub 并发布到原生产站；未修改或合并 `main`。
+- 生产部署 `6aa511e34f4fd6a7486c545a` 已于 2026-09-12 16:48（北京时间）成为 `ready` 的公开运行版本。版本为 v2.0.1，JSON/schema v5 和数据库 marker `[1,2,3]` 保持兼容，没有生产 DDL 或环境变量变更。
+- 197 项 Node 自动化、24 项手机尺寸浏览器回归，以及最后的地点清除/页顶操作栏定向复测通过；lint、TypeScript、Next.js/Netlify 构建、敏感文件扫描及生产模式 HTTP 协议夹具通过。
+- 线上只读检查：首页、manifest、deployment-info 为 200；未登录账本及脚本为 307，bootstrap/定位 POST 为 401，生产 Supabase project ref 正确。未使用真实账本做测试写入。
+- Netlify 当前公开文件与已验证本地源码 SHA-1 一致：账本 `7881e4d1f1476363946103e7084135448dfb64f3`，领域脚本 `cd085d4f89abdd3a4e43fda549e5f84fa67260f4`。手机刷新页面即可加载新版；未引入 service worker 缓存。
+
 v2.0.0 继续复用现有 `business_json` 和数据库 marker `[1,2,3]`，不执行新 DDL。发布必须把 `TTQ_LOCATION_PROVIDER=amap` 与高德 Web 服务 Key 配置到 Netlify Functions 环境，并将客户端、`/api/location/reverse` 和 schema v5 同一次部署。上线后由已登录用户点击定位，确认真实设备坐标能自动写入市、区/县；成功不弹应用 toast，错误才提示。Key 和精确坐标不得写入部署日志。
 
 ### v2.0.0 发布记录（2026-09-09）
