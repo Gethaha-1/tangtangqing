@@ -313,6 +313,23 @@ test("返程计费、实收、称重、扣款和两端地点在同一张清单",
   assert.match(extractFunction("businessLocationSummaryHTML"), /notes\.map\(note => '<p class="biz-summary-note">' \+ esc\(note\)/);
 });
 
+test("清除坐标后更新同一常用地点，不会由旧对象重新带回坐标", () => {
+  const { saveLocationToCatalog } = compile(["saveLocationToCatalog"], {
+    cloneJSON: value => JSON.parse(JSON.stringify(value)), uid: () => 'new-place'
+  });
+  const catalog = { places: [{ id: 'place-1', city: '济南市', region: '济南市', name: '粮库', latitude: 36.6, longitude: 117.1 }] };
+  const result = saveLocationToCatalog(catalog, { placeId: 'place-1', city: '济南市', region: '济南市', name: '粮库', roadNote: '东门' });
+  assert.equal(result.placeId, 'place-1');
+  assert.equal(catalog.places.length, 1);
+  assert.equal(catalog.places[0].latitude, undefined);
+  assert.equal(catalog.places[0].longitude, undefined);
+  assert.equal(catalog.places[0].roadNote, '东门');
+  const coordinatesOnly = { places: [{ id: 'gps-only', latitude: 36.6, longitude: 117.1 }] };
+  saveLocationToCatalog(coordinatesOnly, { placeId: 'gps-only' });
+  assert.equal(coordinatesOnly.places[0].latitude, undefined);
+  assert.equal(coordinatesOnly.places[0].longitude, undefined);
+});
+
 test("v2 运输收入只有去返程清单一个写入口，旧收入保持只读", () => {
   const startSave = extractFunction("saveStartManifest");
   const returnSave = extractFunction("saveReturnManifest");

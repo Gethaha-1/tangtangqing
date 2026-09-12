@@ -136,6 +136,9 @@ body.theme-day .paper-grid { background-image:
 .biz-summary-note { color:var(--sub); font-size:12.5px; line-height:1.6; margin-top:8px; }
 .biz-sticky { position:sticky; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:1;
   margin-top:14px; padding-top:18px; background:linear-gradient(180deg,transparent,var(--bg) 18%); }
+.biz-manifest-actions { display:grid; grid-template-columns:1fr 1.2fr; gap:8px; }
+.biz-manifest-actions .btn { padding-left:8px; padding-right:8px; font-size:16px; }
+.biz-location-actions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
 .biz-status { min-height:1.5em; text-align:center; color:var(--sub); font-size:13px; margin-top:8px; }
 .biz-place { margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); }
 .biz-place h4 { margin-bottom:8px; }
@@ -627,14 +630,15 @@ if (location.protocol === 'file:') {
     </div>
     <div class="sec-label">整车运费与按箱位分摊</div>
     <div class="panel">
-      <div class="field"><label>整车原定运费（元）</label><input type="text" inputmode="none" readonly data-business-number="2" id="startTotalFreight" placeholder="例如 6000"></div>
+      <div class="field"><label>整车原定运费（元）</label><input type="text" inputmode="none" readonly data-business-number="2" id="startTotalFreight"></div>
       <div class="pill-row" id="startRecentFreights" aria-label="本车最近运费"></div>
       <div id="startAllocationRows"></div>
       <div class="biz-calc" id="startTotals"></div>
       <p class="biz-summary-note">货主清单可不填；填写后按箱位分摊整车运费，再分别记录协商抹零。系统尾差按余数从大到小分配到分，绝不算作抹零。</p>
       <p class="biz-status" id="startDraftStatus" role="status" aria-live="polite"></p>
     </div>
-    <div class="biz-sticky"><button class="btn" id="btnStartGo" data-business-write>保存清单并发车</button></div>
+    <div class="panel" id="startStaged" hidden></div>
+    <div class="biz-sticky biz-manifest-actions"><button type="button" class="btn ghost" id="startStage">＋ 加入清单</button><button type="button" class="btn" id="btnStartGo" data-business-write>保存并发车</button></div>
     <button type="button" class="btn ghost" data-business-discard="start" style="margin-top:16px">放弃修改</button>
   </div>
 </div>
@@ -645,24 +649,24 @@ if (location.protocol === 'file:') {
   <div class="sbody">
     <div class="panel">
       <div class="field"><label>返程货物</label><div class="pill-row" id="returnCargoTypes"></div></div>
-      <div class="frow"><div class="field"><label>装车吨位（吨）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnLoadedTons" placeholder="30.000"></div><div class="field"><label>单价（元/吨）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnUnitPrice" placeholder="240.00"></div></div>
+      <div class="frow"><div class="field"><label>装车吨位（吨）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnLoadedTons"></div><div class="field"><label>单价（元/吨）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnUnitPrice"></div></div>
       <div class="biz-calc"><div><span>应收运费</span><b class="num" id="returnReceivable">—</b></div><div><span>首页计入营收</span><b class="num" id="returnEffective">—</b></div><div><span>当前口径</span><b id="returnBasis">待填写</b></div></div>
-      <div class="field"><label>实收运费（可不填；填 0 表示明确实收 0）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnActual" placeholder="留空则按应收统计"></div>
+      <div class="field"><label>实收运费（可不填；填 0 表示明确实收 0）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnActual"></div>
+      <p class="biz-summary-note" id="returnFreightHint">吨位、单价、实收填两项可自动补齐另一项；自动结果可修改。实收留空按应收统计。</p>
       <div class="sec-label" style="margin:16px 0 4px">称重与掉称 · 选填</div>
-      <div class="frow"><div class="field"><label>卸车吨位（吨）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnUnloadedTons" placeholder="29.950"></div><div class="field"><label>确认掉称（公斤）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnLossKg" placeholder="可按两次称重参考"></div></div>
-      <div class="field"><label>协商掉称扣款（元，辅助记录，不重复从营收减）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnLossDeduction" placeholder="例如 40.00"></div>
+      <div class="frow"><div class="field"><label>卸车吨位（吨）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnUnloadedTons"></div><div class="field"><label>确认掉称（公斤）</label><input type="text" inputmode="none" readonly data-business-number="3" id="returnLossKg"></div></div>
+      <div class="field"><label>协商掉称扣款（元，辅助记录，不重复从营收减）</label><input type="text" inputmode="none" readonly data-business-number="2" id="returnLossDeduction"></div>
       <p class="biz-summary-note" id="returnWeightHint">装、卸车吨位齐全后显示掉称参考；不会自动按公斤扣款。</p>
     </div>
     <div class="sec-label">装卸地点与提醒 · 全部选填</div>
     <div class="panel">
       <div id="returnPickupLocation"></div>
       <div id="returnDeliveryLocation"></div>
-      <p class="biz-summary-note">定位后自动查询市、区县，可手动更正。仅点击并逐次同意后，才由趟趟清服务端把本次坐标发送给当前配置的地址服务商；不发送账号或账目，不持续定位，失败不自动转发其他服务商。</p>
+      <p class="biz-summary-note">定位后自动记录坐标并填写市、区县，可手动更正或清除。仅点击定位后查询本次位置，不持续定位；失败时提醒。</p>
     </div>
-    <button type="button" class="btn ghost" id="returnStage" style="margin-top:12px">＋ 加入本次清单</button>
     <div class="panel" id="returnStaged" hidden style="margin-top:12px"></div>
     <p class="biz-status" id="returnDraftStatus" role="status" aria-live="polite"></p>
-    <div class="biz-sticky"><button type="button" class="btn" id="returnSave" data-business-write>保存并上传</button></div>
+    <div class="biz-sticky biz-manifest-actions"><button type="button" class="btn ghost" id="returnStage">＋ 加入清单</button><button type="button" class="btn" id="returnSave" data-business-write>保存并上传</button></div>
     <button type="button" class="btn ghost" data-business-discard="return" style="margin-top:16px">放弃修改</button>
   </div>
 </div>
@@ -960,7 +964,7 @@ if (location.protocol === 'file:') {
 <script>
 if (location.protocol !== 'file:') {
 /* ================= [JS-1] 云端存储适配层 + 数据结构 + 迁移 ================= */
-const APP_VER = '2.0.0';
+const APP_VER = '2.0.1';
 const SCHEMA_VER = TTQDomain.SCHEMA_VERSION;
 const DEVICE_PREFS_KEY = 'tangtangqing-device-prefs-v1';
 let installPromptEvent = null;
@@ -3080,11 +3084,12 @@ async function recoverStartDraft(record) {
     cargoTypeId: recoveredCargo.cargoTypeId, cargoTypeName: data.cargoTypeName || recoveredCargo.cargoTypeName,
     totalFreight: String(data.totalFreight || ''),
     selected: cloneJSON(data.selected || []), catalog: recoveredCatalog,
-    calculation: null, dirty: true, savedFingerprint: null
+    calculation: null, staged: data.staged || null, dirty: true, savedFingerprint: null
   };
   startDraftContext = newFlowDraftContext(record.id, record);
   startDraftContext.lastPayload = JSON.stringify(data);
   $('#startTitle').textContent = editing ? '继续登记去程' : '继续发车清单';
+  $('#btnStartGo').textContent = editing ? '保存并上传' : '保存并发车';
   $('#startDate').value = data.startDate || trip && trip.startDate || todayStr();
   $('#startTotalFreight').value = startCtx.totalFreight;
   renderStartVehicleChips(); renderStartBusiness(); updateStartTip();
@@ -3099,6 +3104,7 @@ async function recoverReturnDraft(record) {
     tripId: data.tripId,
     form: cloneJSON(data.form || emptyReturnForm(trip.vehicleId, trip.id)),
     staged: data.staged ? cloneJSON(data.staged) : null,
+    freightDerivedField: data.freightDerivedField || null,
     dirty: data.dirty !== false,
     savedFingerprint: null
   };
@@ -3756,11 +3762,12 @@ function openStart(origin, editTripId) {
     cargoTypeId: defaultCargo.id, cargoTypeName: defaultCargo.name,
     totalFreight: outbound ? String(outbound.totalFreight) : '',
     selected: outbound ? cloneJSON(outbound.allocations) : [],
-    catalog: cloneJSON(businessCatalog()), calculation: null,
+    catalog: cloneJSON(businessCatalog()), calculation: null, staged: null,
     dirty: false, savedFingerprint: outbound ? JSON.stringify(outbound) : null
   };
   startDraftContext = newFlowDraftContext('start:' + startCtx.tripId + ':' + uid());
   $('#startTitle').textContent = editing ? '登记去程' : '发车清单';
+  $('#btnStartGo').textContent = editing ? '保存并上传' : '保存并发车';
   $('#startDate').value = editing ? editing.startDate : todayStr();
   $('#startTotalFreight').value = startCtx.totalFreight;
   renderStartVehicleChips(); renderStartBusiness(); updateStartTip();
@@ -3809,6 +3816,7 @@ function updateStartCalculation() {
   startCtx.totalFreight = $('#startTotalFreight').value.trim();
   const calculated = TTQDomain.allocateOutboundFreight(startCtx.totalFreight, startCtx.selected);
   startCtx.calculation = calculated.ok ? calculated : null;
+  renderStartStaged();
   if (!calculated.ok) {
     $('#startTotals').innerHTML = '<div style="grid-column:1/-1"><span>待完成</span><b>' + esc(calculated.error.message) + '</b></div>';
     $$('[data-start-share],[data-start-final]').forEach(el => { el.textContent = '—'; });
@@ -3826,7 +3834,32 @@ function updateStartCalculation() {
 function startDraftSnapshot() {
   return startCtx && { mode: startCtx.mode, tripId: startCtx.tripId, vehicleId: startVehicleId,
     startDate: $('#startDate').value, cargoTypeId: startCtx.cargoTypeId, cargoTypeName: startCtx.cargoTypeName, totalFreight: $('#startTotalFreight').value,
-    selected: startCtx.selected, catalog: startCtx.catalog };
+    selected: startCtx.selected, catalog: startCtx.catalog, staged: startCtx.staged };
+}
+function renderStartStaged() {
+  const box = $('#startStaged'), staged = startCtx && startCtx.staged;
+  box.hidden = !staged;
+  $('#startStage').textContent = staged ? '更新清单' : '＋ 加入清单';
+  if (!staged) { box.innerHTML = ''; return; }
+  const current = startCtx.calculation && TTQDomain.normalizeTripBusiness({ outbound: {
+    cargoTypeId: startCtx.cargoTypeId, cargoTypeName: startCtx.cargoTypeName,
+    totalFreight: startCtx.calculation.totalFreight, allocations: startCtx.calculation.allocations
+  } }).outbound;
+  const changed = !current || JSON.stringify(current) !== JSON.stringify(staged.outbound) || staged.startDate !== $('#startDate').value;
+  box.innerHTML = '<div class="total-line"><span>' + esc(staged.outbound.cargoTypeName || '未填写货物') + ' · 已加入本次清单</span><b class="num">¥' + fmt(staged.outbound.finalTotal) + '</b></div>'
+    + '<p class="biz-summary-note">' + staged.outbound.allocations.length + ' 个货主卸货点' + (changed ? ' · 当前输入已变化，直接保存会使用最新填写内容' : ' · 可继续修改或直接保存') + '</p>';
+}
+async function stageStart() {
+  if (!startCtx || startCtx.submitting || !guardOnce('start-stage')) return;
+  const calculation = updateStartCalculation();
+  if (!calculation.ok) { toast(calculation.error.message); return; }
+  try {
+    startCtx.staged = { startDate: $('#startDate').value, outbound: TTQDomain.normalizeTripBusiness({ outbound: {
+      cargoTypeId: startCtx.cargoTypeId, cargoTypeName: startCtx.cargoTypeName,
+      totalFreight: calculation.totalFreight, allocations: calculation.allocations
+    } }).outbound };
+    renderStartStaged(); await persistStartDraft();
+  } catch (error) { toast(error.message); }
 }
 function persistStartDraft() {
   const snapshot = startDraftSnapshot();
@@ -3856,7 +3889,7 @@ function refreshBusinessSurfaces(tripId) {
   renderCurrent();
 }
 async function saveStartManifest() {
-  if (!startCtx || startCtx.submitting || !guardOnce('start-manifest-save')) return;
+  if (!startCtx || startCtx.submitting) return;
   const calculated = updateStartCalculation();
   if (!calculated.ok) { toast(calculated.error.message); return; }
   if (startCtx.mode === 'new' && openTrip(startVehicleId)) { toast(vehicleById(startVehicleId).name + '已有在途的趟'); return; }
@@ -3908,12 +3941,12 @@ function openReturn(tripId, origin) {
   const trip = S.trips.find(item => item.id === tripId);
   if (!trip) return false;
   const saved = trip.business && trip.business.returnTrip;
-  returnCtx = { tripId, form: saved ? cloneJSON(saved) : emptyReturnForm(trip.vehicleId, trip.id), staged: saved ? cloneJSON(saved) : null,
+  returnCtx = { tripId, form: saved ? cloneJSON(saved) : emptyReturnForm(trip.vehicleId, trip.id), staged: saved ? cloneJSON(saved) : null, freightDerivedField: null,
     dirty: false, savedFingerprint: JSON.stringify(saved || null) };
   if (returnCtx.form.actualReceivedAmount === null) returnCtx.form.actualReceivedAmount = '';
   returnCtx.initialFingerprint = returnFormFingerprint(returnCtx.form);
   returnDraftContext = newFlowDraftContext('return:' + tripId + ':' + uid());
-  $('#returnDraftStatus').textContent = '加入清单后，返回即后台上传；放弃修改不上传';
+  $('#returnDraftStatus').textContent = '可直接保存当前填写内容；也可先加入清单，返回时后台上传';
   $('#returnTitle').textContent = (saved ? '修改' : '登记') + '返程 · ' + vehicleById(trip.vehicleId).name;
   renderReturnForm();
   return openSheet($('#sheet-return'), origin);
@@ -3922,7 +3955,11 @@ function renderLocationForm(kind, title) {
   const location = returnCtx.form[kind + 'Location'] || {};
   const places = businessCatalog().places;
   const fieldPrefix = kind === 'pickup' ? 'returnPickup' : 'returnDelivery';
-  return '<div class="biz-place"><div class="biz-card-head"><h4>' + title + '</h4><button type="button" class="pill" data-return-location-current="' + kind + '">使用当前位置</button></div>'
+  const locating = Boolean(returnCtx.locationRequests && returnCtx.locationRequests[kind]);
+  const hasContent = Object.values(location).some(value => value !== '' && value !== null && value !== undefined);
+  return '<div class="biz-place"><h4>' + title + '</h4><div class="biz-location-actions"><button type="button" class="pill" data-return-location-current="' + kind + '"' + (locating ? ' disabled' : '') + '>' + (locating ? '正在定位…' : '使用当前位置') + '</button>'
+    + (location.latitude !== undefined || locating ? '<button type="button" class="pill" data-return-location-clear-coordinates="' + kind + '">' + (locating ? '取消定位' : '清除坐标') + '</button>' : '')
+    + (hasContent ? '<button type="button" class="pill" data-return-location-clear="' + kind + '">清空位置</button>' : '') + '</div>'
     + '<div class="field"><label for="' + fieldPrefix + 'Place">选择常用地点（可跳过）</label><select id="' + fieldPrefix + 'Place" data-return-place="' + kind + '"><option value="">手动填写 / 不选择</option>' + places.map(place => '<option value="' + attrEsc(place.id) + '"' + (location.placeId === place.id ? ' selected' : '') + '>' + esc((place.region ? place.region + ' · ' : '') + place.name) + '</option>').join('') + '</select></div>'
     + '<div class="frow"><div class="field"><label for="' + fieldPrefix + 'City">市</label><input id="' + fieldPrefix + 'City" type="text" maxlength="40" value="' + attrEsc(location.city || '') + '" data-return-location-field="' + kind + '|city"></div><div class="field"><label for="' + fieldPrefix + 'County">区 / 县</label><input id="' + fieldPrefix + 'County" type="text" maxlength="40" value="' + attrEsc(location.county || '') + '" data-return-location-field="' + kind + '|county"></div></div>'
     + (location.region && location.city === undefined && location.county === undefined ? '<p class="biz-summary-note">旧版地点原文（保留）：' + esc(location.region) + '；可按需在上方拆分填写。</p>' : '')
@@ -3935,6 +3972,26 @@ function renderLocationForm(kind, title) {
 function updateLocationRegion(location) {
   location.region = [location.city, location.county].filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join('');
 }
+function cancelReturnLocation(kind) {
+  const requests = returnCtx && returnCtx.locationRequests;
+  if (requests && requests[kind]) { requests[kind].abort(); delete requests[kind]; }
+  const button = $('[data-return-location-current="' + kind + '"]');
+  if (button) { button.disabled = false; button.textContent = '使用当前位置'; }
+  const clear = $('[data-return-location-clear-coordinates="' + kind + '"]');
+  if (clear) {
+    if (returnCtx.form[kind + 'Location']?.latitude !== undefined) clear.textContent = '清除坐标';
+    else clear.remove();
+  }
+}
+function clearReturnLocation(kind, coordinatesOnly) {
+  if (!returnCtx || returnCtx.submitting || !['pickup', 'delivery'].includes(kind)) return;
+  cancelReturnLocation(kind);
+  if (coordinatesOnly) {
+    const location = returnCtx.form[kind + 'Location'] || {};
+    delete location.latitude; delete location.longitude;
+  } else returnCtx.form[kind + 'Location'] = {};
+  returnCtx.dirty = true; renderReturnForm(); void persistReturnDraft().catch(() => {});
+}
 async function locateReturn(kind, button) {
   const context = returnCtx;
   if (!context || context.submitting) return;
@@ -3943,6 +4000,8 @@ async function locateReturn(kind, button) {
   if (context.locationRequests[kind]) context.locationRequests[kind].abort();
   const controller = new AbortController();
   context.locationRequests[kind] = controller;
+  renderReturnForm();
+  button = $('[data-return-location-current="' + kind + '"]');
   const original = cloneJSON(context.form[kind + 'Location'] || {});
   const stillCurrent = () => returnCtx === context && !context.submitting && !controller.signal.aborted;
   const untouched = () => ['city','county','region','placeId'].every(field => (context.form[kind + 'Location'] || {})[field] === original[field]);
@@ -3965,8 +4024,12 @@ async function locateReturn(kind, button) {
     }
     toast(coordinates ? '已定位，但市县查询失败，可手动填写或稍后重试' : '未取得定位，请检查浏览器位置权限，也可手动填写');
   } finally {
-    if (context.locationRequests[kind] === controller) delete context.locationRequests[kind];
-    button.disabled = false; button.textContent = '使用当前位置';
+    if (context.locationRequests[kind] === controller) {
+      delete context.locationRequests[kind];
+      if (returnCtx === context && !context.submitting) {
+        $('#return' + (kind === 'pickup' ? 'Pickup' : 'Delivery') + 'Location').innerHTML = renderLocationForm(kind, kind === 'pickup' ? '装车位置' : '卸车位置');
+      }
+    }
   }
 }
 function renderReturnForm() {
@@ -3985,6 +4048,11 @@ function renderReturnForm() {
 function updateReturnCalculation() {
   if (!returnCtx) return;
   const form = returnCtx.form;
+  const derivedLabels = { loadedTons: '装车吨位', unitPrice: '单价', actualReceivedAmount: '实收运费' };
+  const derived = returnCtx.freightDerivedField;
+  $('#returnFreightHint').textContent = derived && form[derived] !== ''
+    ? derivedLabels[derived] + '已自动计算，可修改；手动填写的实收差额会保留。'
+    : '吨位、单价、实收填两项可自动补齐另一项；自动结果可修改。实收留空按应收统计。';
   const calculated = TTQDomain.calculateReturnFreight(form);
   $('#returnReceivable').textContent = calculated.ok ? '¥' + calculated.formatted.receivableAmount : '—';
   $('#returnEffective').textContent = calculated.ok ? '¥' + calculated.formatted.effectiveAmount : '—';
@@ -4001,7 +4069,7 @@ function updateReturnCalculation() {
   $('#returnWeightHint').textContent = gain ? loss.warning : (loss.referenceLossKg !== null ? '掉称参考：' + loss.referenceLossKg + ' 公斤；可在确认掉称中手动覆盖，不自动算扣款。' : '装、卸车吨位齐全后显示掉称参考；不会自动按公斤扣款。');
   return calculated;
 }
-function returnDraftSnapshot() { return returnCtx && { tripId: returnCtx.tripId, form: returnCtx.form, staged: returnCtx.staged, dirty: returnCtx.dirty }; }
+function returnDraftSnapshot() { return returnCtx && { tripId: returnCtx.tripId, form: returnCtx.form, staged: returnCtx.staged, dirty: returnCtx.dirty, freightDerivedField: returnCtx.freightDerivedField }; }
 function persistReturnDraft() {
   const snapshot = returnDraftSnapshot();
   return snapshot ? persistFlowDraft(returnDraftContext, 'return', snapshot, '#returnDraftStatus') : Promise.resolve();
@@ -4009,35 +4077,41 @@ function persistReturnDraft() {
 function renderReturnStaged() {
   if (returnCtx && returnCtx.staged) returnCtx.dirty = returnFormFingerprint(returnCtx.form) !== returnFormFingerprint(returnCtx.staged);
   const box = $('#returnStaged');
+  $('#returnStage').textContent = returnCtx && returnCtx.staged ? '更新清单' : '＋ 加入清单';
   if (!returnCtx || !returnCtx.staged) { box.hidden = true; box.innerHTML = ''; return; }
   const item = returnCtx.staged;
   box.hidden = false;
-  box.innerHTML = '<div class="total-line"><span>' + esc(item.cargoTypeName || '未填写货物') + ' · 已加入本次清单</span><b class="num">¥' + fmt(item.effectiveAmount) + '</b></div><p class="biz-summary-note">应收 ¥' + fmt(item.receivableAmount) + ' · ' + (item.actualReceivedAmount === null ? '未填实收，首页按应收' : '实收已填，首页按实收') + (returnCtx.dirty ? ' · 当前输入已变化，请重新加入清单' : '') + '</p>';
+  box.innerHTML = '<div class="total-line"><span>' + esc(item.cargoTypeName || '未填写货物') + ' · 已加入本次清单</span><b class="num">¥' + fmt(item.effectiveAmount) + '</b></div><p class="biz-summary-note">应收 ¥' + fmt(item.receivableAmount) + ' · ' + (item.actualReceivedAmount === null ? '未填实收，首页按应收' : '实收已填，首页按实收') + (returnCtx.dirty ? ' · 当前输入已变化，直接保存会使用最新填写内容' : '') + '</p>';
 }
-async function stageReturn() {
-  if (!returnCtx || !guardOnce('return-stage')) return;
+function stageCurrentReturn() {
   const calculation = updateReturnCalculation();
-  if (!calculation.ok) { toast(calculation.error.message); return; }
-  if ($('#returnWeightGainConfirm') && !$('#returnWeightGainConfirm').hidden && !returnCtx.form.weightGainConfirmed) { toast('卸车吨位更高，请先人工核对并勾选确认'); return; }
+  if (!calculation.ok) { toast(calculation.error.message); return false; }
   try {
     returnCtx.staged = TTQDomain.normalizeTripBusiness({ returnTrip: returnCtx.form }).returnTrip;
-    returnCtx.dirty = false; renderReturnStaged(); await persistReturnDraft();
-    toast('已加入清单，返回时自动后台上传');
-  } catch (error) { toast(error.message); }
+    returnCtx.dirty = false; renderReturnStaged();
+    return true;
+  } catch (error) { toast(error.message); return false; }
+}
+async function stageReturn() {
+  if (!returnCtx || returnCtx.submitting || !guardOnce('return-stage') || !stageCurrentReturn()) return;
+  try { await persistReturnDraft(); } catch (error) { toast(error.message); }
 }
 function saveLocationToCatalog(catalog, location) {
   const data = cloneJSON(location || {});
   const hasContent = ['region','name','roadNote','handlingNote','note'].some(field => String(data[field] || '').trim()) || data.latitude !== undefined;
-  if (!hasContent) return data;
   let place = data.placeId && catalog.places.find(item => item.id === data.placeId);
+  if (!hasContent && !place) return data;
   if (!place) { place = { id: 'place_' + uid() }; catalog.places.push(place); data.placeId = place.id; }
   const stored = cloneJSON(data); delete stored.placeId;
+  // Object.assign alone would retain removed coordinates on a saved place.
+  if (stored.latitude === undefined) { delete place.latitude; delete place.longitude; }
   Object.assign(place, stored, { id: place.id, updatedAt: new Date().toISOString() });
   return data;
 }
 async function saveReturnManifest(options) {
-  if (!returnCtx || returnCtx.submitting || !guardOnce('return-manifest-save')) return;
-  if (!returnCtx.staged || returnCtx.dirty && !(options && options.fromBack)) { toast('请先把当前返程资料加入本次清单'); return; }
+  if (!returnCtx || returnCtx.submitting) return;
+  if (options && options.fromBack) { if (!returnCtx.staged) return; }
+  else if (!stageCurrentReturn()) return;
   const context = returnCtx, draftContext = returnDraftContext;
   void persistReturnDraft().catch(() => {});
   const tripId = returnCtx.tripId;
@@ -4047,7 +4121,7 @@ async function saveReturnManifest(options) {
   staged.deliveryLocation = saveLocationToCatalog(catalog, staged.deliveryLocation);
   const normalizedCatalog = TTQDomain.normalizeBusinessSettings(catalog);
   const normalizedReturn = TTQDomain.normalizeTripBusiness({ returnTrip: staged }).returnTrip;
-  const remainder = context.dirty ? { tripId, form: cloneJSON(context.form), staged: normalizedReturn, dirty: true } : null;
+  const remainder = context.dirty ? { tripId, form: cloneJSON(context.form), staged: normalizedReturn, dirty: true, freightDerivedField: context.freightDerivedField } : null;
   context.submitting = true;
   let detached = false;
   const leave = () => { detached = true; if (returnCtx === context) detachBusinessFlow('return'); };
@@ -5075,6 +5149,8 @@ document.addEventListener('click', async e => {
     void locateReturn(el.dataset.returnLocationCurrent, el);
     return;
   }
+  if ((el = q('[data-return-location-clear-coordinates]'))) { clearReturnLocation(el.dataset.returnLocationClearCoordinates, true); return; }
+  if ((el = q('[data-return-location-clear]'))) { clearReturnLocation(el.dataset.returnLocationClear, false); return; }
   if ((el = q('[data-bf-vehicle]'))) {
     backfillVehicleId = el.dataset.bfVehicle;
     renderBackfillVehicleChips(); return;
@@ -5229,7 +5305,7 @@ function handleBusinessFieldEvent(event) {
     updateStartCalculation(); persistStartDraft().catch(() => {}); return;
   }
   if (startCtx && el.id === 'startDate') {
-    startCtx.dirty = true; updateStartTip(); persistStartDraft().catch(() => {}); return;
+    startCtx.dirty = true; updateStartTip(); renderStartStaged(); persistStartDraft().catch(() => {}); return;
   }
   if (startCtx && (el.dataset.startBox || el.dataset.startRound)) {
     const id = el.dataset.startBox || el.dataset.startRound;
@@ -5282,11 +5358,18 @@ function handleBusinessFieldEvent(event) {
   if (returnCtx && ['returnLoadedTons','returnUnitPrice','returnActual','returnUnloadedTons','returnLossKg','returnLossDeduction'].includes(el.id)) {
     const fieldById = { returnLoadedTons: 'loadedTons', returnUnitPrice: 'unitPrice', returnActual: 'actualReceivedAmount',
       returnUnloadedTons: 'unloadedTons', returnLossKg: 'lossKg', returnLossDeduction: 'lossDeductionAmount' };
-    returnCtx.form[fieldById[el.id]] = el.value.trim(); returnCtx.dirty = true;
+    const field = fieldById[el.id];
+    // Ignore duplicate input/change notifications for the same value.
+    if (String(returnCtx.form[field] ?? '') === el.value.trim()) return;
+    returnCtx.form[field] = el.value.trim(); returnCtx.dirty = true;
+    const linked = TTQDomain.linkReturnFreight(returnCtx.form, field, returnCtx.freightDerivedField);
+    returnCtx.form = linked.values; returnCtx.freightDerivedField = linked.derivedField;
+    [['returnLoadedTons','loadedTons'],['returnUnitPrice','unitPrice'],['returnActual','actualReceivedAmount']].forEach(([id, name]) => { $('#' + id).value = returnCtx.form[name] ?? ''; });
     updateReturnCalculation(); renderReturnStaged(); persistReturnDraft().catch(() => {}); return;
   }
   if (returnCtx && el.dataset.returnLocationField) {
     const [kind, field] = el.dataset.returnLocationField.split('|');
+    if (field === 'city' || field === 'county') cancelReturnLocation(kind);
     const location = returnCtx.form[kind + 'Location'] || (returnCtx.form[kind + 'Location'] = {});
     location[field] = el.value; returnCtx.dirty = true;
     if (field === 'city' || field === 'county') updateLocationRegion(location);
@@ -5326,6 +5409,7 @@ document.addEventListener('change', event => {
   }
   if (returnCtx && el.dataset.returnPlace) {
     const kind = el.dataset.returnPlace;
+    cancelReturnLocation(kind);
     const place = businessCatalog().places.find(item => item.id === el.value);
     returnCtx.form[kind + 'Location'] = place ? cloneJSON(Object.assign({}, place, { placeId: place.id })) : {};
     if (returnCtx.form[kind + 'Location'].id) delete returnCtx.form[kind + 'Location'].id;
@@ -5765,6 +5849,7 @@ sessionCoordinator = TTQAuthClient.createSessionCoordinator({
     resolveSource: () => $('#btnAddVehicle')
   }));
   $('#btnVehicleSave').addEventListener('click', saveVehicle);
+  $('#startStage').addEventListener('click', stageStart);
   $('#btnStartGo').addEventListener('click', saveStartManifest);
   $('#returnStage').addEventListener('click', stageReturn);
   $('#returnSave').addEventListener('click', saveReturnManifest);

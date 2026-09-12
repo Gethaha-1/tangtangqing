@@ -36,6 +36,40 @@ function trip(id, vehicleId, startDate, endDate, income, expense) {
   };
 }
 
+test('返程吨位、单价、实收两项补第三项，使用定点舍入并跟随来源修改', () => {
+  for (const [fields, changed, target, expected] of [
+    [{ loadedTons: '30.125', unitPrice: '240', actualReceivedAmount: '' }, 'unitPrice', 'actualReceivedAmount', '7230.00'],
+    [{ loadedTons: '30', unitPrice: '', actualReceivedAmount: '7520' }, 'actualReceivedAmount', 'unitPrice', '250.67'],
+    [{ loadedTons: '', unitPrice: '200', actualReceivedAmount: '7520' }, 'actualReceivedAmount', 'loadedTons', '37.600'],
+    [{ loadedTons: '0.001', unitPrice: '5', actualReceivedAmount: '' }, 'unitPrice', 'actualReceivedAmount', '0.01'],
+  ]) {
+    const result = D.linkReturnFreight(fields, changed, null);
+    assert.equal(result.values[target], expected);
+    assert.equal(result.derivedField, target);
+    assert.equal(fields[target], '');
+  }
+  const updated = D.linkReturnFreight({ loadedTons: '31', unitPrice: '240', actualReceivedAmount: '7200.00' }, 'loadedTons', 'actualReceivedAmount');
+  assert.equal(updated.values.actualReceivedAmount, '7440.00');
+});
+
+test('联算保留手工实收差额与零，清空或无效来源不能留下过期自动结果', () => {
+  for (const actual of ['0', '7000']) {
+    const fields = { loadedTons: '30', unitPrice: '240', actualReceivedAmount: actual };
+    const result = D.linkReturnFreight(fields, 'actualReceivedAmount', 'actualReceivedAmount');
+    assert.deepEqual(result.values, fields);
+    assert.equal(result.derivedField, null);
+  }
+  const cleared = { loadedTons: '30', unitPrice: '240', actualReceivedAmount: '' };
+  assert.deepEqual(D.linkReturnFreight(cleared, 'actualReceivedAmount', 'actualReceivedAmount').values, cleared);
+  for (const unitPrice of ['', '0', '-1', '2e2', '240.001', '99999999999999999']) {
+    const result = D.linkReturnFreight({ loadedTons: '30', unitPrice, actualReceivedAmount: '7200' }, 'unitPrice', 'actualReceivedAmount');
+    assert.equal(result.values.actualReceivedAmount, '');
+  }
+  const zero = D.linkReturnFreight({ loadedTons: '30', unitPrice: '', actualReceivedAmount: '0' }, 'actualReceivedAmount', null);
+  assert.equal(zero.values.unitPrice, '');
+  assert.equal(zero.values.loadedTons, '30');
+});
+
 test('v1 数据迁移后保留账目并自动归入原有车辆', () => {
   const legacy = {
     schemaVersion: 1,

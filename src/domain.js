@@ -176,6 +176,37 @@
     return strictDecimalUnits(value, scale, maximum, field, allowZero);
   }
 
+  // Only the derived field follows edits. Three manually supplied values may
+  // intentionally differ (discounts, partial payment or an explicit actual 0).
+  function linkReturnFreight(fields, changedField, derivedField) {
+    const values = Object.assign({}, fields);
+    const names = ['loadedTons', 'unitPrice', 'actualReceivedAmount'];
+    const blank = value => value === '' || value === null || value === undefined;
+    if (!names.includes(changedField)) return { values, derivedField: derivedField || null };
+    let target = names.includes(derivedField) && derivedField !== changedField ? derivedField : null;
+    if (!target) {
+      const missing = names.filter(name => blank(values[name]));
+      if (missing.length === 1 && missing[0] !== changedField) target = missing[0];
+    }
+    if (!target) return { values, derivedField: null };
+    // Never leave a stale calculated value when a source is cleared or invalid.
+    values[target] = '';
+    try {
+      const loaded = target === 'loadedTons' ? null : strictDecimalUnits(values.loadedTons, 3, MAX_WEIGHT_MILLI, '装车吨位', false);
+      const price = target === 'unitPrice' ? null : strictDecimalUnits(values.unitPrice, 2, MAX_AMOUNT_CENTS, '返程单价', false);
+      const actual = target === 'actualReceivedAmount' ? null : strictDecimalUnits(values.actualReceivedAmount, 2, MAX_AMOUNT_CENTS, '实收运费', true);
+      const units = target === 'actualReceivedAmount' ? roundQuotient(loaded * price, 1000n)
+        : target === 'loadedTons' ? roundQuotient(actual * 1000n, price)
+        : roundQuotient(actual * 1000n, loaded);
+      const scale = target === 'loadedTons' ? 3 : 2;
+      const maximum = target === 'loadedTons' ? MAX_WEIGHT_MILLI : MAX_AMOUNT_CENTS;
+      if (units === null || units > maximum || units === 0n && target !== 'actualReceivedAmount')
+        return { values, derivedField: target };
+      values[target] = unitsToFixed(units, scale);
+    } catch { /* Incomplete input remains editable; save performs validation. */ }
+    return { values, derivedField: target };
+  }
+
   function calculateReturnFreight(fields) {
     const input = fields || {};
     try {
@@ -1138,6 +1169,7 @@
     cleanAmount,
     calculateFuelFields,
     calculateReturnFreight,
+    linkReturnFreight,
     calculateWeightLoss,
     allocateOutboundFreight,
     normalizeBusinessSettings,

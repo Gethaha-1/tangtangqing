@@ -142,6 +142,178 @@ test('refresh restores the list, unfinished expression, note and original record
   expect((await post(page, '/api/bootstrap')).records.filter(row => row.type === 'trip_expense')).toHaveLength(0);
 });
 
+test('freight linkage restores its derived field and saves current inputs without staging', async ({ page }, testInfo) => {
+  await page.locator('[data-act="return"]').first().click();
+  for (const id of ['returnLoadedTons', 'returnUnitPrice', 'returnActual', 'returnUnloadedTons', 'returnLossKg', 'returnLossDeduction'])
+    expect(await page.locator('#' + id).getAttribute('placeholder')).toBeNull();
+  await number(page, '#returnUnitPrice', '200');
+  await number(page, '#returnActual', '7520');
+  await expect(page.locator('#returnLoadedTons')).toHaveValue('37.600');
+  await expect(page.locator('#returnReceivable')).toHaveText('¥7520.00');
+  await expect(page.locator('#returnDraftStatus')).toContainText('草稿已暂存本机');
+  await page.reload(); await ready(page);
+  await page.getByRole('button', { name: '继续填写', exact: true }).click();
+  await number(page, '#returnActual', '7600');
+  await expect(page.locator('#returnLoadedTons')).toHaveValue('38.000');
+  // Both actions stay visible while the form is at its top on a phone.
+  await page.locator('#sheet-return').evaluate(el => { el.scrollTop = 0; });
+  for (const id of ['returnStage', 'returnSave']) {
+    const bounds = await page.locator('#' + id).boundingBox();
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+  }
+  await page.screenshot({ path: testInfo.outputPath('return-linked-actions.png') });
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.returnTrip).toMatchObject({
+    loadedTons: '38', unitPrice: '200', actualReceivedAmount: 7600, effectiveAmount: 7600
+  });
+  await expect.poll(async () => (await drafts(page)).length).toBe(0);
+});
+
+test('direct return save includes edits after staging and preserves manually entered actual zero', async ({ page }) => {
+  let writes = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/sync')) writes++; });
+  await page.locator('[data-act="return"]').first().click();
+  await number(page, '#returnLoadedTons', '30');
+  await number(page, '#returnUnitPrice', '240');
+  await expect(page.locator('#returnActual')).toHaveValue('7200.00');
+  await page.locator('#returnStage').click();
+  await number(page, '#returnUnitPrice', '250');
+  await expect(page.locator('#returnActual')).toHaveValue('7500.00');
+  await page.locator('#returnDeliveryCity').fill('最新卸车市');
+  await page.locator('#returnSave').evaluate(button => { button.click(); button.click(); });
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.returnTrip).toMatchObject({
+    loadedTons: '30', unitPrice: '250', actualReceivedAmount: 7500, deliveryLocation: { city: '最新卸车市' }
+  });
+  expect(writes).toBe(1);
+  await page.locator('[data-act="return"]').first().click();
+  await number(page, '#returnActual', '0');
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.returnTrip).toMatchObject({
+    loadedTons: '30', unitPrice: '250', actualReceivedAmount: 0, effectiveAmount: 0
+  });
+  expect(writes).toBe(2);
+});
+
+test('direct return save validates weights and retains the latest form after server rejection', async ({ page }) => {
+  await page.locator('[data-act="return"]').first().click();
+  await number(page, '#returnLoadedTons', '30');
+  await number(page, '#returnUnitPrice', '240');
+  await number(page, '#returnUnloadedTons', '31');
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeVisible();
+  expect((await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.returnTrip).toBeUndefined();
+  await page.locator('#returnWeightGainConfirmed').check();
+  await page.route('**/api/sync', route => route.fulfill({ status: 422, json: { error: { code: 'batch_rejected', message: '测试拒绝' } } }));
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await page.getByRole('button', { name: '继续填写', exact: true }).click();
+  await number(page, '#returnUnloadedTons', '29.95');
+  await page.unroute('**/api/sync');
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.returnTrip?.unloadedTons).toBe('29.95');
+});
+
+test('outbound can join a review list or directly save its latest form without duplicate trips', async ({ page }, testInfo) => {
+  await page.locator('[data-act="editoutbound"]').first().click();
+  await expect(page.locator('#btnStartGo')).toHaveText('保存并上传');
+  await number(page, '#startTotalFreight', '6000');
+  await page.locator('#startStage').click();
+  await expect(page.locator('#startStaged')).toContainText('已加入本次清单');
+  expect((await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.outbound).toBeUndefined();
+  await number(page, '#startTotalFreight', '6500');
+  await page.locator('#sheet-start').evaluate(el => { el.scrollTop = 0; });
+  for (const id of ['startStage', 'btnStartGo']) {
+    const bounds = await page.locator('#' + id).boundingBox();
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+  }
+  await page.screenshot({ path: testInfo.outputPath('outbound-actions.png') });
+  await page.locator('#btnStartGo').click();
+  await expect(page.locator('#sheet-start')).toBeHidden();
+  await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.outbound?.finalTotal).toBe(6500);
+  await page.locator('[data-act="editoutbound"]').first().click();
+  await number(page, '#startTotalFreight', '6600');
+  await page.locator('#btnStartGo').click();
+  await expect(page.locator('#sheet-start')).toBeHidden();
+  await expect.poll(async () => (await post(page, '/api/bootstrap')).records.find(row => row.type === 'trip').data.business.outbound?.finalTotal).toBe(6600);
+  expect((await post(page, '/api/bootstrap')).records.filter(row => row.type === 'trip')).toHaveLength(1);
+});
+
+test('both location sections clear saved coordinates and all location fields without restoring stale data', async ({ page }) => {
+  await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = resolve => resolve({ coords: { latitude: 36.6, longitude: 117.1 } }); });
+  await page.reload(); await ready(page);
+  await page.route('**/api/location/reverse', route => route.fulfill({ json: { provider: 'amap', city: '济南市', county: '历城区' } }));
+  await page.locator('[data-act="return"]').first().click();
+  await number(page, '#returnLoadedTons', '30');
+  await number(page, '#returnUnitPrice', '200');
+  for (const [kind, prefix] of [['pickup', 'Pickup'], ['delivery', 'Delivery']]) {
+    await page.locator('[data-return-location-current="' + kind + '"]').click();
+    await expect(page.locator('#return' + prefix + 'City')).toHaveValue('济南市');
+    await page.locator('#return' + prefix + 'Name').fill(prefix + '粮库');
+  }
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/is-saving/);
+  await page.locator('[data-act="return"]').first().click();
+  for (const [kind, prefix] of [['pickup', 'Pickup'], ['delivery', 'Delivery']]) {
+    await page.locator('[data-return-location-clear-coordinates="' + kind + '"]').click();
+    await expect(page.locator('#return' + prefix + 'Name')).toHaveValue(prefix + '粮库');
+    await expect(page.locator('#return' + prefix + 'Location')).not.toContainText('查看坐标');
+  }
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/is-saving/);
+  const remote = await post(page, '/api/bootstrap');
+  for (const place of remote.records.find(row => row.type === 'fleet_settings').data.business.places) {
+    expect(place.latitude).toBeUndefined(); expect(place.longitude).toBeUndefined();
+  }
+  await page.reload(); await ready(page);
+  await page.locator('[data-act="return"]').first().click();
+  for (const [kind, prefix] of [['pickup', 'Pickup'], ['delivery', 'Delivery']]) {
+    await page.locator('[data-return-location-clear="' + kind + '"]').click();
+    await expect(page.locator('#return' + prefix + 'City')).toHaveValue('');
+    await expect(page.locator('#return' + prefix + 'Name')).toHaveValue('');
+    await expect(page.locator('#return' + prefix + 'Place')).toHaveValue('');
+  }
+  await page.locator('#returnSave').click();
+  await expect(page.locator('#sheet-return')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/is-saving/);
+  await page.reload(); await ready(page);
+  await page.locator('[data-act="return"]').first().click();
+  await expect(page.locator('#returnPickupCity')).toHaveValue('');
+  await expect(page.locator('#returnDeliveryName')).toHaveValue('');
+});
+
+test('failed address lookup coordinates can be cleared and cancelled late GPS cannot restore them', async ({ page }) => {
+  await page.addInitScript(() => {
+    let calls = 0;
+    navigator.geolocation.getCurrentPosition = resolve => {
+      const position = { coords: { latitude: 36.6, longitude: 117.1 } };
+      if (++calls === 1) resolve(position);
+      else window.finishTestLocation = () => resolve(position);
+    };
+  });
+  await page.reload(); await ready(page);
+  let requests = 0;
+  await page.route('**/api/location/reverse', route => { requests++; return route.fulfill({ status: 503, json: {} }); });
+  await page.locator('[data-act="return"]').first().click();
+  await page.locator('[data-return-location-current="pickup"]').click();
+  await expect(page.locator('#returnPickupLocation')).toContainText('查看坐标');
+  await page.locator('[data-return-location-clear-coordinates="pickup"]').click();
+  await expect(page.locator('#returnPickupLocation')).not.toContainText('查看坐标');
+  await page.locator('[data-return-location-current="pickup"]').click();
+  await page.locator('[data-return-location-clear-coordinates="pickup"]').click();
+  await page.evaluate(() => window.finishTestLocation());
+  await expect(page.locator('[data-return-location-current="pickup"]')).toBeEnabled();
+  await expect(page.locator('#returnPickupLocation')).not.toContainText('查看坐标');
+  expect(requests).toBe(1);
+});
+
 test('empty return and changed-then-reverted form exit without save prompts, even without IndexedDB', async ({ page }) => {
   await page.addInitScript(() => { indexedDB.open = () => { throw new DOMException('测试存储不可用', 'SecurityError'); }; });
   await page.reload(); await ready(page);

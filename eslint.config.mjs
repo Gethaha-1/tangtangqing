@@ -7,6 +7,9 @@ export default defineConfig([
   ...nextTs,
   globalIgnores([
     ".next/**",
+    ".next-browser-test/**",
+    "test-results/**",
+    "playwright-report/**",
     "dist/**",
     "out/**",
     "public/ledger/**",
